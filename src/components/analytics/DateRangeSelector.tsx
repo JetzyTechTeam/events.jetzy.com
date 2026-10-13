@@ -123,7 +123,24 @@ export default function DateRangeSelector({ dateFrom, dateTo, onDateChange, dark
 
 	return (
 		<VStack spacing={4} align="stretch">
-			<Flex direction={{ base: "column", md: "row" }} gap={4} align={{ base: "stretch", md: "center" }}>
+			{/* Below 768px only (media query - nothing here applies from tablet width up):
+			    the two date boxes share a row at a tappable 44px with 16px text (iOS zooms into
+			    anything smaller), Apply / Clear share the next row, and the five presets are one
+			    sideways-scrolling row instead of wrapping onto three. */}
+			<Flex
+				direction={{ base: "column", md: "row" }}
+				gap={4}
+				align={{ base: "stretch", md: "center" }}
+				sx={{ "@media screen and (max-width: 47.99em)": {
+					"& > div:first-of-type > div": { flex: "1 1 0", minWidth: 0 },
+					"& > div:first-of-type > div:nth-of-type(3)": { flex: "1 1 100%", marginInlineStart: 0, marginTop: "8px", paddingTop: 0 },
+					"& > div:first-of-type > div:nth-of-type(3) > div": { width: "100%" },
+					"& > div:first-of-type > div:nth-of-type(3) button": { flex: "1 1 0", height: "40px" },
+					"& input": { height: "44px", fontSize: "16px" },
+					"& > div:nth-of-type(2)": { flexWrap: "nowrap", overflowX: "auto", paddingBottom: "2px", scrollbarWidth: "none", "&::-webkit-scrollbar": { display: "none" } },
+					"& > div:nth-of-type(2) > button": { flexShrink: 0, height: "36px" },
+				} }}
+			>
 				{/* Custom Date Inputs */}
 				<HStack spacing={2} flexWrap="wrap" flex={1}>
 					<Box>

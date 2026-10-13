@@ -35,6 +35,7 @@ import {
 import { FiUsers, FiDollarSign, FiTrendingUp, FiEye, FiShare2, FiArrowLeft, FiImage, FiLogIn, FiUserPlus, FiCheckCircle } from "react-icons/fi"
 import MetricsCard from "@/components/analytics/MetricsCard"
 import DateRangeSelector from "@/components/analytics/DateRangeSelector"
+import PhoneStatRows from "@/components/analytics/PhoneStatRows"
 import { WINDOW_KEYS, WINDOW_LABELS, type WindowKey } from "@/lib/analytics-windows"
 import SafeHTML from "@/components/misc/SafeHTML"
 import { stripHTMLAndDecode } from "@/lib/utils"
@@ -500,6 +501,43 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 	const formatCurrency = (amount: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(amount)
 	const formatNumber = (num: number) => new Intl.NumberFormat("en-US").format(num)
 
+	// Below `md` the tables on this page are replaced by lists and cards. These build each badge
+	// ONCE, and both layouts render them - so a rate, a source type or a "Verified" can never
+	// mean one thing in the table and another on a phone.
+	const rateBadge = (f: { rate: number }) => (
+		<Badge colorScheme={f.rate >= 50 ? "green" : f.rate >= 20 ? "yellow" : "red"}>{f.rate}%</Badge>
+	)
+	const referrerBadge = (ref: { category: string }) => (
+		<Badge colorScheme={ref.category === "search_engine" ? "blue" : ref.category === "social_media" ? "purple" : ref.category === "email" ? "orange" : "gray"} size="sm">
+			{ref.category.replace(/_/g, " ")}
+		</Badge>
+	)
+	const deviceBadge = (device: { deviceType: string }) => <Badge colorScheme="blue" textTransform="capitalize">{device.deviceType}</Badge>
+	const verifiedBadge = (r: { verified?: boolean }) => <Badge colorScheme={r.verified ? "green" : "gray"}>{r.verified ? "Verified" : "Unverified"}</Badge>
+	const actionBadge = (r: { action: string }) => <Badge colorScheme={r.action === "signup" ? "green" : "blue"}>{r.action === "signup" ? "Signup" : "Login"}</Badge>
+	const interestChips = (r: { optOut?: boolean; interests: string[] }) => (
+		<Flex wrap="wrap" gap={1}>
+			{r.optOut && (
+				<Badge bg="#4a1f1f" color="#ff9a9a" borderRadius="full" px={2} textTransform="none" fontWeight="normal">Opted out</Badge>
+			)}
+			{r.interests.map((i) => (
+				<Badge key={i} bg="#2a2a2a" color="white" borderRadius="full" px={2} textTransform="none" fontWeight="normal">{i}</Badge>
+			))}
+			{!r.optOut && r.interests.length === 0 && <Text fontSize="sm" color="#65676B">—</Text>}
+		</Flex>
+	)
+	const customChips = (r: { customInterests: string[] }) =>
+		r.customInterests.length > 0 ? (
+			<Flex wrap="wrap" gap={1}>
+				{r.customInterests.map((c, ci) => (
+					<Badge key={`${c}-${ci}`} bg="#3a2a12" color="#F79432" borderRadius="full" px={2} textTransform="none" fontWeight="normal">{c}</Badge>
+				))}
+			</Flex>
+		) : (
+			<Text fontSize="sm" color="#65676B">—</Text>
+		)
+	const PHONE = "@media screen and (max-width: 47.99em)"
+
 	return (
 		<>
 			<Head>
@@ -508,24 +546,26 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 				<meta name="robots" content="noindex, nofollow" />
 			</Head>
 			<ConsoleLayout>
-				<Box maxW="1400px" mx="auto" px={{ base: 4, md: 0 }} py={6}>
+				{/* `px` was 16px on phones INSIDE ConsoleLayout's own 16px gutter - everything sat
+				    32px in from both edges. One gutter is enough. */}
+				<Box maxW="1400px" mx="auto" px={0} py={{ base: 2, md: 6 }}>
 					{/* Header */}
-					<Flex align="center" mb={6} gap={4}>
+					<Flex align="center" mb={{ base: 4, md: 6 }} gap={{ base: 2, md: 4 }}>
 						<Button leftIcon={<FiArrowLeft />} variant="ghost" size="sm" color="#9C9C9C" _hover={{ bg: "#1a1a1a", color: "white" }} onClick={() => router.back()}>
 							Back
 						</Button>
 						<Box flex={1}>
-							<Text fontSize="2xl" fontWeight="bold" color="white">
+							<Text fontSize={{ base: "xl", md: "2xl" }} fontWeight="bold" color="white">
 								Event Analytics
 							</Text>
-							<Box fontSize="lg" color="#9C9C9C">
+							<Box fontSize={{ base: "sm", md: "lg" }} color="#9C9C9C" sx={{ [PHONE]: { display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", overflowWrap: "anywhere" } }}>
 								<SafeHTML html={eventData.name} />
 							</Box>
 						</Box>
 					</Flex>
 
 					{/* Date Range Selector */}
-					<Box bg="#1a1a1a" border="1px solid #2a2a2a" p={4} borderRadius="lg" mb={6}>
+					<Box bg="#1a1a1a" border="1px solid #2a2a2a" p={{ base: 3, md: 4 }} borderRadius="lg" mb={{ base: 4, md: 6 }}>
 						<DateRangeSelector dark dateFrom={dateFrom} dateTo={dateTo} onDateChange={handleDateChange} />
 					</Box>
 
@@ -536,7 +576,7 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 						</Center>
 					) : analyticsData ? (
 						<Tabs variant="line" index={tabIndex} onChange={setTabIndex} isLazy>
-							<TabList mb={4} borderBottom="2px solid #2a2a2a">
+							<TabList mb={4} borderBottom="2px solid #2a2a2a" sx={{ [PHONE]: { "& > button": { flex: 1 } } }}>
 								<Tab color="#9C9C9C" fontWeight="bold" _selected={{ color: "#F79432", borderBottom: "2px solid #F79432" }}>Overview</Tab>
 								<Tab color="#9C9C9C" fontWeight="bold" _selected={{ color: "#F79432", borderBottom: "2px solid #F79432" }}>Albums</Tab>
 							</TabList>
@@ -549,7 +589,7 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 									    above changes everything BELOW this block, never this block, or the
 									    columns stop being comparable to the email. */}
 									<Box mb={8} bg="#1a1a1a" border="1px solid #2a2a2a" borderRadius="lg" overflow="hidden">
-										<Flex justify="space-between" align="center" px={5} py={4} borderBottom="1px solid #2a2a2a" wrap="wrap" gap={3}>
+										<Flex justify="space-between" align="center" px={{ base: 3, md: 5 }} py={{ base: 3, md: 4 }} borderBottom="1px solid #2a2a2a" wrap="wrap" gap={3}>
 											<Box>
 												<Text fontSize="lg" fontWeight="bold" color="white">Performance snapshot</Text>
 												<Text fontSize="xs" color="#65676B">Fixed windows, always up to now &mdash; not affected by the dates above.</Text>
@@ -566,7 +606,18 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 										) : !windowRows ? (
 											<Box px={5} py={6}><Text color="#9C9C9C" fontSize="sm">Snapshot unavailable right now.</Text></Box>
 										) : (
-											<TableContainer>
+											/* Stays a TABLE on a phone - comparing the four windows side by side is
+											   the whole point of it. The metric column is frozen and may wrap, and the
+											   cells are tightened, so the windows fit (or need one short swipe) with
+											   the metric name always in view. */
+											<TableContainer
+												sx={{ [PHONE]: {
+													"& th, & td": { paddingLeft: "8px", paddingRight: "8px" },
+													"& th": { fontSize: "10px" },
+													"& td p": { fontSize: "12px" },
+													"& th:first-of-type, & td:first-of-type": { position: "sticky", left: 0, zIndex: 1, background: "#1a1a1a", whiteSpace: "normal", minWidth: "112px", maxWidth: "132px" },
+												} }}
+											>
 												<Table variant="simple" size="sm" sx={{ "& th": { color: "#9C9C9C", borderColor: "#2a2a2a" }, "& td": { borderColor: "#2a2a2a", color: "white" } }}>
 													<Thead>
 														<Tr>
@@ -613,17 +664,17 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 									<Box mb={8}>
 										<Text fontSize="lg" fontWeight="bold" color="white" mb={1}>Headline numbers</Text>
 										<Text fontSize="xs" color="#65676B" mb={4}>{dateFrom || dateTo ? "For the dates selected above." : "All time."}</Text>
-										<SimpleGrid columns={{ base: 1, sm: 2, lg: 4 }} spacing={4}>
-											<MetricsCard dark title="Page Views" value={formatNumber(analyticsData.summary.views)} icon={FiEye} subtitle={`${formatNumber(analyticsData.summary.uniqueViewers)} unique visitors`} />
-											<MetricsCard dark title="Bookings" value={formatNumber(analyticsData.summary.bookings)} icon={FiUsers} subtitle={`${formatNumber(analyticsData.summary.tickets.sold)} tickets`} />
-											<MetricsCard dark title="Revenue" value={formatCurrency(analyticsData.summary.revenue.total)} icon={FiDollarSign} subtitle={analyticsData.summary.revenue.discounts > 0 ? `${formatCurrency(analyticsData.summary.revenue.net)} after discounts` : "Ticket revenue"} />
-											<MetricsCard dark title="Checked In" value={formatNumber(analyticsData.summary.tickets.checkedIn)} icon={FiCheckCircle} subtitle={`${analyticsData.summary.tickets.checkInRate.toFixed(0)}% of tickets sold`} />
+										<SimpleGrid columns={{ base: 2, sm: 2, lg: 4 }} spacing={{ base: 2, sm: 4 }}>
+											<MetricsCard dark compactOnMobile title="Page Views" value={formatNumber(analyticsData.summary.views)} icon={FiEye} subtitle={`${formatNumber(analyticsData.summary.uniqueViewers)} unique visitors`} />
+											<MetricsCard dark compactOnMobile title="Bookings" value={formatNumber(analyticsData.summary.bookings)} icon={FiUsers} subtitle={`${formatNumber(analyticsData.summary.tickets.sold)} tickets`} />
+											<MetricsCard dark compactOnMobile title="Revenue" value={formatCurrency(analyticsData.summary.revenue.total)} icon={FiDollarSign} subtitle={analyticsData.summary.revenue.discounts > 0 ? `${formatCurrency(analyticsData.summary.revenue.net)} after discounts` : "Ticket revenue"} />
+											<MetricsCard dark compactOnMobile title="Checked In" value={formatNumber(analyticsData.summary.tickets.checkedIn)} icon={FiCheckCircle} subtitle={`${analyticsData.summary.tickets.checkInRate.toFixed(0)}% of tickets sold`} />
 										</SimpleGrid>
-										<SimpleGrid columns={{ base: 1, sm: 2, lg: 4 }} spacing={4} mt={4}>
-											<MetricsCard dark title="Avg per Booking" value={formatCurrency(analyticsData.summary.revenue.averagePerBooking)} icon={FiTrendingUp} />
-											<MetricsCard dark title="Discounts Given" value={formatCurrency(analyticsData.summary.revenue.discounts)} icon={FiDollarSign} />
-											<MetricsCard dark title="Visitors Who Booked" value={`${analyticsData.summary.conversionRates.viewToBooking.toFixed(1)}%`} icon={FiTrendingUp} />
-											<MetricsCard dark title="Shares" value={formatNumber(analyticsData.summary.interactions.shares)} icon={FiShare2} />
+										<SimpleGrid columns={{ base: 2, sm: 2, lg: 4 }} spacing={{ base: 2, sm: 4 }} mt={{ base: 2, sm: 4 }}>
+											<MetricsCard dark compactOnMobile title="Avg per Booking" value={formatCurrency(analyticsData.summary.revenue.averagePerBooking)} icon={FiTrendingUp} />
+											<MetricsCard dark compactOnMobile title="Discounts Given" value={formatCurrency(analyticsData.summary.revenue.discounts)} icon={FiDollarSign} />
+											<MetricsCard dark compactOnMobile title="Visitors Who Booked" value={`${analyticsData.summary.conversionRates.viewToBooking.toFixed(1)}%`} icon={FiTrendingUp} />
+											<MetricsCard dark compactOnMobile title="Shares" value={formatNumber(analyticsData.summary.interactions.shares)} icon={FiShare2} />
 										</SimpleGrid>
 									</Box>
 
@@ -634,7 +685,7 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 									    EventTicketsComponent / EventCheckoutModel, so an event with no traffic
 									    since then still shows zeroes there. The note below says so rather than
 									    leaving it as a silent mystery. */}
-									<Box mb={8} bg="#1a1a1a" border="1px solid #2a2a2a" borderRadius="lg" p={5}>
+									<Box mb={8} bg="#1a1a1a" border="1px solid #2a2a2a" borderRadius="lg" p={{ base: 4, md: 5 }}>
 										<Text fontSize="lg" fontWeight="bold" color="white" mb={1}>From visit to booking</Text>
 										<Text fontSize="xs" color="#65676B" mb={5}>How many people reached each step. Each person counted once.</Text>
 
@@ -686,7 +737,7 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 										{/* What people actually clicked. Replaces the coordinate heatmap, which
 										    showed where on an unlabelled canvas clicks landed and therefore told
 										    a host nothing they could change. */}
-										<Box bg="#1a1a1a" border="1px solid #2a2a2a" borderRadius="lg" p={5}>
+										<Box bg="#1a1a1a" border="1px solid #2a2a2a" borderRadius="lg" p={{ base: 4, md: 5 }}>
 											<Text fontSize="lg" fontWeight="bold" color="white" mb={1}>Most-clicked buttons</Text>
 											<Text fontSize="xs" color="#65676B" mb={4}>Repeated clicks flag a control people expected to do something.</Text>
 											{behaviourLoading ? (
@@ -718,7 +769,7 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 
 										{/* Form drop-off, paired from the raw focus/submit rows the old "Named
 										    Events" table listed one line at a time. */}
-										<Box bg="#1a1a1a" border="1px solid #2a2a2a" borderRadius="lg" p={5}>
+										<Box bg="#1a1a1a" border="1px solid #2a2a2a" borderRadius="lg" p={{ base: 4, md: 5 }}>
 											<Text fontSize="lg" fontWeight="bold" color="white" mb={1}>Form drop-off</Text>
 											<Text fontSize="xs" color="#65676B" mb={4}>Started filling a form versus actually sending it.</Text>
 											{namedEventsLoading ? (
@@ -726,7 +777,19 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 											) : formStats.length === 0 ? (
 												<Text color="#9C9C9C" fontSize="sm">No form activity recorded yet.</Text>
 											) : (
-												<TableContainer sx={{ "& th": { color: "#9C9C9C", borderColor: "#2a2a2a" }, "& td": { borderColor: "#2a2a2a", color: "white" } }}>
+												<>
+												<PhoneStatRows
+													rows={formStats.map((f) => ({
+														key: f.form,
+														title: f.form,
+														badge: rateBadge(f),
+														stats: [
+															{ label: "Started", value: formatNumber(f.started) },
+															{ label: "Sent", value: formatNumber(f.submitted) },
+														],
+													}))}
+												/>
+												<TableContainer display={{ base: "none", md: "block" }} sx={{ "& th": { color: "#9C9C9C", borderColor: "#2a2a2a" }, "& td": { borderColor: "#2a2a2a", color: "white" } }}>
 													<Table variant="simple" size="sm">
 														<Thead><Tr><Th>Form</Th><Th isNumeric>Started</Th><Th isNumeric>Sent</Th><Th isNumeric>Completed</Th></Tr></Thead>
 														<Tbody>
@@ -736,25 +799,38 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 																	<Td isNumeric>{formatNumber(f.started)}</Td>
 																	<Td isNumeric>{formatNumber(f.submitted)}</Td>
 																	<Td isNumeric>
-																		<Badge colorScheme={f.rate >= 50 ? "green" : f.rate >= 20 ? "yellow" : "red"}>{f.rate}%</Badge>
+																		{rateBadge(f)}
 																	</Td>
 																</Tr>
 															))}
 														</Tbody>
 													</Table>
 												</TableContainer>
+												</>
 											)}
 										</Box>
 									</SimpleGrid>
 
 									{/* Traffic sources */}
 									{analyticsData.trafficSources.referrers.length > 0 && (
-										<Box bg="#1a1a1a" border="1px solid #2a2a2a" borderRadius="lg" p={5} mb={8}>
+										<Box bg="#1a1a1a" border="1px solid #2a2a2a" borderRadius="lg" p={{ base: 4, md: 5 }} mb={8}>
 											<Text fontSize="lg" fontWeight="bold" color="white" mb={1}>Where visitors came from</Text>
 											<Text fontSize="xs" color="#65676B" mb={4}>
 												{formatNumber(analyticsData.trafficSources.directTraffic.pageViews)} arrived directly ({analyticsData.trafficSources.directTraffic.percentage.toFixed(0)}%) &mdash; typed the link, or followed one from an email or a message.
 											</Text>
-											<TableContainer sx={{ "& th": { color: "#9C9C9C", borderColor: "#2a2a2a" }, "& td": { borderColor: "#2a2a2a", color: "white" } }}>
+											<PhoneStatRows
+												rows={analyticsData.trafficSources.referrers.map((ref, idx) => ({
+													key: idx,
+													title: ref.domain,
+													badge: referrerBadge(ref),
+													stats: [
+														{ label: "Visits", value: formatNumber(ref.pageViews) },
+														{ label: "People", value: formatNumber(ref.uniqueSessions) },
+														{ label: "Share", value: `${ref.percentage.toFixed(1)}%` },
+													],
+												}))}
+											/>
+											<TableContainer display={{ base: "none", md: "block" }} sx={{ "& th": { color: "#9C9C9C", borderColor: "#2a2a2a" }, "& td": { borderColor: "#2a2a2a", color: "white" } }}>
 												<Table variant="simple" size="sm">
 													<Thead>
 														<Tr>
@@ -770,9 +846,7 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 															<Tr key={idx} _hover={{ bg: "#262626" }}>
 																<Td><Text fontSize="sm" isTruncated maxW="300px">{ref.domain}</Text></Td>
 																<Td>
-																	<Badge colorScheme={ref.category === "search_engine" ? "blue" : ref.category === "social_media" ? "purple" : ref.category === "email" ? "orange" : "gray"} size="sm">
-																		{ref.category.replace(/_/g, " ")}
-																	</Badge>
+																	{referrerBadge(ref)}
 																</Td>
 																<Td isNumeric>{formatNumber(ref.pageViews)}</Td>
 																<Td isNumeric>{formatNumber(ref.uniqueSessions)}</Td>
@@ -787,9 +861,20 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 
 									{/* Devices */}
 									{analyticsData.devices.length > 0 && (
-										<Box bg="#1a1a1a" border="1px solid #2a2a2a" borderRadius="lg" p={5} mb={6}>
+										<Box bg="#1a1a1a" border="1px solid #2a2a2a" borderRadius="lg" p={{ base: 4, md: 5 }} mb={6}>
 											<Text fontSize="lg" fontWeight="bold" color="white" mb={4}>What they viewed it on</Text>
-											<TableContainer sx={{ "& th": { color: "#9C9C9C", borderColor: "#2a2a2a" }, "& td": { borderColor: "#2a2a2a", color: "white" } }}>
+											<PhoneStatRows
+												rows={analyticsData.devices.map((device, idx) => ({
+													key: idx,
+													title: deviceBadge(device),
+													stats: [
+														{ label: "Visits", value: formatNumber(device.count) },
+														{ label: "People", value: formatNumber(device.uniqueSessionsCount) },
+														{ label: "Share", value: `${device.percentage.toFixed(1)}%` },
+													],
+												}))}
+											/>
+											<TableContainer display={{ base: "none", md: "block" }} sx={{ "& th": { color: "#9C9C9C", borderColor: "#2a2a2a" }, "& td": { borderColor: "#2a2a2a", color: "white" } }}>
 												<Table variant="simple" size="sm">
 													<Thead>
 														<Tr>
@@ -802,7 +887,7 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 													<Tbody>
 														{analyticsData.devices.map((device, idx) => (
 															<Tr key={idx} _hover={{ bg: "#262626" }}>
-																<Td><Badge colorScheme="blue" textTransform="capitalize">{device.deviceType}</Badge></Td>
+																<Td>{deviceBadge(device)}</Td>
 																<Td isNumeric>{formatNumber(device.count)}</Td>
 																<Td isNumeric>{formatNumber(device.uniqueSessionsCount)}</Td>
 																<Td isNumeric>{device.percentage.toFixed(1)}%</Td>
@@ -889,7 +974,18 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 									{analyticsData.albums && analyticsData.albums.perAlbum.length > 0 && (
 										<Box mb={6}>
 											<Text fontSize="sm" fontWeight="bold" color="#9C9C9C" mb={3}>Top Albums by Access</Text>
-											<TableContainer sx={{ "& th": { color: "#9C9C9C", borderColor: "#2a2a2a" }, "& td": { borderColor: "#2a2a2a", color: "white" } }}>
+											<PhoneStatRows
+												rows={analyticsData.albums.perAlbum.map((a) => ({
+													key: a.albumId,
+													title: a.title,
+													stats: [
+														{ label: "Visitors", value: (a.visitors ?? 0).toLocaleString() },
+														{ label: "Accesses", value: a.accesses.toLocaleString() },
+														{ label: "Unique viewers", value: a.uniqueViewers.toLocaleString() },
+													],
+												}))}
+											/>
+											<TableContainer display={{ base: "none", md: "block" }} sx={{ "& th": { color: "#9C9C9C", borderColor: "#2a2a2a" }, "& td": { borderColor: "#2a2a2a", color: "white" } }}>
 												<Table variant="simple" size="sm">
 													<Thead><Tr><Th>Album</Th><Th isNumeric>Visitors</Th><Th isNumeric>Accesses</Th><Th isNumeric>Unique Viewers</Th></Tr></Thead>
 													<Tbody>
@@ -913,7 +1009,25 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 									{albumLogLoading ? (
 										<Center py={10}><Spinner color="#F79432" /></Center>
 									) : albumLog.length > 0 ? (
-										<TableContainer sx={{ "& th": { color: "#9C9C9C", borderColor: "#2a2a2a" }, "& td": { borderColor: "#2a2a2a", color: "white" } }}>
+										<>
+										{/* Phones: a card per visit. Seven columns were a long sideways scroll. */}
+										<Flex display={{ base: "flex", md: "none" }} direction="column" gap={2}>
+											{albumLog.map((r) => (
+												<Box key={r._id} bg="#1a1a1a" border="1px solid #2a2a2a" borderRadius="lg" p={3}>
+													<Flex justify="space-between" align="flex-start" gap={2}>
+														<Text minW={0} fontSize="sm" fontWeight="bold" color="white" overflowWrap="anywhere">{r.name}</Text>
+														<Flex gap={1} flexShrink={0}>{verifiedBadge(r)}{actionBadge(r)}</Flex>
+													</Flex>
+													<Text fontSize="13px" color="#9C9C9C" wordBreak="break-all">{r.email}</Text>
+													<Text fontSize="13px" color="white" mt={2} overflowWrap="anywhere">{r.albumTitle}</Text>
+													<Flex mt={2} columnGap={4} rowGap={1} wrap="wrap" fontSize="12px" color="#9C9C9C">
+														<Text>Signed in/up <Text as="span" color="#D6D6D6">{r.identifiedAt ? new Date(r.identifiedAt).toLocaleString() : "—"}</Text></Text>
+														<Text>Viewed <Text as="span" color="#D6D6D6">{new Date(r.date).toLocaleString()}</Text></Text>
+													</Flex>
+												</Box>
+											))}
+										</Flex>
+										<TableContainer display={{ base: "none", md: "block" }} sx={{ "& th": { color: "#9C9C9C", borderColor: "#2a2a2a" }, "& td": { borderColor: "#2a2a2a", color: "white" } }}>
 											<Table variant="simple" size="sm">
 												<Thead><Tr><Th>Album</Th><Th>Name</Th><Th>Email</Th><Th>Verified</Th><Th>Action</Th><Th>Signed in/up</Th><Th>Viewed</Th></Tr></Thead>
 												<Tbody>
@@ -922,8 +1036,8 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 															<Td><Text fontSize="sm">{r.albumTitle}</Text></Td>
 															<Td><Text fontSize="sm">{r.name}</Text></Td>
 															<Td><Text fontSize="sm">{r.email}</Text></Td>
-															<Td><Badge colorScheme={r.verified ? "green" : "gray"}>{r.verified ? "Verified" : "Unverified"}</Badge></Td>
-															<Td><Badge colorScheme={r.action === "signup" ? "green" : "blue"}>{r.action === "signup" ? "Signup" : "Login"}</Badge></Td>
+															<Td>{verifiedBadge(r)}</Td>
+															<Td>{actionBadge(r)}</Td>
 															{/* When they identified themselves — a session carries no such moment, and a
 															    pre-gate cookie never recorded one, so both show a dash. */}
 															<Td><Text fontSize="sm" color="#9C9C9C">{r.identifiedAt ? new Date(r.identifiedAt).toLocaleString() : "—"}</Text></Td>
@@ -933,6 +1047,7 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 												</Tbody>
 											</Table>
 										</TableContainer>
+										</>
 									) : (
 										<Text color="#9C9C9C" fontSize="sm">No album access recorded for this event yet.</Text>
 									)}
@@ -961,7 +1076,27 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 												)}
 
 												<Text fontSize="sm" fontWeight="bold" color="#9C9C9C" mb={3}>Per Viewer</Text>
-												<TableContainer sx={{ "& th": { color: "#9C9C9C", borderColor: "#2a2a2a" }, "& td": { borderColor: "#2a2a2a", color: "white", verticalAlign: "top" } }}>
+												<Flex display={{ base: "flex", md: "none" }} direction="column" gap={2}>
+													{interestRows.map((r) => (
+														<Box key={r._id} bg="#1a1a1a" border="1px solid #2a2a2a" borderRadius="lg" p={3}>
+															<Flex justify="space-between" align="flex-start" gap={2}>
+																<Text minW={0} fontSize="sm" fontWeight="bold" color="white" overflowWrap="anywhere">{r.name}</Text>
+																<Box flexShrink={0}>{verifiedBadge(r)}</Box>
+															</Flex>
+															<Text fontSize="13px" color="#9C9C9C" wordBreak="break-all">{r.email}</Text>
+															<Text fontSize="11px" color="#9C9C9C" fontWeight="bold" textTransform="uppercase" mt={3} mb={1}>Interests</Text>
+															{interestChips(r)}
+															{r.customInterests.length > 0 && (
+																<>
+																	<Text fontSize="11px" color="#9C9C9C" fontWeight="bold" textTransform="uppercase" mt={3} mb={1}>Their own</Text>
+																	{customChips(r)}
+																</>
+															)}
+															<Text fontSize="12px" color="#9C9C9C" mt={3}>{new Date(r.date).toLocaleString()}</Text>
+														</Box>
+													))}
+												</Flex>
+												<TableContainer display={{ base: "none", md: "block" }} sx={{ "& th": { color: "#9C9C9C", borderColor: "#2a2a2a" }, "& td": { borderColor: "#2a2a2a", color: "white", verticalAlign: "top" } }}>
 													<Table variant="simple" size="sm">
 														<Thead><Tr><Th>Name</Th><Th>Email</Th><Th>Verified</Th><Th>Interests</Th><Th>Their Own</Th><Th>Date</Th></Tr></Thead>
 														<Tbody>
@@ -969,29 +1104,9 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 																<Tr key={r._id} _hover={{ bg: "#262626" }}>
 																	<Td><Text fontSize="sm">{r.name}</Text></Td>
 																	<Td><Text fontSize="sm">{r.email}</Text></Td>
-																	<Td><Badge colorScheme={r.verified ? "green" : "gray"}>{r.verified ? "Verified" : "Unverified"}</Badge></Td>
-																	<Td>
-																		<Flex wrap="wrap" gap={1}>
-																			{r.optOut && (
-																				<Badge bg="#4a1f1f" color="#ff9a9a" borderRadius="full" px={2} textTransform="none" fontWeight="normal">Opted out</Badge>
-																			)}
-																			{r.interests.map((i) => (
-																				<Badge key={i} bg="#2a2a2a" color="white" borderRadius="full" px={2} textTransform="none" fontWeight="normal">{i}</Badge>
-																			))}
-																			{!r.optOut && r.interests.length === 0 && <Text fontSize="sm" color="#65676B">—</Text>}
-																		</Flex>
-																	</Td>
-																	<Td>
-																		{r.customInterests.length > 0 ? (
-																			<Flex wrap="wrap" gap={1}>
-																				{r.customInterests.map((c, ci) => (
-																					<Badge key={`${c}-${ci}`} bg="#3a2a12" color="#F79432" borderRadius="full" px={2} textTransform="none" fontWeight="normal">{c}</Badge>
-																				))}
-																			</Flex>
-																		) : (
-																			<Text fontSize="sm" color="#65676B">—</Text>
-																		)}
-																	</Td>
+																	<Td>{verifiedBadge(r)}</Td>
+																	<Td>{interestChips(r)}</Td>
+																	<Td>{customChips(r)}</Td>
 																	<Td><Text fontSize="sm" color="#9C9C9C">{new Date(r.date).toLocaleString()}</Text></Td>
 																</Tr>
 															))}

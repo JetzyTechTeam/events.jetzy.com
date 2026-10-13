@@ -3906,3 +3906,16 @@ An admin scanning a list of events could see tickets and guests on each card but
 - Every phone rule in `CheckInPortal.tsx` / `CheckInStats.tsx` goes through one `PHONE` media-query constant via `sx`, so none of it can reach a tablet or desktop.
 - **Testing note:** the scanner window can be opened in headless Chrome with `--use-fake-device-for-media-stream --use-fake-ui-for-media-stream`. Reading a real QR code can only be checked on a real phone.
 
+### Per-event analytics on a phone (IMPLEMENTED 2026-10-13)
+
+`/console/events/[eventId]/analytics` (admin-only). Below `md` only; both tabs at 1280px and 820px diff to 0 pixels. Dates, both CSV exports, tab switching and every query are untouched.
+
+- **One gutter.** The page added 16px inside `ConsoleLayout`'s own, so everything sat 32px from both edges.
+- **Performance snapshot stays a TABLE.** Comparing the four windows side by side is its whole point, so it is not turned into cards. On phones the metric column is frozen (`position: sticky`) and may wrap, and cells are tightened. It still needs a short swipe inside its own box, because a money value like `$13,579.50` in four columns does not fit 356px - the page itself never scrolls sideways.
+- **Headline numbers** are two tiles per row. `MetricsCard` has an optional **`compactOnMobile`** prop (off by default): on phones it hides the icon bubble and uses a 20px value so a currency figure fits a half-width tile.
+- **`src/components/analytics/PhoneStatRows.tsx`** - a name-plus-numbers table laid out as a list for phones (`display={{ base: "block", md: "none" }}`). Used for Form drop-off, Where visitors came from, What they viewed it on and Top Albums. It decides nothing: every value and badge is handed in already built. Reuse it on platform analytics.
+- **Access Log** (7 columns) and **Per Viewer** (6 columns) are cards on phones.
+- Badges that carry a rule are built once - `rateBadge`, `referrerBadge`, `deviceBadge`, `verifiedBadge`, `actionBadge`, `interestChips`, `customChips` - and the table cell and the phone layout both render them.
+- **`DateRangeSelector` (shared with platform analytics)** got media-query-only rules: 44px / 16px date inputs side by side, Apply / Clear sharing a row, the five presets as one sideways-scrolling row. Its desktop was verified identical on platform analytics too.
+- **Verification gap worth knowing:** platform analytics shows "No data available" when rendered logged out, so its `MetricsCard` tiles were never on screen in the regression capture. They are covered by this page (same component, 0 pixels), and without `compactOnMobile` the component only gains two inert class names.
+
