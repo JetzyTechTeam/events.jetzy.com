@@ -15,8 +15,8 @@ import { pricingFromBooking, type RecurringCharge } from "@/lib/ticket-pricing"
 import { getStripeClient } from "@/lib/premium"
 import { heldMemberships } from "@/lib/premium-eligibility"
 import { MEMBERSHIPS } from "@/lib/memberships"
-import { bookingMemberships } from "@/lib/booking-memberships"
-import { bookingTicketCount, partialApprovalRefusal, partialCaptureCents, PARTIAL_REFUSAL_MESSAGE } from "@/lib/booking-approval"
+import { bookingMemberships, bookingMembershipTotal } from "@/lib/booking-memberships"
+import { approvalCaptureCents, bookingTicketCount, partialApprovalRefusal, PARTIAL_REFUSAL_MESSAGE } from "@/lib/booking-approval"
 import { plannedTickets } from "@/lib/booking-request-edit"
 import { Types } from "mongoose"
 import { startMembershipSubscription } from "@/lib/membership-subscriptions"
@@ -150,11 +150,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		}
 
 		if (requestedQty < originalQty) {
-			// Both refusals are about money, not policy — see `booking-approval.ts`.
-			const refusal = partialApprovalRefusal(originalTickets, {
-				sellsMembership: bookingMemberships(booking.payment).length > 0,
-				seatable: requestedQty,
-			})
+			// About money, not policy — see `booking-approval.ts`. A membership on the booking is
+			// no longer a refusal: it is sold once per order, so the capture below charges it in
+			// full and scales only the ticket part of the hold.
+			const refusal = partialApprovalRefusal(originalTickets, { seatable: requestedQty })
 			if (refusal) {
 				return sendResponse(res, null, PARTIAL_REFUSAL_MESSAGE[refusal], false, ResCode.BAD_REQUEST)
 			}
@@ -335,10 +334,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			// simply releases the difference.
 			const heldAmount = Number(booking.payment!.amount) || 0
 			const ticketPortion = heldAmount - releasedAmount
-			// `partialCaptureCents` is the same function the console uses to tell the host what
-			// will be charged, so the figure shown and the figure taken cannot differ.
+			// A partial capture on a bundled hold charges each membership still owed IN FULL and
+			// scales only the ticket part — a membership is sold once per order, not per ticket.
+			// `approvalCaptureCents` is the same function the console uses to tell the host what
+			// will be charged, so the figure shown and the figure taken cannot differ. With no
+			// membership on the hold it is exactly the old proportional capture.
+			const membershipHeld = bookingMembershipTotal(booking.payment as any, pendingMemberships)
 			const captureAmount = isPartial
-				? partialCaptureCents(ticketPortion, approvedQty, originalQty)
+				? approvalCaptureCents({
+					held: heldAmount,
+					membershipHeld,
+					membershipKept: membershipHeld - releasedAmount,
+					approved: approvedQty,
+					requested: originalQty,
+				})
 				: Math.max(0, Math.round(ticketPortion * 100))
 
 			pi = releasedAmount > 0 || isPartial
@@ -592,7 +601,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			// `reason: "adjusted"` when the lower number was the host's edit rather than a lack of
 			// room — "the event only had room for 2" would be untrue then.
 			...(isPartial
-				? { partialApproval: { requested: originalQty, confirmed: approvedQty, ...(reducedByEdit ? { reason: "adjusted" as const } : {}) } }
+				? {
+					partialApproval: {
+						requested: originalQty,
+						confirmed: approvedQty,
+						...(reducedByEdit ? { reason: "adjusted" as const } : {}),
+						// Fewer tickets, same membership — said outright, or a guest who asked for two
+						// Premium tickets and got one reasonably wonders whether the membership went too.
+						...(pendingMemberships.length > 0
+							? { membershipLabels: pendingMemberships.map((row) => MEMBERSHIPS[row.key as keyof typeof MEMBERSHIPS]?.label || "membership") }
+							: {}),
+					},
+				}
 				: {}),
 			event,
 			firstName: firstName || booking.customerName,

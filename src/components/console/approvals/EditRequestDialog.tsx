@@ -16,7 +16,9 @@ import {
 	ModalOverlay,
 	Text,
 } from "@chakra-ui/react"
-import { bookingTicketCount, partialCaptureCents } from "@/lib/booking-approval"
+import { approvalCaptureCents, bookingTicketCount } from "@/lib/booking-approval"
+import { bookingMembershipTotal, bookingMemberships } from "@/lib/booking-memberships"
+import { MEMBERSHIPS, type MembershipKey } from "@/lib/memberships"
 import {
 	GUEST_NAME_LIMIT,
 	REQUEST_LOCK_MESSAGE,
@@ -44,6 +46,9 @@ import type { RequestEditController } from "./useRequestEdit"
  *    ticket can't be added without the guest paying again. The lower number is saved on the
  *    request and the card is charged for it only when the request is approved; the rest of the
  *    hold is released then. Until approval it can be put back up to what was asked for.
+ *  - MEMBERSHIP (Premium / Concierge), free or paid — DOWN only, same saved plan. A membership
+ *    is sold once per order, so fewer tickets leaves it untouched; on a hold it is charged in
+ *    full and only the ticket part shrinks.
  *
  * Every rule comes from `booking-request-edit.ts`, which `api/bookings/update-request.ts`
  * enforces too — so Save is never offered for something the server would refuse.
@@ -84,7 +89,9 @@ export function EditRequestDialog({
 		setDraft(plannedTickets(editTarget))
 	}, [editTarget])
 
-	const { mode, lock } = requestEditMode(target)
+	const { mode, lock, hasHold, sellsMembership } = requestEditMode(target)
+	// `reduce`: a hold, a membership, or both — the number can only go down.
+	const reduceOnly = mode === "reduce"
 	const requested = ticketRows(target?.tickets)
 	// In the order of the request's own rows. A ticket type deleted since the request was made
 	// still holds its seats, so it is listed under a plain label rather than hidden.
@@ -101,8 +108,9 @@ export function EditRequestDialog({
 		setDraft((prev) =>
 			prev.map((row) => {
 				if (row.ticketId !== ticketId) return row
-				// A hold can't be raised, so `+` stops at what the card is held for.
-				const max = mode === "hold" ? requestedById.get(ticketId) ?? row.quantity : 1000
+				// A hold can't be raised and a membership ticket can't be added to, so `+` stops at
+				// what was requested.
+				const max = reduceOnly ? requestedById.get(ticketId) ?? row.quantity : 1000
 				return { ...row, quantity: Math.max(0, Math.min(max, row.quantity + delta)) }
 			}),
 		)
@@ -114,15 +122,24 @@ export function EditRequestDialog({
 	// The same refusals the server applies, asked before the request is sent.
 	const ticketRefusal = !ticketsChanged
 		? null
-		: mode === "hold"
+		: reduceOnly
 			? holdPlanRefusal(requested, draft)
 			: freeTicketEditRefusal(requested, draft, eventTickets, {
 					emptyMessage: "Keep at least one ticket, or decline the request instead.",
 				})
 
-	const held = Number(target?.payment?.amount) || 0
-	// `mode === "hold"` already rules out a membership riding on the hold, so all of it is tickets.
-	const chargeOnApproval = mode === "hold" && draftQty > 0 && draftQty < requestedQty ? partialCaptureCents(held, draftQty, requestedQty) / 100 : held
+	const held = hasHold ? Number(target?.payment?.amount) || 0 : 0
+	// The membership part of the hold — charged in full whatever the ticket count. A free-months
+	// row holds 0, which is right: nothing was held for it.
+	const membershipRows = bookingMemberships(target?.payment)
+	const membershipHeld = hasHold ? bookingMembershipTotal(target?.payment, membershipRows) : 0
+	const membershipNames = membershipRows.map((row) => MEMBERSHIPS[row.key as MembershipKey]?.label || "membership").join(" and ")
+	// The same function `approve.ts` captures with. Assumes every membership is still owed; one
+	// the guest already holds by then is released at approval, so the real charge can be lower.
+	const chargeOnApproval =
+		hasHold && draftQty > 0 && draftQty < requestedQty
+			? approvalCaptureCents({ held, membershipHeld, membershipKept: membershipHeld, approved: draftQty, requested: requestedQty }) / 100
+			: held
 
 	const canSave = !!editTarget && normalizedName.ok && !ticketRefusal && (nameChanged || ticketsChanged)
 
@@ -182,10 +199,10 @@ export function EditRequestDialog({
 					) : (
 						<>
 							{draft.map((row, i) => {
-								const max = mode === "hold" ? requestedById.get(row.ticketId) ?? row.quantity : 1000
-								// A hold covers one ticket type, so its single row can't go below 1 —
-								// that would be declining the request, which has its own button.
-								const min = mode === "hold" ? 1 : 0
+								const max = reduceOnly ? requestedById.get(row.ticketId) ?? row.quantity : 1000
+								// A reduce-only request covers one ticket type, so its single row can't go
+								// below 1 — that would be declining the request, which has its own button.
+								const min = reduceOnly ? 1 : 0
 								return (
 									<Flex key={row.ticketId} align="center" justify="space-between" gap={4} mb={3}>
 										<Text fontSize="sm" noOfLines={2} flex="1">
@@ -218,21 +235,49 @@ export function EditRequestDialog({
 								)
 							})}
 
-							{mode === "hold" ? (
+							{reduceOnly ? (
 								<Box bg="rgba(247,148,50,0.12)" border="1px solid rgba(247,148,50,0.4)" borderRadius="8px" p={3} mt={2}>
 									<Text fontSize="sm" color="#F79432" fontWeight={700}>
 										{draftQty < requestedQty
 											? `${draftQty} of the ${requestedQty} tickets requested`
-											: `Card held for ${money(held)} · ${requestedQty} ${requestedQty === 1 ? "ticket" : "tickets"}`}
+											: hasHold
+												? `Card held for ${money(held)} · ${requestedQty} ${requestedQty === 1 ? "ticket" : "tickets"}`
+												: `${requestedQty} ${requestedQty === 1 ? "ticket" : "tickets"} requested`}
 									</Text>
+									{/* What is held, split, so the host can see the membership is not part of
+									    what shrinks. Only when there is a membership charge to separate out. */}
+									{hasHold && membershipHeld > 0 && (
+										<Text fontSize="xs" color="#D6D6D6" mt={2}>
+											The hold covers the tickets ({money(held - membershipHeld)}) and the first period of {membershipNames} ({money(membershipHeld)}).
+										</Text>
+									)}
 									<Text fontSize="xs" color="#D6D6D6" mt={2}>
-										{draftQty < requestedQty
-											? `When you approve, the card is charged ${money(chargeOnApproval)} and the other ${money(held - chargeOnApproval)} of the hold is released. Nothing is charged until then, and you can put the number back up to ${requestedQty} before approving.`
-											: "You can approve fewer tickets than were requested — only those are charged, and the rest of the hold is released when you approve."}
+										{hasHold
+											? draftQty < requestedQty
+												? `When you approve, the card is charged ${money(chargeOnApproval)} and the other ${money(held - chargeOnApproval)} of the hold is released${
+														membershipHeld > 0 ? ` — the ${membershipNames} is charged in full, only the tickets go down` : ""
+													}. Nothing is charged until then, and you can put the number back up to ${requestedQty} before approving.`
+												: "You can approve fewer tickets than were requested — only those are charged, and the rest of the hold is released when you approve."
+											: draftQty < requestedQty
+												? `The request will be approved for ${draftQty} when you approve it. You can put the number back up to ${requestedQty} before then.`
+												: "You can approve fewer tickets than were requested. Nothing is charged for the tickets."}
 									</Text>
+									{sellsMembership && (
+										<Text fontSize="xs" color="#D6D6D6" mt={2}>
+											This ticket comes with {membershipNames}. It is sold once per order, so approving fewer tickets doesn&apos;t
+											change the membership.
+										</Text>
+									)}
+									{hasHold && membershipHeld > 0 && draftQty < requestedQty && (
+										<Text fontSize="xs" color="#9C9C9C" mt={2}>
+											If the guest already holds the membership by the time you approve, that part of the hold is released too, so the
+											final charge can be lower.
+										</Text>
+									)}
 									<Text fontSize="xs" color="#D6D6D6" mt={2}>
-										Tickets can&apos;t be added: a card hold can&apos;t be raised, and payments aren&apos;t refunded once taken. A guest who
-										wants more books again.
+										{hasHold
+											? "Tickets can't be added: a card hold can't be raised, and payments aren't refunded once taken. A guest who wants more books again."
+											: "Tickets can't be added to a membership ticket here — each person is limited in how many they can hold for an event. A guest who wants more books again."}
 									</Text>
 								</Box>
 							) : (

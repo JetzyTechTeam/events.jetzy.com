@@ -146,7 +146,16 @@ type TicketEmailData = {
    * `reason: "adjusted"` — the host chose to confirm fewer (an edit in the Approvals tab), so
    * the note must not claim the event ran out of room. Absent = capacity was short.
    */
-  partialApproval?: { requested: number; confirmed: number; reason?: "adjusted" }
+  partialApproval?: {
+    requested: number
+    confirmed: number
+    reason?: "adjusted"
+    /**
+     * Memberships sold with the order. A membership comes with the ORDER, not with each ticket,
+     * so fewer tickets leaves it exactly as bought — and the note says so.
+     */
+    membershipLabels?: string[]
+  }
   amountCharged?: number // paid approvals only: the hold has just been captured, so say so
   /**
    * Itemised order total. Preferred over the legacy referralCode/discountAmount trio —
@@ -1681,6 +1690,11 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
               You have <strong>not</strong> been charged for the ${partialApproval.requested - partialApproval.confirmed === 1 ? "other ticket" : "other tickets"} &mdash; any hold on your card for
               ${partialApproval.requested - partialApproval.confirmed === 1 ? "it" : "them"} has been released.
             </p>
+            ${partialApproval.membershipLabels?.length ? `
+            <p style="color: #856404; margin: 10px 0 0 0; font-size: 14px;">
+              Your ${partialApproval.membershipLabels.join(" and ")} membership${partialApproval.membershipLabels.length > 1 ? "s are" : " is"} not affected &mdash; it comes with your order, not with each ticket.
+            </p>
+            ` : ""}
           </div>
           ` : ""}
 

@@ -264,7 +264,12 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (ctx) => {
     // already set on a held request.
     "payment.memberships.key": 1,
     "payment.memberships.status": 1,
+    // Amounts too: on a held request the membership is charged in full and only the ticket
+    // part shrinks, so the editor's "will be charged" figure needs to know how much is which.
+    "payment.memberships.amount": 1,
+    "payment.memberships.trialMonths": 1,
     "payment.premiumStatus": 1,
+    "payment.premiumAmount": 1,
     adjustedTickets: 1,
   })
     .sort({ createdAt: -1 })

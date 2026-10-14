@@ -3152,13 +3152,16 @@ CEO ask: change the number of tickets a request is for, and the name on it, with
 
 | Request | Quantity | How it is stored |
 |---|---|---|
-| Free | up or down | `booking.tickets` is changed |
-| Card hold (`authorized` / `failed`) | **down only** | `booking.tickets` untouched; lower number in `adjustedTickets` |
-| Sells a membership, multi-type hold, mid-capture, lapsed hold, priced with no payment record | locked | — |
+| Free, no membership (`mode: "free"`) | up or down | `booking.tickets` is changed |
+| Card hold (`authorized` / `failed`), with or without a membership (`mode: "reduce"`) | **down only** | `booking.tickets` untouched; lower number in `adjustedTickets` |
+| Free ticket that sells a membership (`mode: "reduce"`) | **down only** | same — plan, applied at approval |
+| Multi-type hold or multi-type membership request, mid-capture, lapsed hold, priced with no payment record | locked | — |
+
+**Membership requests became reduce-only on 2026-10-14** (they were locked). A membership is sold once per ORDER, so fewer tickets leaves it exactly as sold. On a hold, `approve.ts` captures with `approvalCaptureCents`: membership in full (less any the guest already owns), ticket part scaled. Never UP on a membership request, even a $0 one — that would step past the per-person membership-ticket limit (`PREMIUM_TICKET_LIMIT_PER_EVENT`) with nothing paid. The approval email adds "Your <membership> membership is not affected" (`partialApproval.membershipLabels`). `/console/bookings/[eventId]` now also projects `payment.memberships.amount` / `.trialMonths` and `payment.premiumAmount` for the editor's charge preview.
 
 - **Why a hold can't go up:** Stripe cannot capture more than was authorized, so an added ticket can't be charged without the guest paying again — and once captured, money is never returned. A guest who wants more books again.
 - **Why a hold's `tickets` is never rewritten:** the failure direction. A path that ignores `adjustedTickets` approves the request as the guest made it and charges the full hold for the full tickets — consistent. Had the edit rewritten `tickets`, a path that forgot would capture the full hold for fewer tickets, with no refund to fix it. Reject, guest cancel and hold expiry all read the booking unchanged and needed no edits.
-- **The reduction becomes real at approval**, through `approve.ts`'s existing partial path: proportional `amount_to_capture`, the rest of the hold released (not a refund — never taken), `subTotal`/`discountAmount`/`total` scaled, `ticketsEditHistory` written, guest told. No new money math.
+- **The reduction becomes real at approval**, through `approve.ts`'s partial path: `amount_to_capture` from `approvalCaptureCents` (ticket part scaled, any membership in full), the rest of the hold released (not a refund — never taken), `subTotal`/`discountAmount`/`total` scaled, `ticketsEditHistory` written, guest told.
 - **Until approval it can be put back up** to what was asked for; equal-to-requested `$unset`s the plan.
 - **`src/lib/booking-request-edit.ts`** (pure, client-safe) is the one home of the rules: `requestEditMode`, `plannedTickets` (THE reader of `adjustedTickets`), `isRequestAdjusted`, `holdPlanRefusal`, `freeTicketEditRefusal`, `normalizeGuestName`, `REQUEST_LOCK_MESSAGE`. The dialog and `update-request.ts` both import it. `freeTicketEditRefusal` was extracted from `update-tickets.ts`, which now imports it.
 - **`plannedTickets` ignores a plan that isn't a valid reduction** (wrong ticket id, above the hold, booking not pending) and returns the request as made. `approve.ts` reads through it too, so the server approves exactly what the console is showing.
@@ -3355,13 +3358,13 @@ until it expired. Nothing in the tab warned them either.
   fit" server-side would be a race — another approval could free a seat between the host seeing
   the button and pressing it, and the request would fail for a reason they can't act on. The UI
   decides when to OFFER; the server decides what is legal.
-- **Two hard refusals, both about money, not policy** (`partialApprovalRefusal`):
+- **One hard refusal, about money, not policy** (`partialApprovalRefusal`):
   - **More than one ticket type.** A booking stores NO per-ticket price, so partial capture scales
     the held amount proportionally — exact under any discount, but only when every ticket costs
     the same. Single-select checkout guarantees one type; a mobile-posted order does not, so this
     fails closed.
-  - **The ticket sells a membership.** Quantity is tied to how many subscriptions get created and
-    to `PREMIUM_TICKET_LIMIT_PER_EVENT`.
+  - ~~The ticket sells a membership~~ — no longer refused (2026-10-14): a membership is sold once per
+    order, and `approvalCaptureCents` charges it in full while scaling only the ticket part.
 - **Capture math:** `amount_to_capture = round(ticketPortion × approved / requested × 100)`, where
   `ticketPortion = payment.amount − releasedAmount`. It COMPOSES with the existing membership
   release — both reasons to capture less apply at once. **Not a refund:** capturing under the

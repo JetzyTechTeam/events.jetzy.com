@@ -14,9 +14,9 @@ import {
 import { DateTime } from "luxon"
 import { isCaptureFailed } from "@/lib/booking-status"
 import { describeDiscount } from "@/lib/booking-revenue"
-import { bookingMemberships } from "@/lib/booking-memberships"
+import { bookingMembershipTotal, bookingMemberships } from "@/lib/booking-memberships"
 import { MEMBERSHIPS, type MembershipKey } from "@/lib/memberships"
-import { bookingTicketCount, partialApprovalRefusal, partialCaptureCents, PARTIAL_REFUSAL_MESSAGE } from "@/lib/booking-approval"
+import { approvalCaptureCents, bookingTicketCount, partialApprovalRefusal, PARTIAL_REFUSAL_MESSAGE } from "@/lib/booking-approval"
 import { plannedTickets } from "@/lib/booking-request-edit"
 import type { BookingApprovalsController } from "./useBookingApprovals"
 import { EditRequestDialog } from "./EditRequestDialog"
@@ -90,25 +90,29 @@ export function ApprovalDialogs({ controller, event }: { controller: BookingAppr
 							const approveFit = fitFor(approveTarget)
 							const seatable = approveFit.seatable ?? thisQty
 							const shortfall = !approveFit.fits
-							const refusal = shortfall
-								? partialApprovalRefusal(approveTarget.tickets, {
-									sellsMembership: approveMemberships.length > 0,
-									seatable,
-								})
-								: null
+							const refusal = shortfall ? partialApprovalRefusal(approveTarget.tickets, { seatable }) : null
 							const canSeatPart = shortfall && !refusal && seatable > 0
 
 							// How many tickets pressing the button will actually confirm, and what that
 							// does to the money. Fewer than were asked for — whether the host edited
 							// the request or the room ran short — means the card is charged for those
-							// only: the same proportional capture `approve.ts` makes, from the same
-							// function, so the figure here is the figure taken. A request that can be
-							// reduced never carries a membership, so the whole hold is tickets.
+							// only: the same capture `approve.ts` makes, from the same function, so the
+							// figure here is the figure taken. A membership on the hold is charged in
+							// full; only the ticket part is scaled.
 							const approveQty = canSeatPart ? seatable : thisQty
 							const reduced = approveQty < askedQty && askedQty > 0
 							const ratio = reduced ? approveQty / askedQty : 1
+							const membershipHeld = held !== undefined ? bookingMembershipTotal(approveTarget?.payment, approveMemberships) : 0
 							const chargeNow =
-								held !== undefined && reduced ? partialCaptureCents(Number(held) || 0, approveQty, askedQty) / 100 : held
+								held !== undefined && reduced
+									? approvalCaptureCents({
+										held: Number(held) || 0,
+										membershipHeld,
+										membershipKept: membershipHeld,
+										approved: approveQty,
+										requested: askedQty,
+									}) / 100
+									: held
 
 							return (
 								<>
@@ -228,7 +232,7 @@ export function ApprovalDialogs({ controller, event }: { controller: BookingAppr
 														: canSeatPart
 															? `You can confirm ${seatable} now. ${
 																	approveTarget?.payment?.status
-																		? `The card is charged for ${seatable} only — the rest of the hold is released and nothing is refunded.`
+																		? `The card is charged for ${seatable} only${approveMemberships.length > 0 ? " (plus the membership, in full)" : ""} — the rest of the hold is released and nothing is refunded.`
 																		: "The guest is told they asked for more than was available."
 																}`
 															: "Decline this request, or approve it once more spots free up."}

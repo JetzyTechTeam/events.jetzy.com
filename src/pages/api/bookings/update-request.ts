@@ -95,7 +95,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		return sendResponse(res, null, "This request has already been decided, so it can no longer be edited.", false, ResCode.BAD_REQUEST)
 	}
 
-	const { mode, lock } = requestEditMode(booking as any)
+	const { mode, lock, hasHold, sellsMembership } = requestEditMode(booking as any)
 	// A capture is in flight. Nothing about the request may move under it — not even the name,
 	// which the confirmation email about to be sent is built from.
 	if (lock === "in_progress") {
@@ -165,7 +165,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				unset.adjustedTicketsBy = ""
 			}
 		} else {
-			// ---- A card hold: plan a LOWER quantity, never touch what the hold was sized for. ----
+			// ---- `reduce`: a card hold, a membership, or both. ----
+			// Plan a LOWER quantity and never touch `tickets` — on a hold that is what the card
+			// is held for, and on a membership request it is what the per-person membership-ticket
+			// limit was checked against. `holdPlanRefusal` refuses anything above the original,
+			// so no edit here can add a ticket or a charge.
 			const refusal = holdPlanRefusal(requested, incoming)
 			if (refusal) return sendResponse(res, null, refusal, false, ResCode.BAD_REQUEST)
 
@@ -190,7 +194,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				set.adjustedTicketsAt = editedAt
 				set.adjustedTicketsBy = editedBy
 				said.push(
-					`Set to ${plannedQty} of the ${requestedQty} tickets requested. The card is charged for ${plannedQty === 1 ? "that one" : `those ${plannedQty}`} only when the request is approved.`,
+					[
+						`Set to ${plannedQty} of the ${requestedQty} tickets requested.`,
+						hasHold
+							? `The card is charged for ${plannedQty === 1 ? "that one" : `those ${plannedQty}`}${sellsMembership ? " and the membership" : ""} only when the request is approved.`
+							: "It applies when the request is approved.",
+						sellsMembership ? "The membership is not affected." : "",
+					]
+						.filter(Boolean)
+						.join(" "),
 				)
 			}
 		}

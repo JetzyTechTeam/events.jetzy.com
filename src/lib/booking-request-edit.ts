@@ -38,17 +38,31 @@ type RequestLike =
 export const ticketRows = (tickets?: TicketRowLike[] | null): BookingTicketRow[] =>
 	(tickets || []).map((t) => ({ ticketId: String(t?.ticketId), quantity: Number(t?.quantity) || 0 }))
 
-export type RequestEditMode = "free" | "hold" | "locked"
+/**
+ * - `free`   — no money and no membership behind the request: tickets change, up or down.
+ * - `reduce` — a card hold, a membership, or both: DOWN only, stored as a plan
+ *              (`adjustedTickets`) and applied at approval.
+ * - `locked` — the quantity can't be changed (see `RequestEditLock`).
+ */
+export type RequestEditMode = "free" | "reduce" | "locked"
 
-export type RequestEditLock = "sells_membership" | "multiple_ticket_types" | "in_progress" | "hold_gone" | "unknown_money"
+export type RequestEditLock = "multiple_ticket_types" | "in_progress" | "hold_gone" | "unknown_money"
 
 export const REQUEST_LOCK_MESSAGE: Record<RequestEditLock, string> = {
-	sells_membership: "This request includes a membership, so its ticket quantity can't be changed.",
 	multiple_ticket_types:
-		"This request has a card hold covering more than one ticket type, so its quantity can't be changed — there is no per-ticket price to charge part of it by.",
+		"This request covers more than one ticket type, so its quantity can't be changed — the price of each ticket isn't stored separately, so there is no safe way to charge for part of it.",
 	in_progress: "This request is being charged right now.",
 	hold_gone: "The card hold on this request is no longer active, so its quantity can't be changed.",
 	unknown_money: "This request has a price but no payment record, so its quantity can't be changed.",
+}
+
+export type RequestEditModeResult = {
+	mode: RequestEditMode
+	lock?: RequestEditLock
+	/** A live card hold sits behind the request (`authorized`, or a `failed` capture to retry). */
+	hasHold: boolean
+	/** The request sells a membership (Premium / Concierge) — once per order, never per ticket. */
+	sellsMembership: boolean
 }
 
 /**
@@ -57,29 +71,39 @@ export const REQUEST_LOCK_MESSAGE: Record<RequestEditLock, string> = {
  *
  * `failed` counts as a hold: it is a capture that didn't go through, the booking is still
  * PENDING and `approve.ts` retries it against the same authorization.
+ *
+ * A request that sells a membership is `reduce`, free or paid. It used to be locked; it no
+ * longer needs to be, because a membership is sold ONCE PER ORDER — fewer tickets never means
+ * fewer memberships — and `approvalCaptureCents` charges the membership in full while scaling
+ * only the ticket part of a hold. It is never `free`, even on a $0 ticket: adding tickets there
+ * would step past the per-person membership-ticket limit checkout enforces, with nothing paid.
  */
-export const requestEditMode = (booking: RequestLike): { mode: RequestEditMode; lock?: RequestEditLock } => {
+export const requestEditMode = (booking: RequestLike): RequestEditModeResult => {
 	const status = booking?.payment?.status as string | undefined
+	const hasHold = (status === "authorized" || status === "failed") && !isHoldExpired(booking as any)
+	const sellsMembership = bookingMemberships(booking?.payment).length > 0
+	const result = (mode: RequestEditMode, lock?: RequestEditLock): RequestEditModeResult => ({
+		mode,
+		...(lock ? { lock } : {}),
+		hasHold,
+		sellsMembership,
+	})
 
-	if (status === "capturing") return { mode: "locked", lock: "in_progress" }
-	if (status && (isHoldExpired(booking as any) || (status !== "authorized" && status !== "failed"))) {
-		return { mode: "locked", lock: "hold_gone" }
-	}
-	// Free or held alike: quantity is tied to how many subscriptions get created and to the
-	// per-event membership allowance.
-	if (bookingMemberships(booking?.payment).length > 0) return { mode: "locked", lock: "sells_membership" }
-
-	if (status) {
-		// A partial capture scales the held amount proportionally, which is only right when
-		// every ticket in the order costs the same — see `partialApprovalRefusal`.
-		if (bookingTicketTypeCount(ticketRows(booking?.tickets)) > 1) return { mode: "locked", lock: "multiple_ticket_types" }
-		return { mode: "hold" }
-	}
+	if (status === "capturing") return result("locked", "in_progress")
+	if (status && !hasHold) return result("locked", "hold_gone")
 
 	// Same test as `bookingMoneyState`: a priced total with no payment record is `unknown`,
 	// and must never be treated as free.
-	if (Number(booking?.total ?? 0) > 0) return { mode: "locked", lock: "unknown_money" }
-	return { mode: "free" }
+	if (!status && Number(booking?.total ?? 0) > 0) return result("locked", "unknown_money")
+
+	if (hasHold || sellsMembership) {
+		// A partial approval scales the ticket part proportionally, which is only right when
+		// every ticket in the order costs the same — see `partialApprovalRefusal`.
+		if (bookingTicketTypeCount(ticketRows(booking?.tickets)) > 1) return result("locked", "multiple_ticket_types")
+		return result("reduce")
+	}
+
+	return result("free")
 }
 
 const sameIdSet = (a: BookingTicketRow[], b: BookingTicketRow[]) => {
