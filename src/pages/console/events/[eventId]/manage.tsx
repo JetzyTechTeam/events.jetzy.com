@@ -3979,6 +3979,23 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 		)
 		const otherActions = (
 			<>
+			{/* Edit a CONFIRMED booking — its name, and its ticket quantity where no money
+			    moved — in the same editor every screen opens (the dialog says what may
+			    change; a paid booking shows the quantity locked). A pending row edits
+			    through the pencil beside Approve / Reject instead. Acts on the row's
+			    primary booking; somebody holding two confirmed bookings edits the other
+			    from the Event Bookings page. */}
+			{booking?.bookingRef && !cancelled && !pending && (
+				<Button
+					size="sm"
+					variant="ghost"
+					color="blue.300"
+					_hover={{ bg: '#2A2A2A' }}
+					onClick={() => approvals.requestEdit(booking)}
+				>
+					Edit
+				</Button>
+			)}
 			{/* Cancel on LIVE bookings only. A pending row keeps Approve / Reject,
 			    which already releases the hold and emails the guest — a second
 			    differently-worded way to decline the same request would be worse
@@ -4241,7 +4258,12 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 												isLoading={cancellingRef === c.booking?.bookingRef || deletingEmail === c.email}
 											/>
 											<MenuList bg="#1D1F24" border="1px solid #444" color="white" minW="200px">
-												{/* Same two actions, same guards as the row's buttons. */}
+												{/* Same actions, same guards as the row's buttons. */}
+												{c.booking?.bookingRef && !c.cancelled && (
+													<MenuItem bg="transparent" h="44px" color="blue.300" _hover={{ bg: "#333" }} _focus={{ bg: "#333" }} onClick={() => approvals.requestEdit(c.booking)}>
+														Edit booking
+													</MenuItem>
+												)}
 												{c.booking?.bookingRef && !c.cancelled && (
 													<MenuItem bg="transparent" h="44px" color="orange.300" _hover={{ bg: "#333" }} _focus={{ bg: "#333" }} onClick={() => setCancelTarget(c.booking)}>
 														Cancel booking

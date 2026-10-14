@@ -8,9 +8,8 @@ import { Booking } from "@/pages/console/bookings"
 import { isCancelledBooking, isPendingBooking, isHoldExpired, deadBookingKind, deadBookingLabel, DEAD_BOOKING_LABEL, DEAD_BOOKING_COLOR, DEAD_BOOKING_TOOLTIP } from "@/lib/booking-status"
 import { PaymentBadge } from "@/components/bookings/PaymentBadge"
 import CancelBookingDialog from "@/components/bookings/CancelBookingDialog"
-import EditBookingTicketsDialog, { EditableTicketRow } from "@/components/bookings/EditBookingTicketsDialog"
-import { EditRequestDialog } from "@/components/console/approvals/EditRequestDialog"
-import { useRequestEdit } from "@/components/console/approvals/useRequestEdit"
+import { EditBookingDialog } from "@/components/console/approvals/EditBookingDialog"
+import { useBookingEdit } from "@/components/console/approvals/useBookingEdit"
 import { bookingMoneyAmount, bookingMoneyState, MoneyState } from "@/lib/booking-cancellation"
 import { bookingTicketCount } from "@/lib/booking-approval"
 import { isRequestAdjusted, plannedTickets } from "@/lib/booking-request-edit"
@@ -31,8 +30,8 @@ type Props = {
 	 * The event's ticket types, so the edit dialog can name the rows a booking holds — a
 	 * booking stores `ticketId` only. Omit it and the Edit action isn't offered.
 	 *
-	 * `price` / `memberships` / `includesPremium` are for the pending-request editor, which
-	 * refuses up front an added seat on a ticket that has since become paid or bundled.
+	 * `price` / `memberships` / `includesPremium` let the editor refuse up front an added seat on
+	 * a ticket that has since become paid or bundled.
 	 */
 	eventTickets?: Array<{ _id: string; name: string; price?: number; memberships?: string[]; includesPremium?: boolean }>
 	onDeleteSuccess?: () => void
@@ -45,16 +44,13 @@ const BookingTableComponent: React.FC<Props> = ({ rows, exportable, checkInMap, 
 	const [deletingRef, setDeletingRef] = useState<string | null>(null)
 	const [cancellingRef, setCancellingRef] = useState<string | null>(null)
 	const [cancelTarget, setCancelTarget] = useState<Booking | null>(null)
-	const [editTarget, setEditTarget] = useState<Booking | null>(null)
-	const [editingRef, setEditingRef] = useState<string | null>(null)
 	const [localRows, setLocalRows] = useState(rows)
 
-	// A PENDING row is an approval request, and it gets the request editor — the same dialog
-	// and the same endpoint as the Approvals tab, so a request can be corrected from this list
-	// on identical terms: the name, and the quantity (down only when a card hold is behind it).
-	// The older tickets dialog below stays for a CONFIRMED free booking, which is a different
-	// operation with different rules (capacity, the check-in floor).
-	const requestEditor = useRequestEdit({
+	// Every live row — pending request or confirmed booking — opens the ONE booking editor every
+	// screen shares. What it may change is `bookingEditMode`'s call, and the save goes to the
+	// endpoint whose rules match the booking. This table used to have its own tickets-only
+	// dialog for confirmed free bookings; that is gone, so the rules can't drift apart again.
+	const requestEditor = useBookingEdit({
 		onSettled: (saved) => {
 			if (saved) onEditSuccess?.()
 		},
@@ -144,60 +140,14 @@ const BookingTableComponent: React.FC<Props> = ({ rows, exportable, checkInMap, 
 		}
 	}
 
-	// Only tickets already ON the booking, named from the event. A ticket type the host has
-	// since deleted still holds its seats, so it is listed rather than hidden — with a plain
-	// label, since its name is gone.
-	const ticketNameById = new Map((eventTickets || []).map((t) => [String(t._id), t.name]))
-	const editableRows = (booking: Booking | null): EditableTicketRow[] =>
-		((booking?.tickets as any[]) || []).map((t: any) => ({
-			ticketId: String(t.ticketId),
-			name: ticketNameById.get(String(t.ticketId)) || "Removed ticket",
-			quantity: Number(t.quantity) || 0,
-		}))
-
 	/**
-	 * Free bookings only. The server enforces this too — this just avoids offering a control
-	 * that can only be refused. Paid bookings show no Edit button at all rather than a
-	 * disabled one, because until the refund question is settled the feature doesn't exist
-	 * for them.
+	 * Every live booking: the name can always be corrected, and the dialog decides what the
+	 * quantity may do (a paid confirmed booking shows it locked, with the reason). Not on a dead
+	 * booking, and not on a request whose card hold has lapsed — it can no longer be approved,
+	 * so there is nothing an edit could lead to.
 	 */
 	const canEdit = (booking: Booking) =>
-		!!canManage && !!eventTickets && bookingMoneyState(booking as any) === "free" && ((booking.tickets as any[]) || []).length > 0
-
-	/**
-	 * A request still awaiting a decision. Free or paid alike — the dialog and the server decide
-	 * what the quantity may do. Not once the card hold has lapsed: that request can no longer
-	 * be approved, so there is nothing an edit could lead to.
-	 */
-	const canEditRequest = (booking: Booking) =>
-		!!canManage && !!eventTickets && isPendingBooking(booking) && !isHoldExpired(booking as any)
-
-	const handleEdit = async (next: EditableTicketRow[]) => {
-		if (!editTarget) return
-		const bookingRef = editTarget.bookingRef
-		setEditingRef(bookingRef)
-		try {
-			const res = await fetch("/api/bookings/update-tickets", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({
-					bookingRef,
-					tickets: next.map((r) => ({ ticketId: r.ticketId, quantity: r.quantity })),
-				}),
-			})
-			const data = await res.json()
-			if (data.status) {
-				setEditTarget(null)
-				onEditSuccess?.()
-			} else {
-				alert(data.message || "Failed to update this booking.")
-			}
-		} catch {
-			alert("Network error.")
-		} finally {
-			setEditingRef(null)
-		}
-	}
+		!!canManage && !!eventTickets && !isCancelledBooking(booking) && !(isPendingBooking(booking) && isHoldExpired(booking as any))
 
 	// Every cell of a booking row, built ONCE and laid out twice: as table cells from `md` up
 	// and as a card below it. Moved here verbatim from the table, so the two layouts cannot
@@ -290,23 +240,18 @@ const BookingTableComponent: React.FC<Props> = ({ rows, exportable, checkInMap, 
 		const date = new Date(row.createdAt).toLocaleString()
 		const actions = (
 			<Flex gap={1}>
-				{/* One Edit per row. A pending request opens the request editor (name + tickets);
-				    a confirmed free booking keeps the tickets-only dialog. */}
-				{!cancelled && canEditRequest(row) ? (
-					<Button size="xs" colorScheme="blue" variant="ghost" onClick={() => requestEditor.requestEdit(row)}>
-						Edit
-					</Button>
-				) : !cancelled && !isPendingBooking(row) && canEdit(row) ? (
+				{/* One Edit per live row, pending or confirmed — the same editor every screen opens. */}
+				{canEdit(row) && (
 					<Button
 						size="xs"
 						colorScheme="blue"
 						variant="ghost"
-						isLoading={editingRef === row.bookingRef}
-						onClick={() => setEditTarget(row)}
+						isLoading={requestEditor.isSavingEdit && requestEditor.editTarget?.bookingRef === row.bookingRef}
+						onClick={() => requestEditor.requestEdit(row)}
 					>
 						Edit
 					</Button>
-				) : null}
+				)}
 				{canManage && !cancelled && (
 					<Button
 						size="xs"
@@ -450,16 +395,7 @@ const BookingTableComponent: React.FC<Props> = ({ rows, exportable, checkInMap, 
 				guestName={cancelTarget?.customerName}
 			/>
 
-			<EditBookingTicketsDialog
-				isOpen={!!editTarget}
-				onClose={() => setEditTarget(null)}
-				onConfirm={handleEdit}
-				isLoading={!!editingRef}
-				guestName={editTarget?.customerName}
-				rows={editableRows(editTarget)}
-			/>
-
-			<EditRequestDialog controller={requestEditor} eventTickets={eventTickets} />
+			<EditBookingDialog controller={requestEditor} eventTickets={eventTickets} />
 		</>
 	)
 }

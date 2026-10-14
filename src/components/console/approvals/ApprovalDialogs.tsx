@@ -19,7 +19,7 @@ import { MEMBERSHIPS, type MembershipKey } from "@/lib/memberships"
 import { approvalCaptureCents, bookingTicketCount, partialApprovalRefusal, PARTIAL_REFUSAL_MESSAGE } from "@/lib/booking-approval"
 import { plannedTickets } from "@/lib/booking-request-edit"
 import type { BookingApprovalsController } from "./useBookingApprovals"
-import { EditRequestDialog } from "./EditRequestDialog"
+import { EditBookingDialog } from "./EditBookingDialog"
 
 /**
  * The approve and reject confirmation dialogs.
@@ -315,7 +315,7 @@ export function ApprovalDialogs({ controller, event }: { controller: BookingAppr
 
 			{/* Edit the name / ticket quantity of a pending request. Here rather than in each
 			    table, so the Approvals tab and the Guests tab get the same editor. */}
-			<EditRequestDialog controller={controller} eventTickets={event?.tickets} />
+			<EditBookingDialog controller={controller} eventTickets={event?.tickets} />
 		</>
 	)
 }

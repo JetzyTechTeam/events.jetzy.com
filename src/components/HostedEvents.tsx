@@ -54,8 +54,8 @@ import { LOCATION_TBA } from "@/lib/event-location"
 import { showApprovalsSurface, ticketApprovalFlag } from "@/lib/ticket-approval"
 import { isPendingBooking, isHoldExpired, holdTimeRemaining, isCancelledBooking, deadBookingKind, deadBookingLabel, DEAD_BOOKING_COLOR } from "@/lib/booking-status"
 import { isRequestAdjusted, plannedTickets } from "@/lib/booking-request-edit"
-import { EditRequestDialog } from "@/components/console/approvals/EditRequestDialog"
-import { useRequestEdit } from "@/components/console/approvals/useRequestEdit"
+import { EditBookingDialog } from "@/components/console/approvals/EditBookingDialog"
+import { useBookingEdit } from "@/components/console/approvals/useBookingEdit"
 import { describeDiscount } from "@/lib/booking-revenue"
 import { bookingMemberships } from "@/lib/booking-memberships"
 import { MEMBERSHIPS, type MembershipKey } from "@/lib/memberships"
@@ -2672,16 +2672,18 @@ function EventBookings({
 	const toast = useToast()
 	const perPage = 10
 
-	// A pending request can be corrected from this list too — the name on it and how many
-	// tickets it is for — through the same dialog and endpoint as the Approvals tab beside it.
-	// Both lists are refreshed: this panel's (`eventBookings`) and the Approvals tab's
-	// (`event-bookings`), which are different queries over the same bookings.
-	const requestEditor = useRequestEdit({
+	// Any live booking in this list can be corrected — the name on it and how many tickets it is
+	// for — through the same editor as every other screen. Both lists are refreshed: this
+	// panel's (`eventBookings`) and the Approvals tab's (`event-bookings`), which are different
+	// queries over the same bookings, plus the counters and the check-in figures a confirmed
+	// booking's edit moves.
+	const requestEditor = useBookingEdit({
 		onSettled: () => {
 			queryClient.invalidateQueries({ queryKey: ["eventBookings", eventId] })
 			queryClient.invalidateQueries({ queryKey: ["event-bookings", eventId] })
 			queryClient.invalidateQueries({ queryKey: ["eventTotals", eventId] })
 			queryClient.invalidateQueries({ queryKey: ["event-availability", eventId] })
+			queryClient.invalidateQueries({ queryKey: ["checkInStats", eventId] })
 		},
 	})
 
@@ -2984,10 +2986,12 @@ function EventBookings({
 										</div>
 									)}
 
-									{/* A pending request is approved or declined in the Approvals tab, but
-									    its name and ticket quantity can be corrected right here. Not once
-									    the card hold has lapsed — that request can no longer be approved. */}
-									{canManage && !cancelled && isPendingBooking(booking as any) && !isHoldExpired(booking as any) && (
+									{/* Every live booking — pending request or confirmed — can have its name
+									    and ticket quantity corrected right here, in the same editor every
+									    screen opens; it says what the quantity may do (a paid confirmed
+									    booking shows it locked). Not on a request whose card hold has lapsed —
+									    it can no longer be approved. */}
+									{canManage && !cancelled && !(isPendingBooking(booking as any) && isHoldExpired(booking as any)) && (
 										<div className="mt-4 flex justify-end">
 											<button
 												type="button"
@@ -3020,7 +3024,7 @@ function EventBookings({
 				amount={bookingMoneyAmount(cancelTarget as any)}
 			/>
 
-			<EditRequestDialog controller={requestEditor} eventTickets={eventTickets} />
+			<EditBookingDialog controller={requestEditor} eventTickets={eventTickets} />
 		</div>
 	)
 }

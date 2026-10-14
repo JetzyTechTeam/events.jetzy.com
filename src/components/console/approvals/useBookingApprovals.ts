@@ -5,7 +5,7 @@ import { useToast } from "@chakra-ui/react"
 import { isPendingBooking, isCancelledBooking } from "@/lib/booking-status"
 import { approvalFit, bookingTicketCount, buildPartialSelection, type ApprovalFit } from "@/lib/booking-approval"
 import { plannedTickets } from "@/lib/booking-request-edit"
-import { useRequestEdit, type RequestEditController } from "./useRequestEdit"
+import { useBookingEdit, type BookingEditController } from "./useBookingEdit"
 import type { EventAvailability } from "@/lib/ticket-availability"
 
 /**
@@ -57,9 +57,9 @@ export type BookingApprovalsController = {
 	closeReject: () => void
 	confirmApprove: (seatable?: number) => Promise<void>
 	confirmReject: () => Promise<void>
-	// Plus editing the request's name / ticket quantity — see `useRequestEdit`, which the
-	// booking lists that cannot approve anything mount on its own.
-} & RequestEditController
+	// Plus editing a booking's name / ticket quantity — see `useBookingEdit`, which the
+	// booking lists that cannot approve anything mount on their own.
+} & BookingEditController
 
 export function useBookingApprovals({
 	eventId,
@@ -74,17 +74,20 @@ export function useBookingApprovals({
 	const [rejectTarget, setRejectTarget] = React.useState<any | null>(null)
 	const [approveTarget, setApproveTarget] = React.useState<any | null>(null)
 
-	// Refreshed on a failed save too — a refusal usually means the request moved under the
+	// Refreshed on a failed save too — a refusal usually means the booking moved under the
 	// dialog. The same three `act()` keeps in step (the name is on the guest roster, and the
-	// quantity decides which requests still fit), plus the event page's own Bookings panel
-	// and its counters, which sit beside the Approvals tab there under different keys.
-	const requestEditor = useRequestEdit({
+	// quantity decides which requests still fit), the event page's own Bookings panel and its
+	// counters, which sit beside the Approvals tab there under different keys, and the check-in
+	// figures — the Guests tab edits CONFIRMED bookings too, and their check-in record follows.
+	const requestEditor = useBookingEdit({
 		onSettled: () => {
 			queryClient.invalidateQueries({ queryKey: ["event-bookings", eventId] })
 			queryClient.invalidateQueries({ queryKey: ["guests-list", eventId] })
 			queryClient.invalidateQueries({ queryKey: ["event-availability", eventId] })
 			queryClient.invalidateQueries({ queryKey: ["eventBookings", eventId] })
 			queryClient.invalidateQueries({ queryKey: ["eventTotals", eventId] })
+			queryClient.invalidateQueries({ queryKey: ["check-in-status", eventId] })
+			queryClient.invalidateQueries({ queryKey: ["checkInStats", eventId] })
 		},
 	})
 

@@ -3142,7 +3142,8 @@ Before this, a new booking emailed the buyer and the hardcoded `tech@jetzyapp.co
 - Money fields are never recomputed — no money moved, and rewriting `subTotal` on a 100%-discounted order would change what the growth report says that code achieved.
 - `src/lib/event-tracker-sync.ts` (`adjustBookedTickets`, `bookingConsumedCapacity`) applies the delta, clamped. `bookings/delete.ts` now routes through it, which clamps its previously-unclamped `$inc`.
 - Audit: `ticketsEditedAt`, `ticketsEditedBy`, `ticketsEditHistory` on the booking (no defaults).
-- UI: `EditBookingTicketsDialog.tsx` + an Edit action in `BookingEventsDetailsTable.tsx` (`eventTickets` prop supplies the names).
+- UI: ~~`EditBookingTicketsDialog.tsx`~~ deleted 2026-10-14 — the shared `EditBookingDialog` edits confirmed bookings now (see below).
+- Since 2026-10-14: also takes `customerName` (any live booking), refuses PENDING (→ `update-request.ts`), refuses an increase on a booking that sold a membership, and syncs the `CheckIn` doc (`customerName`, `totalTickets`, `isFullyCheckedIn`).
 
 ## Feature: Edit a pending request from the Approvals interface (2026-10-13)
 
@@ -3170,22 +3171,29 @@ CEO ask: change the number of tickets a request is for, and the name on it, with
 - **`partialCaptureCents`** (`booking-approval.ts`) is the capture expression, used by `approve.ts` and by both dialogs' "card will be charged" figure — shown and taken cannot differ.
 - **Email:** `sendTicketConfirmation`'s `partialApproval` gained `reason: "adjusted"`; without it the note says "the event only had room for N", untrue when the host chose the number.
 - **Name edit is the booking only** — never the guest's account, never the email (identity and memberships follow the email). Whitespace collapsed, control characters refused, 120 code points. No email on edit; the approval confirmation greets the new name.
-- **Scope:** pending only. A confirmed paid booking is still un-editable; a confirmed free one still uses `update-tickets`.
+- **Scope (since 2026-10-14): every live booking**, pending or confirmed — see the rule table below.
 - Schema: `adjustedTickets`, `adjustedTicketsAt`, `adjustedTicketsBy`, `customerNameEditHistory` — arrays `default: undefined`. Restart the dev server after pulling.
 
-**Where the editor appears** — one `EditRequestDialog`, one hook `useRequestEdit` (`src/components/console/approvals/`):
+**One Edit booking everywhere (2026-10-14)** — one `EditBookingDialog`, one hook `useBookingEdit` (`src/components/console/approvals/`; renamed from `EditRequestDialog` / `useRequestEdit`). Rule: `bookingEditMode`. Save → `update-request` (pending) or `update-tickets` (confirmed).
 
-| Screen | Control | Wired through |
-|---|---|---|
-| Manage Event → Approvals tab | pencil beside Approve / Reject | `ApprovalRequests` → `useBookingApprovals` |
-| `/console/bookings/[eventId]` → Approvals tab | same | same |
-| Event page → host panel → Approvals | same | same |
-| Manage Event → Guests tab | pencil beside Approve / Reject on a pending row | `ApprovalActions` + `ApprovalDialogs` |
-| `/console/bookings/[eventId]` → Bookings tab | **Edit** on a pending row | `BookingEventsDetailsTable` → `useRequestEdit` |
-| Event page → host panel → Bookings | **Edit name or tickets** in the opened row | `EventBookings` (`HostedEvents.tsx`) → `useRequestEdit` |
+| Booking | Name | Quantity | Applies |
+|---|---|---|---|
+| Pending, free | ✅ | up / down | now (still a request) |
+| Pending, hold and/or membership | ✅ | down only | at approval (plan) |
+| Confirmed, free | ✅ | up / down (capacity, check-in floor) | now |
+| Confirmed, free + membership | ✅ | down only | now |
+| Confirmed, paid (captured / released / unknown) | ✅ | 🔒 `paid_confirmed` | — |
+| Cancelled / rejected / expired, lapsed hold | — | — | no Edit |
+
+| Screen | Control |
+|---|---|
+| Approvals tab (Manage Event, `/console/bookings/[eventId]`, event page) | pencil beside Approve / Reject (pending) |
+| Manage Event → Guests tab | pencil on pending rows; **Edit** button + phone-menu "Edit booking" on confirmed rows (the row's primary booking) |
+| `/console/bookings/[eventId]` → Bookings tab | **Edit** on every live row |
+| Event page → host panel → Bookings | **Edit name or tickets** on every live booking |
 
 - Every one of them shows the PLANNED quantity with "asked for N" (`plannedTickets` / `isRequestAdjusted`), including the Guests tab's ticket text and its CSV.
-- On the Bookings table a pending row opens the request editor; a **confirmed free** booking keeps `EditBookingTicketsDialog` + `update-tickets` (capacity check, check-in floor — a different operation).
+- A confirmed name change is not re-emailed; the QR code uses the booking reference, so it keeps working.
 - `/console/bookings/[eventId]` `getServerSideProps` projects a fixed field list and was extended: `adjustedTickets` (serialized; excluded from `exportable`), `payment.memberships.key`/`.status`, `payment.premiumStatus`. The table's `eventTickets` prop now carries `price` / `memberships` / `includesPremium`.
 - Not changed: the guest's own `/my-bookings` still shows what they requested (true until approval), and `/api/events/[eventId]/totals` still counts requested tickets in its pending figure.
 

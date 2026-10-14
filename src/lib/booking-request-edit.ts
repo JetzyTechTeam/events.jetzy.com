@@ -1,10 +1,12 @@
-import { isPendingBooking, isHoldExpired } from "./booking-status"
+import { isPendingBooking, isHoldExpired, isCancelledBooking } from "./booking-status"
+import { bookingMoneyState } from "./booking-cancellation"
 import { bookingMemberships } from "./booking-memberships"
 import { bookingTicketCount, bookingTicketTypeCount, type BookingTicketRow } from "./booking-approval"
 import { ticketMemberships } from "./premium-bundle"
 
 /**
- * Editing a PENDING approval request — its name, and how many tickets it is for.
+ * Editing a booking — its name, and how many tickets it is for. Pending requests and confirmed
+ * bookings alike; `bookingEditMode` is the one rule, `requestEditMode` the pending half of it.
  *
  * PURE and client-safe: the Edit dialog imports this to decide what to offer and
  * `api/bookings/update-request.ts` imports it to decide what to allow, so the two cannot
@@ -46,7 +48,15 @@ export const ticketRows = (tickets?: TicketRowLike[] | null): BookingTicketRow[]
  */
 export type RequestEditMode = "free" | "reduce" | "locked"
 
-export type RequestEditLock = "multiple_ticket_types" | "in_progress" | "hold_gone" | "unknown_money"
+export type RequestEditLock =
+	| "multiple_ticket_types"
+	| "in_progress"
+	| "hold_gone"
+	| "unknown_money"
+	/** A CONFIRMED booking whose money moved (captured, released, or priced with no record). */
+	| "paid_confirmed"
+	/** Cancelled, rejected or expired — nothing about it may change. */
+	| "inactive"
 
 export const REQUEST_LOCK_MESSAGE: Record<RequestEditLock, string> = {
 	multiple_ticket_types:
@@ -54,6 +64,9 @@ export const REQUEST_LOCK_MESSAGE: Record<RequestEditLock, string> = {
 	in_progress: "This request is being charged right now.",
 	hold_gone: "The card hold on this request is no longer active, so its quantity can't be changed.",
 	unknown_money: "This request has a price but no payment record, so its quantity can't be changed.",
+	paid_confirmed:
+		"This booking has been paid for, so its ticket quantity can't be changed — a payment can't be raised, and payments aren't refunded. Cancel it and ask the guest to book again if the number is wrong.",
+	inactive: "This booking is no longer active, so it can't be edited.",
 }
 
 export type RequestEditModeResult = {
@@ -104,6 +117,45 @@ export const requestEditMode = (booking: RequestLike): RequestEditModeResult => 
 	}
 
 	return result("free")
+}
+
+export type BookingEditModeResult = RequestEditModeResult & {
+	/**
+	 * When a quantity edit takes effect. `approval` — a pending request: a held or membership
+	 * request stores a plan for `approve.ts`, a free one changes now but is still a request.
+	 * `now` — a confirmed booking, changed on save (`api/bookings/update-tickets`).
+	 */
+	appliesAt: "approval" | "now"
+	/** The name may be corrected. True on every live booking, free or paid — a name carries no money. */
+	nameEditable: boolean
+}
+
+/**
+ * What an edit may do to ANY booking — a pending request or a confirmed booking. THE rule behind
+ * the one Edit dialog every screen opens; `update-request.ts` (pending) and `update-tickets.ts`
+ * (confirmed) enforce the same answers. Never re-derive inline.
+ *
+ *  - Pending → `requestEditMode`, unchanged.
+ *  - Confirmed (anything live and not pending — classified by EXCLUSION, since `checked_in` is
+ *    written by the mobile app and is live) → the name always; the quantity only when no money
+ *    moved (`bookingMoneyState === "free"`): up or down, or DOWN only when it sold a membership —
+ *    adding would step past the per-person membership-ticket limit with nothing paid. A booking
+ *    that was paid for is `paid_confirmed`: a payment can't be raised and isn't refunded.
+ *  - Cancelled / rejected / expired → nothing.
+ */
+export const bookingEditMode = (booking: RequestLike): BookingEditModeResult => {
+	if (!booking || isCancelledBooking(booking as any)) {
+		return { mode: "locked", lock: "inactive", hasHold: false, sellsMembership: false, appliesAt: "now", nameEditable: false }
+	}
+	if (isPendingBooking(booking as any)) {
+		const pending = requestEditMode(booking)
+		return { ...pending, appliesAt: "approval", nameEditable: pending.lock !== "in_progress" }
+	}
+
+	const sellsMembership = bookingMemberships(booking?.payment).length > 0
+	const base = { hasHold: false, sellsMembership, appliesAt: "now" as const, nameEditable: true }
+	if (bookingMoneyState(booking as any) !== "free") return { ...base, mode: "locked", lock: "paid_confirmed" }
+	return { ...base, mode: sellsMembership ? "reduce" : "free" }
 }
 
 const sameIdSet = (a: BookingTicketRow[], b: BookingTicketRow[]) => {
