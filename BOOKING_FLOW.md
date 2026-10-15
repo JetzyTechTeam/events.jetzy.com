@@ -1018,13 +1018,23 @@ MUST NEVER fail a booking, approval, capture or cancellation.
 
 | Trigger | Guest | Host (host-owned event) | Jetzy inbox |
 |---|---|---|---|
-| Booking confirmed (paid, free, waiting list) | ticket confirmation + QR (+ recurring terms for memberships) | "you made a sale" | copied on the confirmation (admin-owned only) |
-| Request submitted (pending) | "request received" (+ hold amount and expiry) | approval request with a link to Approvals | approval request (admin-owned only) |
-| Approved | ticket confirmation + QR; if fewer than asked: **partial note** (below) | — (they pressed it) | approval notice (admin-owned only) |
+| Booking confirmed (paid, free, waiting list) | ticket confirmation + QR (+ recurring terms for memberships) | "you made a sale" | `tech@jetzyapp.com` is a second `to` on **every** ticket confirmation, any event |
+| Request submitted (pending) | "request received" (+ hold amount and expiry) | approval request with a link to Approvals | approval request — admin-owned event, or owner not resolvable |
+| Approved | ticket confirmation + QR (also to `tech@jetzyapp.com`); if fewer than asked: **partial note** (below) | — (they pressed it) | "request approved" notice — admin-owned event only |
 | Rejected, or pending request deleted | "not approved" (+ hold released, not charged) | — | — |
-| Hold expired | "wasn't reviewed in time — you were not charged" | expiry notice | expiry notice |
+| Hold expired | "wasn't reviewed in time — you were not charged" | — | expiry notice, **every** event (sent by the web's webhook) |
 | Cancelled | cancellation receipt with the money line (§9.1) | cancellation notice | **always** a copy, on every event |
 | Edited (name or quantity) | nothing | nothing | nothing |
+
+**Addresses** (web environment variables):
+- "Jetzy inbox" for approval notices (request / approved / expired) = **`SENDGRID_EMAIL_SENDER`** — `contact@jetzyapp.com`.
+- Cancellation inbox copy = **`ADMIN_NOTIFICATION_EMAIL`** — `tech@jetzyapp.com` (falls back to the sender address).
+- Every ticket confirmation also goes to `tech@jetzyapp.com` (hard-coded second recipient).
+- Guest-facing mail is sent from the same verified sender with the display name "Jetzy".
+
+**QR code**: the confirmation embeds a QR image whose content is **just the `bookingRef` string**
+(`QRCode.toDataURL(bookingRef)`, `src/lib/qr-generator.ts`). Check-in looks the booking up by that
+reference, so any QR library producing the same content works.
 
 **Partial-approval note** (in the confirmation):
 - reduced by capacity: "You asked for **3 tickets**, but the event only had room for **2**. We've confirmed 2 tickets for you."
