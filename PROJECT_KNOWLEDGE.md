@@ -3107,7 +3107,7 @@ Capacity used to be one number for the whole event and, in practice, was not enf
 - `src/lib/ticket-availability.ts` — server only: `getEventAvailability`, `checkSelection`, `verifyAvailability`. One `$facet` aggregation.
 - `src/pages/api/events/[eventId]/availability.ts` — public, counts only, `Cache-Control: no-store`.
 - Enforcement: `api/checkout/index.ts`, `api/checkout/free-events.ts` (new), `api/bookings/approve.ts`, `api/waiting-list/approve.ts`.
-- Host input: `TicketEditorModal.tsx`, the duplicated inline modal in `console/events/create.tsx`, `TicketData` in `TicketCard.tsx`, manage's two mappers, `HostedEvents.tsx`'s seed + PATCH. Server: three zod copies + `resolveTickets`.
+- Host input: `TicketEditorModal.tsx` (also Create's dialog since 2026-10-15), `TicketData` in `TicketCard.tsx`, manage's two mappers, `HostedEvents.tsx`'s seed + PATCH. Server: three zod copies + `resolveTickets`.
 - Guest UI: `EventTicketsComponent.tsx` — stepper cap, "Sold out" / "Only N left" badges, blocked selection.
 
 **Rules that must not be broken**
@@ -3900,7 +3900,8 @@ Below `md` (768px) `/console/events/[eventId]/manage` has its own layout. **Ever
 The Add / Edit ticket dialog was full-screen on phones but still the desktop dialog stretched: a 400px description editor filled the screen, and the title and the Add / Cancel buttons scrolled away with the form.
 
 - **Below 768px the dialog is exactly one screen tall; the header and footer stay put and only the fields scroll.** Footer is Cancel (left, outlined) + the save button (right, wider), 48px, with safe-area padding. Inputs are 48px; Require Approval is one card.
-- **There are TWO copies of this dialog** - `TicketEditorModal` (Manage Event + the public event page) and the inline duplicate in `console/events/create.tsx`. Both spread the prop objects in **`src/components/events/ticketModalMobile.ts`**, so the layout has one definition. The copies themselves are NOT merged: their save/cancel logic, labels and toasts differ.
+- ~~There are TWO copies of this dialog~~ — **merged 2026-10-15.** Create Event renders `TicketEditorModal` too (its `onSave` push/replaces into the Formik `FieldArray`, its `onClose` resets the draft). Phone rules: **`src/components/events/ticketModalMobile.ts`**. Desktop: `md`-only props inside the component — 2xl, fixed header/footer with a scrolling body, sections, Price | Quantity side by side, Cancel left of save, `RichTextEditor compact` (180px).
+- **Membership billing per membership (2026-10-15):** `TicketMembershipToggles` puts Monthly / Annual inside the row of a membership whose LIVE prices include a yearly one (`useMembershipPlans`), and "Monthly only · $X/month" in a monthly-only one's row, plus a "What a non-member pays at checkout" box. Still one `membershipInterval` per ticket; checkout already resolves a monthly-only membership to monthly.
 - **Every rule in `ticketModalMobile.ts` is inside one `max-width: 47.99em` media query** (via `sx`). There is no `md` value to get wrong because nothing applies at those widths. Verified: both pages and both open dialogs diff to 0 pixels at 1280px, and the dialogs measure the same size before and after.
 - **`RichTextEditor` has `compactOnMobile`** (default off): 120px minimum height on phones instead of 400px, still grows with content. Only the two ticket dialogs pass it. The same media query also sets **every** editor's font to 16px on phones - iOS zooms into a contenteditable under 16px, exactly as it does an input.
 - `inputMode="decimal"` on Price and `inputMode="numeric"` on Quantity are keypad hints only; the fields are still `type="number"` and their value handling is unchanged.
