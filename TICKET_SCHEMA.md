@@ -776,6 +776,13 @@ right now", not "seats nobody has asked about".
 
 ## 12. NEW (Revision 5) — Approvals: what consumes a seat, and approving part of a request
 
+> **SUPERSEDED (2026-10-15) by `BOOKING_FLOW.md` §7.** That document is the booking contract now —
+> approvals, approving fewer, editing requests and bookings, cancellation, check-in. Two rules below
+> are **out of date**: a request whose ticket sells a membership **can** now be partly approved
+> (the membership is charged in full, only the ticket part is scaled), and a partial approval is
+> written to the booking only **after** the capture succeeds. The seat rule ("a pending request
+> holds no seat") still stands.
+
 ### A PENDING request does NOT hold a seat
 
 This is the rule that surprises people, so it is stated first.
@@ -842,8 +849,8 @@ Rules the server enforces — mirror them so you never show a button that will b
 2. **Refused when the booking covers more than one ticket type.** A booking stores no per-ticket
    price (§7), so the partial capture scales the held amount proportionally — which is only
    correct when every ticket in the order costs the same.
-3. **Refused when the ticket sells a membership** (§6). Quantity there decides how many
-   subscriptions get created and counts against the per-event membership allowance.
+3. ~~**Refused when the ticket sells a membership** (§6).~~ **No longer true (2026-10-14)** — a
+   membership is sold once per order, so it is allowed; see `BOOKING_FLOW.md` §7.2–7.3.
 4. Omit `tickets` entirely for an ordinary approval. Sending the full quantity is equivalent, but
    omitting is clearer.
 
@@ -873,6 +880,12 @@ Same auth. Releases the card hold (never a refund — nothing was captured) and 
 ---
 
 ## 13. NEW (Revision 5) — A host can change a booking's quantity after the fact
+
+> **SUPERSEDED (2026-10-15) by `BOOKING_FLOW.md` §8.** Since this was written: the same endpoint
+> also edits the **name**, **refuses a pending booking** (requests are edited through
+> `update-request`, which stores a lower quantity as `adjustedTickets` on a held or membership
+> request), refuses an **increase** on a booking that sold a membership, and keeps the `CheckIn`
+> record in step.
 
 `POST /api/bookings/update-tickets`. Session required, **admin or event owner**.
 

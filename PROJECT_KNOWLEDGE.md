@@ -3,6 +3,14 @@
 > Comprehensive codebase snapshot. Read this instead of re-reading source files.
 > **Keep updated** after any feature, API, model, or significant refactor.
 
+> **Mobile contracts (repo root).** The mobile back-end builds its own APIs on the same database and
+> Stripe account and implements from these: **`BOOKING_FLOW.md`** — the complete booking flow
+> (checkout session shapes, fulfilment, approvals and partial capture, editing requests and
+> bookings, cancellation, waiting list, check-in, emails, admin vs host permissions, helper code
+> verified identical to `src/lib/booking-*.ts`); `TICKET_SCHEMA.md` — ticket fields and capacity
+> (its §12–13 are superseded by `BOOKING_FLOW.md`); `ALBUM_API.md`; `MEDIA_CONTRACT.md`. Update
+> `BOOKING_FLOW.md` in the same commit as any booking behaviour change.
+
 ---
 
 ## Stack
