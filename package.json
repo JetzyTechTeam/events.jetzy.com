@@ -73,6 +73,7 @@
     "stripe": "^15.4.0",
     "tesseract.js": "^2.1.4",
     "vercel": "^50.42.0",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "yup": "^1.4.0",
     "zod": "^3.23.3"
   },

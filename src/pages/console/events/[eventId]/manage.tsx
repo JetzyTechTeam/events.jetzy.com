@@ -103,6 +103,8 @@ import { ApprovalDialogs } from "@/components/console/approvals/ApprovalDialogs"
 import { ApprovalActions, expiringSoonBookings } from "@/components/console/approvals/ApprovalActions"
 import { HoldExpiry } from "@/components/bookings/PaymentBadge"
 import BenefitsField from "@/components/events/BenefitsField"
+import GuestImportPanel from "@/components/events/GuestImportPanel"
+import { guestEmailKey, mergeGuests, type ImportedGuest } from "@/lib/guest-import"
 import { DATE_POLL_OPTION_LABEL_LIMIT, EVENT_ENTRANCE_LIMIT, EVENT_ENTRANCE_WORD_LIMIT, EVENT_FIELD_MESSAGES, EVENT_LOCATION_WORD_LIMIT, eventDescCounter, isEventDescOverLimit, withinWordLimit, wordCounter } from "@/lib/event-field-limits"
 import TicketEditorModal from "@/components/events/TicketEditorModal"
 import ListingCardPreview from "@/components/events/ListingCardPreview"
@@ -4583,8 +4585,8 @@ function ResponsesList({ eventId, event }: { eventId: string; event?: any }) {
 function InviteGuestsModal({ inviteGuestsModal, setInviteGuestsModal, event }: { inviteGuestsModal: boolean; setInviteGuestsModal: (inviteGuestsModal: boolean) => void; event: any }) {
 	const [inviteMode, setInviteMode] = useState<"email" | "users">("email")
 
-	// Email invite state
-	const [emails, setEmails] = useState<string[]>([])
+	// Email invite state — a name per guest when the host has one (typed blank, or imported)
+	const [invitees, setInvitees] = useState<ImportedGuest[]>([])
 	const [step, setStep] = useState(1)
 	const [loading, setLoading] = useState(false)
 	const [message, setMessage] = useState("")
@@ -4603,8 +4605,8 @@ function InviteGuestsModal({ inviteGuestsModal, setInviteGuestsModal, event }: {
 		const email = emailInput.trim()
 		if (!email) { setEmailError("Please enter an email"); return }
 		if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setEmailError("Please enter a valid email"); return }
-		if (emails.includes(email)) { setEmailError("Email already added"); return }
-		setEmails([...emails, email])
+		if (invitees.some((g) => guestEmailKey(g.email) === guestEmailKey(email))) { setEmailError("Email already added"); return }
+		setInvitees([...invitees, { name: "", email }])
 		setEmailInput("")
 		setEmailError("")
 	}
@@ -4619,8 +4621,8 @@ function InviteGuestsModal({ inviteGuestsModal, setInviteGuestsModal, event }: {
 	const onSendInvitation = async () => {
 		setLoading(true)
 		try {
-			await axios.post("/api/send-invites", {
-				emails,
+			const res = await axios.post("/api/send-invites", {
+				invitees,
 				message,
 				subject: `Hi, Jetzy Events invite you to join ${event.name}!`,
 				eventLink: `${process.env.NEXT_PUBLIC_URL}/events/${event._id}/guests/invite`,
@@ -4628,13 +4630,20 @@ function InviteGuestsModal({ inviteGuestsModal, setInviteGuestsModal, event }: {
 			})
 			setLoading(false)
 			setStep(1)
-			setEmails([])
+			setInvitees([])
 			setMessage("")
 			setInviteGuestsModal(false)
-			toast({ title: "Invitations sent!", status: "success", duration: 3000, isClosable: true })
-		} catch (error) {
+			const failed: { email: string }[] = res.data?.failed || []
+			toast({
+				title: res.data?.message || "Invitations sent!",
+				description: failed.length ? `${failed.length} couldn't be sent: ${failed.slice(0, 3).map((f) => f.email).join(", ")}${failed.length > 3 ? "…" : ""}` : undefined,
+				status: failed.length ? "warning" : "success",
+				duration: failed.length ? 8000 : 3000,
+				isClosable: true,
+			})
+		} catch (error: any) {
 			setLoading(false)
-			toast({ title: "Failed to send invitations.", status: "error", duration: 3000, isClosable: true })
+			toast({ title: error?.response?.data?.message || "Failed to send invitations.", status: "error", duration: 5000, isClosable: true })
 		}
 	}
 
@@ -4685,7 +4694,7 @@ function InviteGuestsModal({ inviteGuestsModal, setInviteGuestsModal, event }: {
 	useEffect(() => {
 		if (!inviteGuestsModal) {
 			setStep(1)
-			setEmails([])
+			setInvitees([])
 			setMessage("")
 			setEmailInput("")
 			setEmailError("")
@@ -4743,22 +4752,32 @@ function InviteGuestsModal({ inviteGuestsModal, setInviteGuestsModal, event }: {
 									</Button>
 								</Flex>
 								{emailError && <Text color="red.500" fontSize="sm">{emailError}</Text>}
-								{emails.length > 0 && (
+								<GuestImportPanel eventId={String(event._id)} onAdd={(guests) => setInvitees((prev) => mergeGuests(prev, guests))} />
+								{invitees.length > 0 && (
 									<Box mt={2}>
-										<Text fontWeight="bold">Inviting {emails.length} Emails:</Text>
-										<UnorderedList listStyleType="none" m="0" pt="2">
-											{emails.map((email) => (
-												<ListItem key={email} className="bg-[#383838] p-2 rounded-lg" my="2">
-													<Flex align="center" justify="space-between">
-														<span>{email}</span>
-														<Button size="xs" colorScheme="red" variant="ghost" ml={2} onClick={() => setEmails(emails.filter((e) => e !== email))}>x</Button>
+										<Flex justify="space-between" align="center">
+											<Text fontWeight="bold">Inviting {invitees.length} {invitees.length === 1 ? "guest" : "guests"}:</Text>
+											{invitees.length > 1 && (
+												<Button size="xs" variant="ghost" color="gray.400" _hover={{ bg: "#333" }} onClick={() => setInvitees([])}>Clear all</Button>
+											)}
+										</Flex>
+										{/* Scrolls on its own — an imported list can be hundreds long */}
+										<UnorderedList listStyleType="none" m="0" pt="2" maxH="300px" overflowY="auto">
+											{invitees.map((guest) => (
+												<ListItem key={guest.email} className="bg-[#383838] p-2 rounded-lg" my="2">
+													<Flex align="center" justify="space-between" gap={2}>
+														<Box minW={0}>
+															{guest.name && <Text fontSize="sm" noOfLines={1}>{guest.name}</Text>}
+															<Text fontSize={guest.name ? "xs" : "md"} color={guest.name ? "gray.400" : undefined} noOfLines={1}>{guest.email}</Text>
+														</Box>
+														<Button size="xs" colorScheme="red" variant="ghost" ml={2} onClick={() => setInvitees(invitees.filter((g) => g.email !== guest.email))}>x</Button>
 													</Flex>
 												</ListItem>
 											))}
 										</UnorderedList>
 									</Box>
 								)}
-								<Button size="lg" bg="#F79432" color="black" _hover={{ bg: "#f78c22" }} _active={{ bg: "#e67a10" }} mt={4} isDisabled={emails.length === 0} onClick={handleNext} width="full">
+								<Button size="lg" bg="#F79432" color="black" _hover={{ bg: "#f78c22" }} _active={{ bg: "#e67a10" }} mt={4} isDisabled={invitees.length === 0} onClick={handleNext} width="full">
 									Next
 								</Button>
 							</>
@@ -4767,9 +4786,9 @@ function InviteGuestsModal({ inviteGuestsModal, setInviteGuestsModal, event }: {
 							<>
 								<Flex align="flex-start" justify="space-between" gap={6} flexWrap="wrap">
 									<Box flex="1">
-										<Text mb={2}>Here are the emails you have entered:</Text>
-										<UnorderedList pl={5}>
-											{emails.map((email) => (<ListItem key={email}>{email}</ListItem>))}
+										<Text mb={2}>Sending to {invitees.length} {invitees.length === 1 ? "guest" : "guests"}:</Text>
+										<UnorderedList pl={5} maxH="320px" overflowY="auto">
+											{invitees.map((guest) => (<ListItem key={guest.email}>{guest.name ? `${guest.name} — ${guest.email}` : guest.email}</ListItem>))}
 										</UnorderedList>
 									</Box>
 									<Box borderWidth="1px" borderRadius="xl" p={4} flex="1" minW="300px">
