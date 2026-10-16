@@ -242,7 +242,7 @@ if (!isAdmin && event.ownerId?.toString() !== userId) {
 | POST | `/api/send-blast` | admin OR owner | (persists a Blast history record on success) |
 | GET | `/api/events/[eventId]/blasts` | admin OR owner |
 | PATCH/DELETE | `/api/events/[eventId]/blasts/[blastId]` | admin OR owner | (PATCH edits stored record; DELETE soft-deletes) |
-| POST | `/api/send-invites` | — |
+| POST | `/api/send-invites` | admin OR owner — `invitees[{email,name?}]` (or legacy `emails[]`), cap 500 |
 | POST | `/api/send-email` | — |
 | POST | `/api/send-thank-you` | — |
 | POST | `/api/send-update-event-email` | — |
@@ -3238,7 +3238,7 @@ Deliberately out of scope; all pre-existing, none introduced by the identity wor
 - **`subject` / `message` are interpolated into the HTML unescaped.** Still true at send time; the preview modal sandboxes its iframe because of it.
 - **One SendGrid call per recipient, all concurrent, no chunking** — a 2,000-guest event opens 2,000 simultaneous connections in one serverless invocation.
 - **`targetType: "all"` ignores `status`** and mails cancelled, failed and refunded bookings; neither branch filters `isDeleted`.
-- `send-invites.ts` has the same bare-string `from`, no `replyTo`, and uses `Promise.all` rather than `allSettled` — one rejection fails the request after mail has already gone out.
+- ~~`send-invites.ts` has the same bare-string `from`, no `replyTo`, and uses `Promise.all`~~ — `from` and `allSettled` fixed 2026-10-16 (guest import); still no `replyTo`.
 
 # Feature: Blast attachments + preview
 
@@ -4007,3 +4007,10 @@ An admin scanning a list of events could see tickets and guests on each card but
 - **`ReferralPerformance` is shared with Manage Event's Referral Codes tab**, so its phone changes show there too.
 - **Checked with mocked endpoints**, not real data: the pages need an admin session and live analytics to render anything.
 
+## Import a guest list into the email invite (IMPLEMENTED 2026-10-16)
+- **Manage Event → Invite Guests → Email Invite takes an Excel / CSV file** (`.xlsx`, `.xls`, `.csv`) of names + emails, previews it, and sends in one go. `src/components/events/GuestImportPanel.tsx` over the pure **`src/lib/guest-import.ts`** (`parseGuestRows`, `findColumns`, `mergeGuests`, `normalizeGuestName`, `firstNameOf`, `GUEST_IMPORT_MAX`). The route re-checks with the same helpers — never re-derive the email rule or the cap.
+- **Name = ONE full name.** Template is `Name, Email`; `First Name` + `Last Name` columns are joined; headers match case/space/punctuation-insensitively; a sheet with no header row is read by content. Stored in `eventinvitations.name` (the field existed and the Guests tab already read it — `send-invites.ts` just never wrote it). The email greets by the first word: "Hi Sarah,".
+- **Already-invited addresses are listed UNTICKED** (from `GET /api/guests-list`); ticking re-sends. A failed lookup flags nobody rather than blocking the import. Bad / duplicate / over-cap rows are listed with row number + reason, never dropped silently.
+- **SheetJS comes from SheetJS's CDN tarball (`xlsx-0.20.3.tgz`), NOT the npm registry** — `xlsx@0.18.5` there is abandoned with open CVEs. It is `import("xlsx")` on file pick only: its own lazy chunk, never in a page bundle. Parsing is in the host's browser; only `{name, email}` is posted.
+- **`send-invites.ts` wire format: `invitees: [{ email, name? }]`**; legacy `emails: string[]` still accepted. Server-side normalise + case-insensitive de-dupe, **cap 500** (`GUEST_IMPORT_MAX`, a 400 that says so). Sends in **chunks of 50 with `allSettled`**, records an `EventInvitation` only for addresses that actually sent, returns `{ sent, failed[] }`; the toast names the count and any failures. `from` is `mailFrom()` now, and subject / message / name are **HTML-escaped** (they were interpolated raw).
+- **The event page's "Invite Friends" modal in `HostedEvents.tsx` is unreachable** (its button was removed 2026-09-02) and was deliberately NOT given the import. Restoring that button means wiring `GuestImportPanel` into it too.
