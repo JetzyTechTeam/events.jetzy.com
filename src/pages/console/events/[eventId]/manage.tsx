@@ -97,6 +97,7 @@ import { allowedMediaCount } from "@/lib/event-media-limit"
 import { EVENT_TITLE_LIMIT_HINT, EVENT_TITLE_RAW_LIMIT, clampEventTitle, eventTitleCounter, isEventTitleOverLimit } from "@/lib/event-title"
 import { buildGuestRows, matchesAudience, GUEST_KIND_LABEL, type GuestRow, type GuestAudience } from "@/lib/guest-rows"
 import { bookingTicketCount } from "@/lib/booking-approval"
+import { isRequestAdjusted, plannedTickets } from "@/lib/booking-request-edit"
 import { useBookingApprovals } from "@/components/console/approvals/useBookingApprovals"
 import { ApprovalDialogs } from "@/components/console/approvals/ApprovalDialogs"
 import { ApprovalActions, expiringSoonBookings } from "@/components/console/approvals/ApprovalActions"
@@ -3025,8 +3026,13 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 				<Box display="flex" flexDirection="column" gap={3}>
 					{pagedBlasts.map((b: any) => (
 						<Box key={b._id} bg="#1E1E1E" border="1px solid #434343" borderRadius="xl" p={4}>
-							<Flex justify="space-between" align="start" gap={3}>
-								<Box flex="1">
+							{/* Phones: Edit / Delete used to sit beside the text and take ~140px of the row,
+							    and the delivery details live in the text column — so recipient cards were
+							    squeezed with dead space next to them. Below `md` the text column dissolves
+							    (`display: contents`) into one stacked column: subject, message, meta, then
+							    the two buttons as a full-width row, then delivery details at full width. */}
+							<Flex justify="space-between" align={{ base: "stretch", md: "start" }} gap={{ base: 0, md: 3 }} direction={{ base: "column", md: "row" }}>
+								<Box flex="1" display={{ base: "contents", md: "block" }}>
 									<Text fontWeight="bold" color="white">
 										{b.subject || "(no subject)"}
 									</Text>
@@ -3078,9 +3084,19 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 										</Text>
 									</Flex>
 
-									{expandedBlastId === b._id && <BlastDeliveryDetail eventId={event._id} blastId={b._id} />}
+									{expandedBlastId === b._id && (
+										<Box order={{ base: 2, md: 0 }} minW={0}>
+											<BlastDeliveryDetail eventId={event._id} blastId={b._id} />
+										</Box>
+									)}
 								</Box>
-								<Flex gap={2} flexShrink={0}>
+								<Flex
+									gap={2}
+									flexShrink={0}
+									order={{ base: 1, md: 0 }}
+									mt={{ base: 3, md: 0 }}
+									sx={{ "@media screen and (max-width: 47.99em)": { "& > button": { flex: 1, height: "40px" } } }}
+								>
 									<Button size="sm" bg="#3E3E3E" color="white" _hover={{ bg: "#4A4A4A" }} onClick={() => openEdit(b)}>
 										Edit
 									</Button>
@@ -3469,7 +3485,11 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 
 	const formatBookingTickets = (booking: any): string => {
 		if (!booking?.tickets?.length) return '—'
-		return booking.tickets.map((t: any) => `${ticketNameById[t.ticketId?.toString()] || 'Ticket'} ×${t.quantity}`).join(', ')
+		// A pending request a host has edited down reads as the number it WILL be approved for,
+		// with what was asked for after it — the same thing the Approvals tab shows. For every
+		// other booking `plannedTickets` is the booking's own rows, so nothing else changes.
+		const label = plannedTickets(booking).map((t) => `${ticketNameById[t.ticketId] || 'Ticket'} ×${t.quantity}`).join(', ')
+		return isRequestAdjusted(booking) ? `${label} (edited — asked for ${bookingTicketCount(booking.tickets)})` : label
 	}
 
 	// Cancelling is the ordinary way to end a booking: the guest is emailed, any live card
@@ -3935,7 +3955,9 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 						<ApprovalActions booking={pb} controller={approvals} size={mobile ? "sm" : "xs"} />
 						{!fit.fits && (
 							<Badge colorScheme="orange" fontSize="0.65em" borderRadius="4px" px={1.5}>
-								Needs {bookingTicketCount(pb?.tickets)}, {fit.seatable ?? 0} left
+								{/* `fit.requested` is what the request WILL be approved for — the edited
+								    number when a host has lowered it — not the raw rows. */}
+								Needs {fit.requested}, {fit.seatable ?? 0} left
 							</Badge>
 						)}
 					</Flex>
@@ -3957,6 +3979,23 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 		)
 		const otherActions = (
 			<>
+			{/* Edit a CONFIRMED booking — its name, and its ticket quantity where no money
+			    moved — in the same editor every screen opens (the dialog says what may
+			    change; a paid booking shows the quantity locked). A pending row edits
+			    through the pencil beside Approve / Reject instead. Acts on the row's
+			    primary booking; somebody holding two confirmed bookings edits the other
+			    from the Event Bookings page. */}
+			{booking?.bookingRef && !cancelled && !pending && (
+				<Button
+					size="sm"
+					variant="ghost"
+					color="blue.300"
+					_hover={{ bg: '#2A2A2A' }}
+					onClick={() => approvals.requestEdit(booking)}
+				>
+					Edit
+				</Button>
+			)}
 			{/* Cancel on LIVE bookings only. A pending row keeps Approve / Reject,
 			    which already releases the hold and emails the guest — a second
 			    differently-worded way to decline the same request would be worse
@@ -4169,12 +4208,15 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 										<Text color="white" fontWeight={700} fontSize="15px" noOfLines={1} textDecoration={c.cancelled ? "line-through" : undefined}>
 											{row.name || "—"}
 										</Text>
-										<Text color="#9C9C9C" fontSize="13px" noOfLines={1} wordBreak="break-all" textDecoration={c.cancelled ? "line-through" : undefined}>
-											{row.email}
-										</Text>
 									</Box>
-									<Box flexShrink={0} textAlign="right">{c.status}</Box>
+									{/* 12px: `HoldExpiry` sets no size of its own, and at the card's 16px the
+									    countdown was the biggest thing on it. */}
+									<Box flexShrink={0} textAlign="right" fontSize="12px" sx={{ "& > div": { alignItems: "flex-end" } }}>{c.status}</Box>
 								</Flex>
+								{/* On its own line: beside the status badge it was cut to a few characters. */}
+								<Text mt={1} color="#9C9C9C" fontSize="13px" wordBreak="break-all" textDecoration={c.cancelled ? "line-through" : undefined}>
+									{row.email}
+								</Text>
 								{c.booking && (
 									<Flex mt={3} gap={2} align="center" flexWrap="wrap" fontSize="13px" color="#D6D6D6">
 										{ticketsLabel && <Text>{ticketsLabel}</Text>}
@@ -4216,7 +4258,12 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 												isLoading={cancellingRef === c.booking?.bookingRef || deletingEmail === c.email}
 											/>
 											<MenuList bg="#1D1F24" border="1px solid #444" color="white" minW="200px">
-												{/* Same two actions, same guards as the row's buttons. */}
+												{/* Same actions, same guards as the row's buttons. */}
+												{c.booking?.bookingRef && !c.cancelled && (
+													<MenuItem bg="transparent" h="44px" color="blue.300" _hover={{ bg: "#333" }} _focus={{ bg: "#333" }} onClick={() => approvals.requestEdit(c.booking)}>
+														Edit booking
+													</MenuItem>
+												)}
 												{c.booking?.bookingRef && !c.cancelled && (
 													<MenuItem bg="transparent" h="44px" color="orange.300" _hover={{ bg: "#333" }} _focus={{ bg: "#333" }} onClick={() => setCancelTarget(c.booking)}>
 														Cancel booking

@@ -52,7 +52,10 @@ import { ApprovalRequests } from "@/components/console/ApprovalRequests"
 import LinkedText from "@Jetzy/components/misc/LinkedText"
 import { LOCATION_TBA } from "@/lib/event-location"
 import { showApprovalsSurface, ticketApprovalFlag } from "@/lib/ticket-approval"
-import { isPendingBooking, holdTimeRemaining, isCancelledBooking, deadBookingKind, deadBookingLabel, DEAD_BOOKING_COLOR } from "@/lib/booking-status"
+import { isPendingBooking, isHoldExpired, holdTimeRemaining, isCancelledBooking, deadBookingKind, deadBookingLabel, DEAD_BOOKING_COLOR } from "@/lib/booking-status"
+import { isRequestAdjusted, plannedTickets } from "@/lib/booking-request-edit"
+import { EditBookingDialog } from "@/components/console/approvals/EditBookingDialog"
+import { useBookingEdit } from "@/components/console/approvals/useBookingEdit"
 import { describeDiscount } from "@/lib/booking-revenue"
 import { bookingMemberships } from "@/lib/booking-memberships"
 import { MEMBERSHIPS, type MembershipKey } from "@/lib/memberships"
@@ -1981,20 +1984,20 @@ export default function HostedEvents({ event }: Props) {
 										<div className="flex border-y border-[#434343]">
 											<button
 												onClick={() => setActiveTab("bookings")}
-												className={`flex-1 px-6 py-4 text-left font-semibold transition-colors ${activeTab === "bookings" ? "bg-[#F79432] text-black" : "text-white hover:bg-[#434343]"}`}
+												className={`flex-1 px-2 py-3 md:px-6 md:py-4 text-center md:text-left text-sm md:text-base whitespace-nowrap font-semibold transition-colors ${activeTab === "bookings" ? "bg-[#F79432] text-black" : "text-white hover:bg-[#434343]"}`}
 											>
 												Bookings
 											</button>
 											<button
 												onClick={() => setActiveTab("waiting-list")}
-												className={`flex-1 px-6 py-4 text-left font-semibold transition-colors ${activeTab === "waiting-list" ? "bg-[#F79432] text-black" : "text-white hover:bg-[#434343]"}`}
+												className={`flex-1 px-2 py-3 md:px-6 md:py-4 text-center md:text-left text-sm md:text-base whitespace-nowrap font-semibold transition-colors ${activeTab === "waiting-list" ? "bg-[#F79432] text-black" : "text-white hover:bg-[#434343]"}`}
 											>
 												Waiting List
 											</button>
 											{showApprovals && (
 												<button
 													onClick={() => setActiveTab("approvals")}
-													className={`flex-1 px-6 py-4 text-left font-semibold transition-colors flex items-center gap-2 ${activeTab === "approvals" ? "bg-[#F79432] text-black" : "text-white hover:bg-[#434343]"}`}
+													className={`flex-1 px-2 py-3 md:px-6 md:py-4 text-center md:text-left text-sm md:text-base whitespace-nowrap font-semibold transition-colors flex items-center justify-center md:justify-start gap-1.5 md:gap-2 ${activeTab === "approvals" ? "bg-[#F79432] text-black" : "text-white hover:bg-[#434343]"}`}
 												>
 													Approvals
 													{pendingApprovalCount > 0 && (
@@ -2012,8 +2015,8 @@ export default function HostedEvents({ event }: Props) {
 										</div>
 
 										{/* Tab Content */}
-										<div className="p-6">
-											{activeTab === "bookings" && <EventBookings eventId={clonedEvent._id.toString()} eventName={clonedEvent.name} canManage={canManage} />}
+										<div className="p-4 md:p-6">
+											{activeTab === "bookings" && <EventBookings eventId={clonedEvent._id.toString()} eventName={clonedEvent.name} canManage={canManage} eventTickets={clonedEvent.tickets as any} />}
 											{activeTab === "waiting-list" && <EventWaitingList eventId={clonedEvent._id.toString()} eventName={clonedEvent.name} />}
 											{/* `surfaceBg` is what the frozen Actions/Guest columns paint themselves
 											    with so the scrolling columns don't show through. This panel is a
@@ -2648,7 +2651,18 @@ function BookingStatusPill({ booking }: { booking: Booking }) {
 	return <span className={`text-xs font-semibold ${color}`}>{booking.status}</span>
 }
 
-function EventBookings({ eventId, eventName, canManage }: { eventId: string; eventName?: string; canManage?: boolean }) {
+function EventBookings({
+	eventId,
+	eventName,
+	canManage,
+	eventTickets,
+}: {
+	eventId: string
+	eventName?: string
+	canManage?: boolean
+	/** The event's ticket types — names (and price / memberships) for the pending-request editor. */
+	eventTickets?: any[]
+}) {
 	const [page, setPage] = React.useState(1)
 	const [openId, setOpenId] = React.useState<string | null>(null)
 	// One dialog for the panel; the row only names which booking it is about.
@@ -2657,6 +2671,21 @@ function EventBookings({ eventId, eventName, canManage }: { eventId: string; eve
 	const queryClient = useQueryClient()
 	const toast = useToast()
 	const perPage = 10
+
+	// Any live booking in this list can be corrected — the name on it and how many tickets it is
+	// for — through the same editor as every other screen. Both lists are refreshed: this
+	// panel's (`eventBookings`) and the Approvals tab's (`event-bookings`), which are different
+	// queries over the same bookings, plus the counters and the check-in figures a confirmed
+	// booking's edit moves.
+	const requestEditor = useBookingEdit({
+		onSettled: () => {
+			queryClient.invalidateQueries({ queryKey: ["eventBookings", eventId] })
+			queryClient.invalidateQueries({ queryKey: ["event-bookings", eventId] })
+			queryClient.invalidateQueries({ queryKey: ["eventTotals", eventId] })
+			queryClient.invalidateQueries({ queryKey: ["event-availability", eventId] })
+			queryClient.invalidateQueries({ queryKey: ["checkInStats", eventId] })
+		},
+	})
 
 	const handleCancelBooking = async () => {
 		const bookingRef = cancelTarget?.bookingRef
@@ -2710,7 +2739,37 @@ function EventBookings({ eventId, eventName, canManage }: { eventId: string; eve
 
 	return (
 		<div>
-			<div className="flex items-center justify-between mb-4">
+			{/* PHONES: the six figures as a small grid under the title. On one row beside it (the
+			    desktop layout below) the labels wrapped into a ragged block. Same numbers, same
+			    colours, and the amber / red rows appear under the same conditions. */}
+			<div className="md:hidden mb-4">
+				<h3 className="text-lg font-semibold text-white">Bookings</h3>
+				{!isLoading && !totalsLoading && (
+					<div className="mt-3 grid grid-cols-[1fr_auto_auto] gap-x-6 gap-y-2 rounded-lg border border-[#343536] bg-[#15181C] px-4 py-3 text-sm">
+						<span />
+						<span className="text-right text-xs font-medium uppercase tracking-wide text-[#9C9C9C]">Tickets</span>
+						<span className="text-right text-xs font-medium uppercase tracking-wide text-[#9C9C9C]">Customers</span>
+						<span className="font-semibold text-white">Active</span>
+						<span className="text-right font-semibold text-green-400">{totalTickets}</span>
+						<span className="text-right font-semibold text-green-400">{uniqueCustomers}</span>
+						{(pendingTickets > 0 || pendingGuests > 0) && (
+							<>
+								<span className="font-semibold text-white">Pending</span>
+								<span className="text-right font-semibold text-amber-400">{pendingTickets}</span>
+								<span className="text-right font-semibold text-amber-400">{pendingGuests}</span>
+							</>
+						)}
+						{(cancelledTickets > 0 || cancelledGuests > 0) && (
+							<>
+								<span className="font-semibold text-white">Inactive</span>
+								<span className="text-right font-semibold text-red-400">{cancelledTickets}</span>
+								<span className="text-right font-semibold text-red-400">{cancelledGuests}</span>
+							</>
+						)}
+					</div>
+				)}
+			</div>
+			<div className="hidden md:flex items-center justify-between mb-4">
 				<h3 className="text-lg font-semibold text-white">Bookings</h3>
 				{!isLoading && !totalsLoading && (
 					<div className="text-sm text-white">
@@ -2759,20 +2818,29 @@ function EventBookings({ eventId, eventName, canManage }: { eventId: string; eve
 					// charged ticket + the first period of each of these, so without them the panel
 					// shows a $90 total above a $110 charge and never says where the $20 came from.
 					const bookingMembershipRows = bookingMemberships(booking.payment as any)
+					// What a pending request WILL be approved for. Same rows, same order, as
+					// `booking.tickets` — only the quantity differs once a host has edited it down.
+					const planned = plannedTickets(booking as any)
+					const adjusted = isRequestAdjusted(booking as any)
 					return (
 						<div key={booking._id} className={`border-b border-[#434343] last:border-b-0 ${cancelled ? "opacity-60" : ""}`}>
 							<button
 								type="button"
 								onClick={() => setOpenId(isOpen ? null : booking._id)}
-								className="w-full flex items-center justify-between gap-4 py-4 text-left"
+								className="w-full flex items-center justify-between gap-2 md:gap-4 py-4 text-left"
 								aria-expanded={isOpen}
 							>
 								<div className="min-w-0">
 									<p className="text-sm font-semibold text-white truncate">{booking.customerName}</p>
 									<p className="text-xs text-[#bbbbbb] mt-0.5 truncate">Ref: {booking.bookingRef}</p>
+									<div className="mt-1 md:hidden">
+										<BookingStatusPill booking={booking} />
+									</div>
 								</div>
-								<div className="flex items-center gap-4 flex-shrink-0">
-									<BookingStatusPill booking={booking} />
+								<div className="flex items-center gap-2 md:gap-4 flex-shrink-0">
+									<div className="hidden md:contents">
+										<BookingStatusPill booking={booking} />
+									</div>
 									<span className={`text-sm font-semibold ${onHold ? "text-amber-400" : "text-white"}`}>${booking.total}</span>
 									<Icon as={isOpen ? FiChevronUp : FiChevronDown} color="white" boxSize={5} />
 								</div>
@@ -2794,11 +2862,17 @@ function EventBookings({ eventId, eventName, canManage }: { eventId: string; eve
 										<p className="font-semibold text-white text-sm">Tickets:</p>
 										{booking.tickets.length > 0 ? (
 											<ul className="list-disc pl-5 mt-1 text-[#bbbbbb] text-sm">
-												{booking.tickets.map((ticket) => (
-													<li key={ticket._id}>
-														Quantity: <span className="text-white">{ticket.quantity}</span>
-													</li>
-												))}
+												{booking.tickets.map((ticket, i) => {
+													const quantity = planned[i]?.quantity ?? ticket.quantity
+													return (
+														<li key={ticket._id}>
+															Quantity: <span className="text-white">{quantity}</span>
+															{adjusted && quantity !== ticket.quantity && (
+																<span className="text-amber-400"> — edited, asked for {ticket.quantity}</span>
+															)}
+														</li>
+													)
+												})}
 											</ul>
 										) : (
 											<p className="mt-1 text-[#bbbbbb] text-sm">No-ticket event (registration only)</p>
@@ -2911,6 +2985,23 @@ function EventBookings({ eventId, eventName, canManage }: { eventId: string; eve
 											</button>
 										</div>
 									)}
+
+									{/* Every live booking — pending request or confirmed — can have its name
+									    and ticket quantity corrected right here, in the same editor every
+									    screen opens; it says what the quantity may do (a paid confirmed
+									    booking shows it locked). Not on a request whose card hold has lapsed —
+									    it can no longer be approved. */}
+									{canManage && !cancelled && !(isPendingBooking(booking as any) && isHoldExpired(booking as any)) && (
+										<div className="mt-4 flex justify-end">
+											<button
+												type="button"
+												onClick={() => requestEditor.requestEdit(booking)}
+												className="text-sm font-semibold text-[#F79432] hover:text-orange-300 hover:underline"
+											>
+												Edit name or tickets
+											</button>
+										</div>
+									)}
 								</div>
 							)}
 						</div>
@@ -2932,6 +3023,8 @@ function EventBookings({ eventId, eventName, canManage }: { eventId: string; eve
 				moneyState={bookingMoneyState(cancelTarget as any) as MoneyState}
 				amount={bookingMoneyAmount(cancelTarget as any)}
 			/>
+
+			<EditBookingDialog controller={requestEditor} eventTickets={eventTickets} />
 		</div>
 	)
 }
@@ -3178,6 +3271,28 @@ function DatePollTeaser({ event, onOpenPoll }: { event: IEvent; onOpenPoll: () =
 	const totalVotes = pollData?.totalVotes || (pollData?.options || []).reduce((sum: number, o: any) => sum + (o.voters?.length || o.voteCount || o.votes?.length || 0), 0)
 	const allVoters = (pollData.options || []).flatMap((o: any) => o.voters || [])
 
+	// Who has voted, and how many. Rendered in ONE of two places: beside the text from `md` up,
+	// under it on a phone — where sharing the row left the text about 90px wide and it wrapped
+	// one word per line.
+	const voters = (
+		<>
+			{allVoters.length > 0 && (
+				<div className="flex -space-x-1.5">
+					{allVoters.slice(0, 3).map((voter: any, i: number) => (
+						<div key={i} className="w-6 h-6 rounded-full bg-[#444] border-2 border-[#1E2024] flex items-center justify-center overflow-hidden">
+							{voter.image ? (
+								<img src={voter.image} alt={voter.name} className="w-full h-full object-cover" />
+							) : (
+								<span className="text-[9px] font-bold text-white uppercase">{voter.name?.charAt(0) || "?"}</span>
+							)}
+						</div>
+					))}
+				</div>
+			)}
+			<span className="text-xs text-[#888] whitespace-nowrap">{totalVotes} voted</span>
+		</>
+	)
+
 	return (
 		<button
 			onClick={onOpenPoll}
@@ -3191,22 +3306,10 @@ function DatePollTeaser({ event, onOpenPoll }: { event: IEvent; onOpenPoll: () =
 			<div className="flex-1 min-w-0">
 				<p className="text-sm font-semibold text-white">What date and time work best for you</p>
 				<p className="text-xs text-[#888] mt-0.5">Vote now and help finalize the event schedule.</p>
+				<div className="mt-2 flex items-center gap-2 md:hidden">{voters}</div>
 			</div>
 			<div className="flex items-center gap-2 flex-shrink-0">
-				{allVoters.length > 0 && (
-					<div className="flex -space-x-1.5">
-						{allVoters.slice(0, 3).map((voter: any, i: number) => (
-							<div key={i} className="w-6 h-6 rounded-full bg-[#444] border-2 border-[#1E2024] flex items-center justify-center overflow-hidden">
-								{voter.image ? (
-									<img src={voter.image} alt={voter.name} className="w-full h-full object-cover" />
-								) : (
-									<span className="text-[9px] font-bold text-white uppercase">{voter.name?.charAt(0) || "?"}</span>
-								)}
-							</div>
-						))}
-					</div>
-				)}
-				<span className="text-xs text-[#888] whitespace-nowrap">{totalVotes} voted</span>
+				<div className="hidden md:flex items-center gap-2">{voters}</div>
 				<svg className="w-4 h-4 text-[#555] group-hover:text-[#F79432] transition-colors lg:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
 				</svg>

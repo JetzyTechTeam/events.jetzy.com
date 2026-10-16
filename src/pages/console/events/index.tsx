@@ -85,6 +85,24 @@ export default function EventsListing({ events, pagination, isAdmin, search, fil
 
 	const filterQuery = filter && filter !== "all" ? { filter } : {}
 
+	// On a phone the chips are one scrolling row, so the selected one can start off-screen
+	// ("Pending Approval" is last). Bring it into view WITHIN the row - never scrolls the page.
+	const chipRowRef = React.useRef<HTMLDivElement>(null)
+	React.useEffect(() => {
+		const reveal = () => {
+			const row = chipRowRef.current
+			const chip = row?.querySelector<HTMLElement>('[data-active="true"]')
+			if (!row || !chip || row.scrollWidth <= row.clientWidth) return
+			row.scrollLeft = Math.max(0, chip.getBoundingClientRect().left - row.getBoundingClientRect().left + row.scrollLeft - 16)
+		}
+		reveal()
+		// Again once the web font is in: the chips widen when it swaps, which moved the
+		// selected chip back off the edge after the first pass.
+		let cancelled = false
+		;(document as any).fonts?.ready?.then(() => { if (!cancelled) reveal() })
+		return () => { cancelled = true }
+	}, [filter])
+
 	const goToPage = (p: number) => {
 		router.push({ pathname: router.pathname, query: { page: p, ...(search ? { search } : {}), ...filterQuery } })
 	}
@@ -114,7 +132,21 @@ export default function EventsListing({ events, pagination, isAdmin, search, fil
 				</Heading>
 			</div>
 
-			<Flex className="max-w-[800px] mx-auto" flexDirection={{ base: "column", sm: "row" }} gap={2} mb={4}>
+			{/* Below 480px (where this row is a column): the box takes the row and Search / Clear
+			    share the next one, instead of one full-width button per row. */}
+			<Flex
+				className="max-w-[800px] mx-auto"
+				flexDirection={{ base: "column", sm: "row" }}
+				gap={2}
+				mb={4}
+				sx={{ "@media screen and (max-width: 29.99em)": {
+					flexDirection: "row",
+					flexWrap: "wrap",
+					"& > .chakra-input__group": { flexBasis: "100%" },
+					"& input, & .chakra-input__left-element": { height: "44px" },
+					"& > button": { flex: "1 1 0", height: "44px" },
+				} }}
+			>
 				<InputGroup>
 					<InputLeftElement pointerEvents="none">
 						<SearchSVG />
@@ -143,7 +175,12 @@ export default function EventsListing({ events, pagination, isAdmin, search, fil
 			</Flex>
 
 			{/* FILTER CHIPS */}
-			<div className="flex flex-wrap items-center gap-2 max-w-[800px] mx-auto mb-5">
+			{/* Below 640px: one sideways-scrolling row, as on the Guests tab - seven or eight chips
+			    wrapped into three rows and pushed the list down. From 640px it wraps as before. */}
+			<div
+				ref={chipRowRef}
+				className="flex flex-nowrap sm:flex-wrap items-center gap-2 max-w-[800px] mx-auto mb-5 overflow-x-auto sm:overflow-visible [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+			>
 				{/* Pending Approval is the admin review queue — a host has nothing to do with it,
 				    so it isn't shown to them at all; each row's own DRAFT / PENDING APPROVAL badge
 				    already tells them where their event stands. getServerSideProps refuses the
@@ -154,7 +191,8 @@ export default function EventsListing({ events, pagination, isAdmin, search, fil
 						<button
 							key={key}
 							onClick={() => setFilter(key)}
-							className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
+							data-active={active}
+							className={`px-4 py-2 sm:py-1.5 shrink-0 sm:shrink whitespace-nowrap sm:whitespace-normal rounded-full text-sm font-medium transition-colors ${
 								active
 									? "bg-white text-black"
 									: "bg-[#1E1E1E] text-[#A7A7A7] border border-[#444444] hover:bg-[#2A2A2A]"
@@ -175,7 +213,7 @@ export default function EventsListing({ events, pagination, isAdmin, search, fil
 			</div>
 
 			{pagination.totalPages > 1 && (
-				<div className="flex flex-col sm:flex-row items-center sm:justify-between gap-3 max-w-[800px] mx-auto mt-8">
+				<div className="flex flex-row items-center justify-between gap-3 max-w-[800px] mx-auto mt-8">
 					<Button
 						onClick={() => goToPage(pagination.page - 1)}
 						isDisabled={pagination.page <= 1}
@@ -186,7 +224,7 @@ export default function EventsListing({ events, pagination, isAdmin, search, fil
 					</Button>
 
 					<Text color="gray.400" fontSize="sm">
-						Page {pagination.page} of {pagination.totalPages} &nbsp;·&nbsp; {pagination.total} total
+						Page {pagination.page} of {pagination.totalPages}<span className="hidden sm:inline"> &nbsp;·&nbsp; {pagination.total} total</span>
 					</Text>
 
 					<Button
@@ -478,15 +516,25 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 					<div className="flex items-center gap-x-4 text-xs text-gray-400">
 						<span className="flex items-center gap-1">🎟️ {totalTickets} tickets</span>
 						<span className="flex items-center gap-1">👥 {uniqueGuests} guests</span>
+						{/* Admin only — getServerSideProps stamps `totalViews` for nobody else. Checked
+						    as a number, not for truthiness: 0 is a real answer, while an absent field
+						    means the count couldn't be read and must not be shown as zero. Explicit
+						    locale because this row is server-rendered. */}
+						{props.isAdmin && typeof (event as any).totalViews === "number" && (
+							<span className="flex items-center gap-1" title="Total views">👁 {(event as any).totalViews.toLocaleString("en-US")} views</span>
+						)}
 					</div>
 				</div>
 
 				{/* ACTIONS */}
-				<div className="shrink-0 flex flex-col gap-2 w-full sm:w-[180px]">
+				{/* Below 640px: Approve (when shown) takes the row, Manage and Delete share the next
+				    one - three stacked full-width buttons made an admin's card very tall. Classes
+				    only; the buttons and their conditions are untouched. */}
+				<div className="shrink-0 flex flex-row flex-wrap sm:flex-col sm:flex-nowrap gap-2 w-full sm:w-[180px]">
 					{/* Premium tag — one badge only: the pill above Manage Event. The diagonal corner
 					    ribbon was removed (2026-09-14) because the card showed the same tag twice. */}
 					{(event as any).premiumEvent && (
-						<div className="flex justify-end">
+						<div className="flex justify-end basis-full sm:basis-auto">
 							<PremiumEventBadge />
 						</div>
 					)}
@@ -498,12 +546,12 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 							type="button"
 							onClick={onApproveOpen}
 							disabled={isApproving}
-							className="flex items-center justify-center gap-1 bg-[#2FA84F] text-white font-bold py-2.5 px-3 rounded-md text-sm hover:bg-[#279143] transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+							className="basis-full sm:basis-auto flex items-center justify-center gap-1 bg-[#2FA84F] text-white font-bold py-2.5 px-3 rounded-md text-sm hover:bg-[#279143] transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
 						>
 							{isApproving ? "Approving…" : "✅ Approve Event"}
 						</button>
 					)}
-					<Link href={`/console/events/${event._id}/manage`} className="flex items-center justify-center gap-1 bg-[#3E3E3E] py-2.5 px-3 rounded-md text-sm hover:bg-[#4E4E4E] transition-colors">
+					<Link href={`/console/events/${event._id}/manage`} className="flex-1 sm:flex-initial flex items-center justify-center gap-1 bg-[#3E3E3E] py-2.5 px-2 sm:px-3 whitespace-nowrap sm:whitespace-normal rounded-md text-sm hover:bg-[#4E4E4E] transition-colors">
 						✏️ Manage Event
 					</Link>
 					{/* Outlined rather than solid: it sits under the two actions an admin actually came
@@ -512,7 +560,7 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 						<button
 							type="button"
 							onClick={onDeleteOpen}
-							className="flex items-center justify-center gap-1 border border-[#7C1D1D] text-[#FF6B6B] py-2.5 px-3 rounded-md text-sm hover:bg-[#7C1D1D] hover:text-white transition-colors"
+							className="flex-1 sm:flex-initial flex items-center justify-center gap-1 border border-[#7C1D1D] text-[#FF6B6B] py-2.5 px-2 sm:px-3 whitespace-nowrap sm:whitespace-normal rounded-md text-sm hover:bg-[#7C1D1D] hover:text-white transition-colors"
 						>
 							🗑️ Delete Event
 						</button>
@@ -704,9 +752,14 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 		return { redirect: { destination: `/console/events${qs ? `?${qs}` : ""}`, permanent: false } }
 	}
 
+	// View counts for the rows — admins only, and only for the page being rendered. A host's
+	// list is left exactly as it was: they read Views on Manage Event, for their own events.
+	const { attachEventViewCounts } = await import("@/lib/event-view-counts")
+	const eventsForPage = isAdmin ? await attachEventViewCounts(paginatedEvents) : paginatedEvents
+
 	return {
 		props: {
-			events: JSON?.stringify(paginatedEvents),
+			events: JSON?.stringify(eventsForPage),
 			pagination: { total, page, showing: paginatedEvents.length, limit: LIMIT, totalPages },
 			isAdmin,
 			search,

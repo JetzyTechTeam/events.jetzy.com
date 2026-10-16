@@ -17,7 +17,7 @@ import {
 import axios from "axios"
 import { useQuery } from "@tanstack/react-query"
 import { DateTime } from "luxon"
-import { isPendingBooking, isHoldExpired, isCaptureFailed } from "@/lib/booking-status"
+import { isPendingBooking, isHoldExpired, isCaptureFailed, holdTimeRemaining } from "@/lib/booking-status"
 import { HoldExpiry, PaymentBadge } from "@/components/bookings/PaymentBadge"
 import AnswerText from "@/components/events/AnswerText"
 import Pagination from "@/components/misc/Pagination"
@@ -37,6 +37,7 @@ import Pagination from "@/components/misc/Pagination"
  */
 
 import { bookingTicketCount } from "@/lib/booking-approval"
+import { isRequestAdjusted, plannedTickets } from "@/lib/booking-request-edit"
 import { useBookingApprovals } from "./approvals/useBookingApprovals"
 import { ApprovalDialogs, ticketBreakdown as buildTicketBreakdown } from "./approvals/ApprovalDialogs"
 import { ApprovalActions, expiringSoonBookings } from "./approvals/ApprovalActions"
@@ -46,8 +47,10 @@ const money = (n?: number) => `$${Number(n || 0).toFixed(2)}`
 /**
  * Width of the frozen Actions column. Fixed rather than auto, because the Guest column's
  * `left` offset has to equal it exactly or the two frozen columns overlap.
+ *
+ * Approve + Reject + the Edit icon. It was 170px for the first two alone.
  */
-const ACTIONS_W = "170px"
+const ACTIONS_W = "214px"
 
 /** Processed requests per page. The list only ever grows, and it sits below the pending queue. */
 const PROCESSED_PER_PAGE = 10
@@ -132,16 +135,30 @@ export function ApprovalRequests({
 	// layouts cannot disagree about what a request is for or how it ended.
 	// The ticket NAME, not just a count. A host running VIP and General couldn't tell what
 	// they were approving without opening the dialog.
-	const ticketLines = (b: any, fallback: React.ReactNode) =>
-		ticketBreakdown(b).length > 0 ? (
-			ticketBreakdown(b).map((line, i) => (
-				<Text key={i} fontSize="sm" whiteSpace="nowrap">
-					{line.quantity} &times; {line.name}
-				</Text>
-			))
-		) : (
-			<Text fontSize="sm">{fallback}</Text>
+	//
+	// A pending request a host has edited down shows the number it WILL be approved for, with
+	// what was asked for beneath it — `tickets` itself still says what the card is held for.
+	// `plannedTickets` returns the booking's own rows for anything not pending, so the
+	// processed list is unaffected.
+	const ticketLines = (b: any, fallback: React.ReactNode) => {
+		const lines = ticketBreakdown({ tickets: plannedTickets(b) })
+		if (lines.length === 0) return <Text fontSize="sm">{fallback}</Text>
+		const asked = bookingTicketCount(b?.tickets)
+		return (
+			<>
+				{lines.map((line, i) => (
+					<Text key={i} fontSize="sm" whiteSpace="nowrap">
+						{line.quantity} &times; {line.name}
+					</Text>
+				))}
+				{isRequestAdjusted(b) && (
+					<Text fontSize="xs" color="#F79432" whiteSpace="nowrap">
+						Edited &middot; asked for {asked}
+					</Text>
+				)}
+			</>
 		)
+	}
 
 	const outcomeBadge = (b: any) => {
 		const payment = b.payment || {}
@@ -232,7 +249,8 @@ export function ApprovalRequests({
 				{/* Phones: one card per request — the frozen-column table needs a wide screen. */}
 				<Flex display={{ base: "flex", md: "none" }} direction="column" gap={3}>
 					{pending.map((b: any) => {
-						const qty = bookingTicketCount(b?.tickets)
+						// What the request will be approved for — the edited number when there is one.
+						const qty = bookingTicketCount(plannedTickets(b))
 						const prior = priorConfirmedFor(b)
 						const priorQty = prior.reduce((sum, p) => sum + bookingTicketCount(p?.tickets), 0)
 						const fit = fitFor(b)
@@ -249,7 +267,8 @@ export function ApprovalRequests({
 								</Flex>
 								<Text color="#9C9C9C" fontSize="13px" wordBreak="break-all">{b.customerEmail || "—"}</Text>
 								<Flex mt={3} justify="space-between" align="flex-start" gap={3}>
-									<Box color="white">
+									{/* Ticket names may wrap on a card - in the table they stay on one line. */}
+									<Box color="white" minW={0} sx={{ "& > p": { whiteSpace: "normal", overflowWrap: "anywhere" } }}>
 										{ticketLines(b, qty)}
 										{!fit.fits && fit.seatable !== null && (
 											<Badge colorScheme={fit.seatable > 0 ? "orange" : "red"} fontSize="0.65em" borderRadius="4px" px={1.5} mt={1}>
@@ -257,9 +276,15 @@ export function ApprovalRequests({
 											</Badge>
 										)}
 									</Box>
+									{/* `HoldExpiry` sets no font size: the table gave it 14px, this card let it
+									    inherit 16px, so "in 6 days" outgrew the badge above it. One small line
+									    that also says WHAT is expiring. */}
 									<Flex direction="column" align="flex-end" gap={1} flexShrink={0}>
 										<PaymentBadge booking={b} />
-										<HoldExpiry booking={b} />
+										<Flex align="center" gap={1} fontSize="12px" lineHeight="1.3">
+											{holdTimeRemaining(b) !== null && holdTimeRemaining(b)! > 0 && <Text color="#9C9C9C">Hold expires</Text>}
+											<HoldExpiry booking={b} />
+										</Flex>
 									</Flex>
 								</Flex>
 								{isCaptureFailed(b) && <Box mt={3}>{captureFailedNotice(b)}</Box>}
@@ -335,7 +360,7 @@ export function ApprovalRequests({
 						</Thead>
 						<Tbody>
 							{pending.map((b: any) => {
-								const qty = bookingTicketCount(b?.tickets)
+								const qty = bookingTicketCount(plannedTickets(b))
 								const expired = isHoldExpired(b)
 								const captureFailed = isCaptureFailed(b)
 								// Actions, Guest, Tickets, Payment, Expires, …questions…, Requested.

@@ -47,7 +47,19 @@ export type Booking = {
 		authExpiresAt?: string | null;
 		capturedAt?: string | null;
 		canceledAt?: string | null;
+		/**
+		 * Key, status and amounts only — enough to know the request sells a membership and how
+		 * much of the hold it accounts for. No subscription or price id.
+		 */
+		memberships?: Array<{ key: string; status?: string; amount?: number; trialMonths?: number }>;
+		premiumStatus?: string;
+		premiumAmount?: number;
 	} | null;
+	/**
+	 * The lower quantity a host intends to approve on a held request. Read through
+	 * `plannedTickets()`, never directly.
+	 */
+	adjustedTickets?: { ticketId: string; quantity: number }[] | null;
 };
 
 export type Exportable = {
@@ -76,7 +88,13 @@ export default function BookingsPage({ events, pagination, search }: Props) {
 
 	return (
 		<ConsoleLayout page={Pages.Bookings}>
-			<Flex gap={2} mb={4} px={2}>
+			{/* Phones: the search box takes the row, the buttons share the next one. */}
+			<Flex
+				gap={2}
+				mb={4}
+				px={2}
+				sx={{ "@media screen and (max-width: 47.99em)": { flexWrap: "wrap", paddingLeft: 0, paddingRight: 0, "& > input": { flexBasis: "100%", maxWidth: "none", height: "44px", fontSize: "16px" }, "& > button": { flex: "1 1 0", height: "44px" } } }}
+			>
 				<Input
 					placeholder="Search events by name or location..."
 					value={searchInput}

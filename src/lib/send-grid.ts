@@ -142,7 +142,20 @@ type TicketEmailData = {
    * confirmed 1". Renders a plain statement of the shortfall; without it the guest reads an
    * ordinary confirmation and believes they still hold the full number.
    */
-  partialApproval?: { requested: number; confirmed: number }
+  /**
+   * `reason: "adjusted"` — the host chose to confirm fewer (an edit in the Approvals tab), so
+   * the note must not claim the event ran out of room. Absent = capacity was short.
+   */
+  partialApproval?: {
+    requested: number
+    confirmed: number
+    reason?: "adjusted"
+    /**
+     * Memberships sold with the order. A membership comes with the ORDER, not with each ticket,
+     * so fewer tickets leaves it exactly as bought — and the note says so.
+     */
+    membershipLabels?: string[]
+  }
   amountCharged?: number // paid approvals only: the hold has just been captured, so say so
   /**
    * Itemised order total. Preferred over the legacy referralCode/discountAmount trio —
@@ -1667,13 +1680,21 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
           ${partialApproval && partialApproval.confirmed < partialApproval.requested ? `
           <div style="background-color: #fff3cd; padding: 16px 18px; border-radius: 8px; margin: 0 0 20px 0; border-left: 4px solid #ffc107;">
             <p style="color: #856404; margin: 0; font-size: 15px;">
-              You asked for <strong>${partialApproval.requested} tickets</strong>, but the event only had room for
-              <strong>${partialApproval.confirmed}</strong>. We've confirmed ${partialApproval.confirmed === 1 ? "1 ticket" : `${partialApproval.confirmed} tickets`} for you.
+              ${partialApproval.reason === "adjusted"
+                ? `You asked for <strong>${partialApproval.requested} tickets</strong>, and the organizer has confirmed
+              <strong>${partialApproval.confirmed}</strong> of them.`
+                : `You asked for <strong>${partialApproval.requested} tickets</strong>, but the event only had room for
+              <strong>${partialApproval.confirmed}</strong>.`} We've confirmed ${partialApproval.confirmed === 1 ? "1 ticket" : `${partialApproval.confirmed} tickets`} for you.
             </p>
             <p style="color: #856404; margin: 10px 0 0 0; font-size: 14px;">
               You have <strong>not</strong> been charged for the ${partialApproval.requested - partialApproval.confirmed === 1 ? "other ticket" : "other tickets"} &mdash; any hold on your card for
               ${partialApproval.requested - partialApproval.confirmed === 1 ? "it" : "them"} has been released.
             </p>
+            ${partialApproval.membershipLabels?.length ? `
+            <p style="color: #856404; margin: 10px 0 0 0; font-size: 14px;">
+              Your ${partialApproval.membershipLabels.join(" and ")} membership${partialApproval.membershipLabels.length > 1 ? "s are" : " is"} not affected &mdash; it comes with your order, not with each ticket.
+            </p>
+            ` : ""}
           </div>
           ` : ""}
 

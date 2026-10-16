@@ -40,6 +40,7 @@ import {
 } from "@chakra-ui/react"
 import MetricsCard from "@/components/analytics/MetricsCard"
 import DateRangeSelector from "@/components/analytics/DateRangeSelector"
+import { phoneTableSx } from "@/components/analytics/AnalyticsPanel"
 import SessionTimeline, { TimelineStep } from "@/components/analytics/SessionTimeline"
 import ClickHeatmap from "@/components/analytics/ClickHeatmap"
 
@@ -217,8 +218,8 @@ export default function JourneyAnalyticsPage() {
 				<meta name="robots" content="noindex, nofollow" />
 			</Head>
 			<ConsoleLayout page={Pages.Analytics} maxW="100%" backBtn="/console/analytics">
-				<Box maxW="1400px" mx="auto" px={{ base: 4, md: 0 }} py={6}>
-					<Flex bg="#1a1a1a" color="white" p={4} borderRadius="lg" border="1px solid" borderColor="#2a2a2a" mb={6} justify="space-between" align="center" gap={4} wrap="wrap">
+				<Box maxW="1400px" mx="auto" px={0} py={{ base: 2, md: 6 }}>
+					<Flex bg="#1a1a1a" color="white" p={{ base: 3, md: 4 }} borderRadius="lg" border="1px solid" borderColor="#2a2a2a" mb={{ base: 4, md: 6 }} justify="space-between" align="center" gap={4} wrap="wrap" sx={{ "@media screen and (max-width: 47.99em)": { "& > div:first-of-type": { width: "100%", minWidth: 0 } } }}>
 						<DateRangeSelector dark dateFrom={dateFrom} dateTo={dateTo} onDateChange={handleDateChange} />
 						<HStack spacing={3}>
 							<NextLink href="/console/analytics/qr-signups" passHref legacyBehavior>
@@ -229,7 +230,7 @@ export default function JourneyAnalyticsPage() {
 					</Flex>
 
 					<Tabs variant="line" index={tab} onChange={setTab}>
-						<TabList borderBottom="2px solid #2a2a2a">
+						<TabList borderBottom="2px solid #2a2a2a" sx={{ "@media screen and (max-width: 47.99em)": { overflowX: "auto", flexWrap: "nowrap", scrollbarWidth: "none", "&::-webkit-scrollbar": { display: "none" }, "& > button": { flexShrink: 0, whiteSpace: "nowrap" } } }}>
 							<Tab color="#9C9C9C" fontWeight="bold" _selected={{ color: "#F79432", borderBottom: "2px solid #F79432" }}>Sessions</Tab>
 							<Tab color="#9C9C9C" fontWeight="bold" _selected={{ color: "#F79432", borderBottom: "2px solid #F79432" }}>Guests vs Auth</Tab>
 							<Tab color="#9C9C9C" fontWeight="bold" _selected={{ color: "#F79432", borderBottom: "2px solid #F79432" }}>Click Heatmap</Tab>
@@ -248,7 +249,7 @@ export default function JourneyAnalyticsPage() {
 									<Center py={10}><Spinner color="#F79432" /></Center>
 								) : (
 									<>
-										<TableContainer bg="#1a1a1a" borderRadius="lg" border="1px solid" borderColor="#2a2a2a">
+										<TableContainer bg="#1a1a1a" borderRadius="lg" border="1px solid" borderColor="#2a2a2a" sx={phoneTableSx(1)}>
 											<Table size="sm">
 												<Thead>
 													<Tr>
@@ -304,15 +305,15 @@ export default function JourneyAnalyticsPage() {
 									<Center py={10}><Spinner color="#F79432" /></Center>
 								) : (
 									<>
-										<SimpleGrid columns={{ base: 1, md: 4 }} spacing={4} mb={6}>
-											<MetricsCard dark title="Guest sessions" value={guests.totals.guest.sessions.toLocaleString()} />
-											<MetricsCard dark title="Unique guests" value={guests.totals.guest.uniqueVisitors.toLocaleString()} />
-											<MetricsCard dark title="Auth sessions" value={guests.totals.auth.sessions.toLocaleString()} />
-											<MetricsCard dark title="Guest → Auth conv." value={`${guests.guestToAuthConversionPct}%`} />
+										<SimpleGrid columns={{ base: 2, md: 4 }} spacing={{ base: 2, md: 4 }} mb={6}>
+											<MetricsCard dark compactOnMobile title="Guest sessions" value={guests.totals.guest.sessions.toLocaleString()} />
+											<MetricsCard dark compactOnMobile title="Unique guests" value={guests.totals.guest.uniqueVisitors.toLocaleString()} />
+											<MetricsCard dark compactOnMobile title="Auth sessions" value={guests.totals.auth.sessions.toLocaleString()} />
+											<MetricsCard dark compactOnMobile title="Guest → Auth conv." value={`${guests.guestToAuthConversionPct}%`} />
 										</SimpleGrid>
-										<SimpleGrid columns={{ base: 1, md: 2 }} spacing={4} mb={6}>
-											<MetricsCard dark title="Avg guest duration" value={`${guests.totals.guest.avgDurationSec}s`} />
-											<MetricsCard dark title="Avg guest pages" value={String(guests.totals.guest.avgPages)} />
+										<SimpleGrid columns={{ base: 2, md: 2 }} spacing={{ base: 2, md: 4 }} mb={6}>
+											<MetricsCard dark compactOnMobile title="Avg guest duration" value={`${guests.totals.guest.avgDurationSec}s`} />
+											<MetricsCard dark compactOnMobile title="Avg guest pages" value={String(guests.totals.guest.avgPages)} />
 										</SimpleGrid>
 										<Box bg="#1a1a1a" p={4} borderRadius="lg" border="1px solid" borderColor="#2a2a2a">
 											<Text fontWeight="600" mb={3} color="white">Top guest entry pages</Text>
@@ -372,7 +373,7 @@ export default function JourneyAnalyticsPage() {
 				</Box>
 			</ConsoleLayout>
 
-			<Modal isOpen={isOpen} onClose={onClose} size="3xl" scrollBehavior="inside">
+			<Modal isOpen={isOpen} onClose={onClose} size={{ base: "full", md: "3xl" }} scrollBehavior="inside">
 				<ModalOverlay />
 				<ModalContent bg="#1a1a1a" color="white" border="1px solid" borderColor="#2a2a2a">
 					<ModalHeader color="white">

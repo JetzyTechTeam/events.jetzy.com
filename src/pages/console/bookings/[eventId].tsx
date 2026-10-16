@@ -67,10 +67,13 @@ export default function BookingsEventPage({ bookings, event, filters, exportable
 
   const tabProps = {
     fontWeight: 500,
-    fontSize: "16px",
+    // Phones: three equal-width tabs that fit the row, instead of a sideways scroll.
+    fontSize: { base: "14px", md: "16px" },
     color: "#FFFFFF",
     borderTopRadius: "10px",
-    px: 5,
+    px: { base: 2, md: 5 },
+    flex: { base: 1, md: "initial" },
+    whiteSpace: { base: "nowrap", md: "normal" },
     _selected: { bg: "#FFFFFF", color: "#0B0B0B", fontWeight: 700, borderColor: "#FFFFFF" },
   }
 
@@ -91,14 +94,14 @@ export default function BookingsEventPage({ bookings, event, filters, exportable
           is one unbreakable word, and only `anywhere` counts toward min-content, so without it this
           line set the page's width and gave the whole console a horizontal scrollbar on a phone.
           Same rule as the My Events rows. `stripHtml` matches every other display of the name. */}
-      <Text fontSize={20} fontWeight="semibold" noOfLines={2} overflowWrap="anywhere" minW={0}>
+      <Text fontSize={{ base: 16, md: 20 }} fontWeight="semibold" noOfLines={2} overflowWrap="anywhere" minW={0}>
         Event Name : {stripHtml(event.name || "")}
       </Text>
-      <Text fontSize={17} fontWeight="semibold">
+      <Text fontSize={{ base: 13, md: 17 }} fontWeight="semibold" color={{ base: "#B5B6B7", md: "inherit" }} mt={{ base: 1, md: 0 }}>
         Starts on ({event.startsOn ? new Date(event.startsOn).toLocaleDateString() : "TBD"}) - Ends on ({event.endsOn ? new Date(event.endsOn).toLocaleDateString() : "TBD"})
       </Text>
 
-      <Tabs variant="line" index={tabIndex} onChange={onTabChange} mt={6}>
+      <Tabs variant="line" index={tabIndex} onChange={onTabChange} mt={{ base: 4, md: 6 }}>
         <TabList borderBottom="2px solid #9C9C9C" overflowX="auto" overflowY="hidden">
           <Tab {...tabProps}>Bookings</Tab>
           <Tab {...tabProps}>Waiting List</Tab>
@@ -115,7 +118,9 @@ export default function BookingsEventPage({ bookings, event, filters, exportable
           <TabPanel px={0}>
             <BookingFilters eventId={event._id} initialFilters={filters} />
 
-            <div className="overflow-auto mt-4 border rounded" style={{ maxHeight: "70vh" }}>
+            {/* The bordered 70vh scroll box is for the TABLE. On a phone the bookings are cards
+                and scroll with the page, so the box is desktop-only. */}
+            <div className="mt-4 md:overflow-auto md:border md:rounded md:max-h-[70vh]">
               <BookingTableComponent
                 rows={bookings}
                 exportable={exportable}
@@ -126,7 +131,15 @@ export default function BookingsEventPage({ bookings, event, filters, exportable
                 canManage
                 // Names for the edit dialog — a booking stores `ticketId` only. Already in
                 // the props for the Approvals tab, so nothing extra is fetched.
-                eventTickets={(event.tickets || []).map((t: any) => ({ _id: String(t._id), name: t.name }))}
+                // `price` / `memberships` let the pending-request editor refuse, before it
+              // sends anything, an added seat on a ticket that is now paid or bundled.
+              eventTickets={(event.tickets || []).map((t: any) => ({
+                _id: String(t._id),
+                name: t.name,
+                price: t.price,
+                ...(Array.isArray(t.memberships) ? { memberships: t.memberships } : {}),
+                ...(t.includesPremium !== undefined ? { includesPremium: t.includesPremium } : {}),
+              }))}
                 onDeleteSuccess={() => router.replace(router.asPath)}
                 onCancelSuccess={() => router.replace(router.asPath)}
                 onEditSuccess={() => router.replace(router.asPath)}
@@ -134,13 +147,13 @@ export default function BookingsEventPage({ bookings, event, filters, exportable
             </div>
           </TabPanel>
           <TabPanel px={0}>
-            <div className="bg-[#181818] rounded-xl p-3">
+            <div className="md:bg-[#181818] rounded-xl p-0 md:p-3">
               <EventWaitingList eventId={event._id} eventName={event.name} />
             </div>
           </TabPanel>
           {showApprovals && (
             <TabPanel px={0}>
-              <div className="bg-[#181818] rounded-xl p-3">
+              <div className="md:bg-[#181818] rounded-xl p-0 md:p-3">
                 <ApprovalRequests eventId={event._id} event={event} />
               </div>
             </TabPanel>
@@ -245,6 +258,19 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (ctx) => {
     "payment.authExpiresAt": 1,
     "payment.capturedAt": 1,
     "payment.canceledAt": 1,
+    // For the pending-request editor on this table. Whether the request sells a membership
+    // decides if its quantity may change at all — key + status only, so no subscription or
+    // price id reaches the browser — and `adjustedTickets` is the lower number a host has
+    // already set on a held request.
+    "payment.memberships.key": 1,
+    "payment.memberships.status": 1,
+    // Amounts too: on a held request the membership is charged in full and only the ticket
+    // part shrinks, so the editor's "will be charged" figure needs to know how much is which.
+    "payment.memberships.amount": 1,
+    "payment.memberships.trialMonths": 1,
+    "payment.premiumStatus": 1,
+    "payment.premiumAmount": 1,
+    adjustedTickets: 1,
   })
     .sort({ createdAt: -1 })
     .lean()
@@ -276,9 +302,12 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (ctx) => {
       const bookedTickets = b.tickets.map((t: any) => {
         return `Ticket ${t.ticketId.toString()} x ${t.quantity}`;
       });
+      // `adjustedTickets` holds ObjectIds and the export doesn't use it — left out rather than
+      // serialized, since this object is a prop as well.
+      const { adjustedTickets: _adjustedTickets, ...bookingForExport } = b;
       return {
         booking: {
-          ...b,
+          ...bookingForExport,
           _id: b._id.toString(),
           eventId: b.eventId.toString(),
           createdAt: b.createdAt ? b.createdAt.toString() : "",
@@ -332,6 +361,10 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (ctx) => {
           ticketId: t.ticketId.toString(),
           quantity: t.quantity,
         })),
+        // ObjectIds again — and `null` rather than absent, since `undefined` is not a valid prop.
+        adjustedTickets: Array.isArray(b.adjustedTickets) && b.adjustedTickets.length > 0
+          ? b.adjustedTickets.map((t: any) => ({ ticketId: String(t.ticketId), quantity: t.quantity }))
+          : null,
       })),
       exportable,
       checkInMap,

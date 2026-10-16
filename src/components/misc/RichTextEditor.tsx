@@ -233,9 +233,16 @@ interface Props {
    * from tablet width up.
    */
   compactOnMobile?: boolean
+  /**
+   * Shrinks the 400px minimum height to 180px at EVERY width. Set by the ticket dialog: a ticket
+   * blurb is a few lines, and 400px of empty box in a dialog pushed everything that decides the
+   * price below the fold. Still grows with what is typed. On a phone `compactOnMobile`'s 120px
+   * still wins — its rule comes later.
+   */
+  compact?: boolean
 }
 
-export default function RichTextEditor({ value, onChange, placeholder, hideImageButton, compactOnMobile }: Props) {
+export default function RichTextEditor({ value, onChange, placeholder, hideImageButton, compactOnMobile, compact }: Props) {
   const [QuillComp, setQuillComp]   = useState<any>(null)
   const quillRef                     = useRef<any>(null)
   const wrapperRef                   = useRef<HTMLDivElement>(null)
@@ -322,7 +329,7 @@ export default function RichTextEditor({ value, onChange, placeholder, hideImage
     return (
       <div className={compactOnMobile ? "rte-loading-compact-mobile" : undefined} style={{
         background: "#141619", border: "1px solid #3a3d42", borderRadius: "8px",
-        minHeight: "400px", display: "flex", alignItems: "center",
+        minHeight: compact ? "224px" : "400px", display: "flex", alignItems: "center",
         justifyContent: "center", color: "#6b7280", fontSize: "14px",
       }}>
         Loading editor…
@@ -335,7 +342,11 @@ export default function RichTextEditor({ value, onChange, placeholder, hideImage
   }
 
   return (
-    <div ref={wrapperRef} className={`rich-text-editor-wrapper${compactOnMobile ? " rte-compact-mobile" : ""}`} style={{ position: "relative" }}>
+    <div
+      ref={wrapperRef}
+      className={`rich-text-editor-wrapper${compact ? " rte-compact" : ""}${compactOnMobile ? " rte-compact-mobile" : ""}`}
+      style={{ position: "relative" }}
+    >
       <input ref={fileInputRef} type="file" accept="image/*"
         style={{ display: "none" }} onChange={handleFileChange} />
 
@@ -412,6 +423,10 @@ export default function RichTextEditor({ value, onChange, placeholder, hideImage
           background: #1e2124 !important; border: 1px solid #3a3d42 !important;
         }
         .rich-text-editor-wrapper .ql-picker-item { color: #a0aec0 !important; }
+
+        /* compact: see the prop. Before the phone block, so compactOnMobile still wins there. */
+        .rich-text-editor-wrapper.rte-compact .ql-container,
+        .rich-text-editor-wrapper.rte-compact .ql-editor { min-height: 180px; }
 
         /* PHONES ONLY (below Chakra's md, 768px). Nothing here applies from tablet width up. */
         @media screen and (max-width: 47.99em) {

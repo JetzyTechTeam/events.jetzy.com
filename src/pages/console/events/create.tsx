@@ -65,7 +65,6 @@ import { useAppDispatch } from "@/redux/stores";
 import { useRouter } from "next/router";
 import { TicketData } from "@/components/events/TicketCard";
 import { ticketApprovalFlag } from "@/lib/ticket-approval";
-import { isBelowStripeMinimum, BELOW_MIN_PRICE_MESSAGE } from "@/lib/ticket-pricing";
 import EventSlugField from "@/components/events/EventSlugField";
 import { isPendingAdminApproval } from "@/lib/event-approval";
 import { FileUploadData } from "@/components/misc/DragAndDropUploader";
@@ -78,18 +77,7 @@ import ListingCardPreview from "@/components/events/ListingCardPreview";
 import { MobileSection } from "@/components/console/manage/MobileSection";
 import { ManageMobileActionBar } from "@/components/console/manage/ManageMobileActionBar";
 import { scheduleSummary, textSummary, countSummary } from "@/components/console/manage/sectionSummaries";
-import {
-  ticketApprovalRow,
-  ticketCancelButton,
-  ticketField,
-  ticketFooterRow,
-  ticketModalBody,
-  ticketModalClose,
-  ticketModalContent,
-  ticketModalFooter,
-  ticketModalHeader,
-  ticketPrimaryButton,
-} from "@/components/events/ticketModalMobile";
+import TicketEditorModal from "@/components/events/TicketEditorModal";
 import { previewPath } from "@/lib/event-preview";
 import TimezoneSelect from "../../../components/timezone-select";
 import { z } from "zod";
@@ -100,12 +88,8 @@ import InterestsSelector from "@/components/events/InterestsSelector";
 import { MAX_BENEFIT_LENGTH, MAX_BENEFIT_COUNT, DATE_POLL_OPTION_LABEL_LIMIT, EVENT_ENTRANCE_LIMIT, EVENT_ENTRANCE_WORD_LIMIT, EVENT_FIELD_MESSAGES, EVENT_LOCATION_WORD_LIMIT, benefitChips, eventDescCounter, isEventDescOverLimit, withinWordLimit, wordCounter } from "@/lib/event-field-limits";
 import { stripHtml } from "@/utils/text";
 import { useSession } from "next-auth/react";
-import { ticketMemberships, ticketMembershipInterval, ticketMembershipFreeMonths } from "@/lib/premium-bundle";
-import TicketMembershipToggles from "@/components/events/TicketMembershipToggles";
 import { SortableTicketList, SortableTicketItem } from "@/components/events/SortableTicketList";
 import { allowPlacesDropdown, buildPlaceSelection, suppressPlacesDropdown } from "@/lib/google-place";
-import { blurOnWheel } from "@/lib/number-input"
-import { ticketQuantityLimit } from "@/lib/ticket-quantity"
 
 // Shared dark field styling (Figma: bg #090C10, 1px #343536 border, rounded, Roboto 14px)
 const fieldBase = "w-full h-12 bg-[#090C10] border border-[#343536] rounded-md text-white text-base md:text-sm placeholder:text-gray-500 focus:outline-none";
@@ -1220,232 +1204,34 @@ const CreateEventPage = () => {
               </ModalContent>
             </Modal>
 
-            {/* Tickets Modal */}
+            {/* Tickets Modal — the shared TicketEditorModal, exactly as Manage Event and the event
+                page use it. This page used to carry an inline duplicate of the dialog ("KEEP IN
+                STEP WITH TicketEditorModal"); it is gone, so a ticket's price, approval and
+                membership rules exist in one place. */}
             <FieldArray name="tickets">
               {({ push, replace }) => (
-                <Modal isOpen={isOpen} onClose={onClose} isCentered size={{ base: "full", md: "md" }}>
-                  <ModalOverlay />
-                  <ModalContent bg="#1E1E1E" color="white" {...ticketModalContent}>
-                    <ModalHeader {...ticketModalHeader}>
-                      {editIndex !== null ? "Edit Ticket" : "Add Ticket"}
-                    </ModalHeader>
-                    <ModalCloseButton {...ticketModalClose} />
-                    <ModalBody {...ticketModalBody}>
-                      <FormControl mb={4}>
-                        <FormLabel>Ticket Name</FormLabel>
-                        <Input
-                          id="ticketTitle"
-                          name="ticketTitle"
-                          placeholder="Enter ticket name"
-                          bg="#090C10"
-                          border="1px solid #444"
-                          {...ticketField}
-                          value={tempTicket.title}
-                          onChange={(e) =>
-                            setTempTicket({
-                              ...tempTicket,
-                              title: e.target.value,
-                            })
-                          }
-                        />
-                      </FormControl>
-                      <FormControl mb={4}>
-                        <FormLabel>Description</FormLabel>
-                        {/* Same editor as the event description, so a host can format a ticket
-                            blurb and add real hyperlinks. Stores HTML; the public page renders it
-                            through the shared EventDescription, which still handles the plain-text
-                            descriptions written before this. */}
-                        <RichTextEditor
-                          compactOnMobile
-                          value={tempTicket.description}
-                          onChange={(val) => setTempTicket({ ...tempTicket, description: val })}
-                          placeholder="Enter description"
-                        />
-                      </FormControl>
-                      <FormControl mb={4}>
-                        <FormLabel>Price</FormLabel>
-                        <Input
-                          id="ticketPrice"
-                          name="ticketPrice"
-                          type="number"
-                          // A scroll over this field used to change the price — see blurOnWheel.
-                          onWheel={blurOnWheel}
-                          min={0}
-                          step="0.01"
-                          // A keypad hint only: the decimal pad on a phone. Still type="number".
-                          inputMode="decimal"
-                          placeholder="Enter price (0 for free)"
-                          bg="#090C10"
-                          border="1px solid #444"
-                          {...ticketField}
-                          // NaN would render as a broken controlled value, so an empty
-                          // field shows empty and is treated as free ($0) on save.
-                          value={Number.isFinite(tempTicket.price) ? tempTicket.price : ""}
-                          // `Math.max(0, …)` is the real guard, not `min={0}` — the attribute
-                          // only fails on native form submit, which this modal never does, so
-                          // a typed or pasted -5 reached the server. NaN passes through
-                          // unchanged, preserving the empty-field behaviour above.
-                          onChange={(e) =>
-                            setTempTicket({
-                              ...tempTicket,
-                              price: Math.max(0, parseFloat(e.target.value)),
-                            })
-                          }
-                        />
-                      </FormControl>
-                      {/* KEEP IN STEP WITH TicketEditorModal — this modal is a duplicate of it,
-                          not a caller. Three states: blank = unlimited, 0 = closed, n = n exist,
-                          so an emptied field sends `null` (explicit clear), never `undefined`,
-                          which the server reads as "not sent, leave it alone". */}
-                      <FormControl mb={4}>
-                        <FormLabel>Quantity Available</FormLabel>
-                        <Input
-                          id="ticketQuantity"
-                          name="ticketQuantity"
-                          type="number"
-                          onWheel={blurOnWheel}
-                          min={0}
-                          step="1"
-                          inputMode="numeric"
-                          placeholder="Leave blank for unlimited"
-                          bg="#090C10"
-                          border="1px solid #444"
-                          {...ticketField}
-                          value={ticketQuantityLimit(tempTicket as any) === null ? "" : ticketQuantityLimit(tempTicket as any)!}
-                          onChange={(e) => {
-                            const raw = e.target.value
-                            setTempTicket({
-                              ...tempTicket,
-                              quantity: raw === "" ? null : Math.max(0, Math.floor(Number(raw))),
-                            })
-                          }}
-                        />
-                        <Text fontSize="12px" color="#868686" mt={1} lineHeight="140%">
-                          {ticketQuantityLimit(tempTicket as any) === null
-                            ? "Unlimited. Enter a number to cap how many of this ticket can be sold."
-                            : ticketQuantityLimit(tempTicket as any) === 0
-                              ? "Set to 0 — this ticket is closed and can't be booked."
-                              : `${ticketQuantityLimit(tempTicket as any)} available in total. Leave blank for unlimited.`}
-                        </Text>
-                      </FormControl>
-                      <FormControl mb={4}>
-                        <Flex align="center" justify="space-between" gap={4} {...ticketApprovalRow}>
-                          <Box>
-                            <FormLabel mb={0}>Require Approval</FormLabel>
-                            <Text fontSize="12px" color="#868686" mt={1} maxW="320px" lineHeight="140%">
-                              {tempTicket.requireApproval === undefined
-                                ? `Inherits the event setting (${values.requireApproval ? "On" : "Off"})`
-                                : !tempTicket.requireApproval
-                                  ? "Guests book this ticket instantly."
-                                  : Number(tempTicket.price) > 0 || ticketMemberships(tempTicket as any).length > 0
-                                    ? "The card is authorized at checkout and only charged when you approve. Holds expire after 7 days."
-                                    : "Guests request a spot; you approve or decline."}
-                            </Text>
-                          </Box>
-                          <Switch
-                            colorScheme="orange"
-                            isChecked={tempTicket.requireApproval ?? values.requireApproval}
-                            onChange={(e) => setTempTicket({ ...tempTicket, requireApproval: e.target.checked })}
-                          />
-                        </Flex>
-                      </FormControl>
-
-                      {/* Which memberships this ticket sells — either, both or neither.
-                          Admin/super-admin only — KEEP IN STEP WITH TicketEditorModal, whose own
-                          copy of this block is gated the same way via `canManageMemberships`. */}
-                      {isAdmin && (
-                        <TicketMembershipToggles
-                          value={ticketMemberships(tempTicket as any)}
-                          onChange={(memberships) =>
-                            setTempTicket({
-                              ...tempTicket,
-                              memberships,
-                              // Kept in step so the mobile app and any older reader still see a
-                              // bundled Premium ticket. The array is the authority.
-                              includesPremium: memberships.includes("premium"),
-                            } as any)
-                          }
-                          requiresApproval={tempTicket.requireApproval ?? values.requireApproval}
-                          price={Number(tempTicket.price)}
-                          interval={ticketMembershipInterval(tempTicket as any)}
-                          onIntervalChange={(membershipInterval) => setTempTicket({ ...tempTicket, membershipInterval } as any)}
-                          freeMonths={ticketMembershipFreeMonths(tempTicket as any)}
-                          onFreeMonthsChange={(membershipFreeMonths) => setTempTicket({ ...tempTicket, membershipFreeMonths } as any)}
-                        />
-                      )}
-                    </ModalBody>
-
-                    {/* Phone layout from ticketModalMobile.ts, shared with TicketEditorModal so the
-                        two copies of this dialog cannot drift on layout. Media-query only. */}
-                    <ModalFooter {...ticketModalFooter}>
-                      <Flex flexDirection="column" w="full" gap="3" {...ticketFooterRow}>
-                        <Button
-                          bg="#F79432"
-                          w="full"
-                          color="black"
-                          mr={3}
-                          {...ticketPrimaryButton}
-                          onClick={() => {
-                            // Only the title is required. Price is deliberately NOT checked for
-                            // truthiness — a free ticket is $0, and testing `tempTicket.price`
-                            // directly used to silently drop it (0 and NaN are both falsy).
-                            if (!tempTicket.title.trim()) {
-                              Error("Missing ticket name", "You need to provide a ticket name.");
-                              return;
-                            }
-
-                            // Stripe won't charge under $0.50, so a ticket priced there can never
-                            // be sold — the failure would only surface at the buyer's checkout.
-                            if (isBelowStripeMinimum(tempTicket.price)) {
-                              Error("Price too low", BELOW_MIN_PRICE_MESSAGE);
-                              return;
-                            }
-
-                            // Blank price means free. `parseFloat("")` is NaN, so normalise here.
-                            const normalised = {
-                              ...tempTicket,
-                              title: tempTicket.title.trim(),
-                              price: Number.isFinite(tempTicket.price) ? tempTicket.price : 0,
-                            };
-
-                            if (editIndex !== null) {
-                              replace(editIndex, normalised);
-                            } else {
-                              push({
-                                ...normalised,
-                                id: new Date().getTime().toString(),
-                              });
-                              setTempTicket({
-                                id: "",
-                                title: "",
-                                description: "",
-                                price: 0,
-                              });
-                            }
-                            onClose();
-                          }}
-                        >
-                          {editIndex !== null ? "Update" : "Add"}
-                        </Button>
-                        <Button
-                          variant="unstyled"
-                          {...ticketCancelButton}
-                          onClick={() => {
-                            setTempTicket({
-                              id: "",
-                              title: "",
-                              description: "",
-                              price: 0,
-                            });
-                            onClose();
-                          }}
-                        >
-                          Cancel
-                        </Button>
-                      </Flex>
-                    </ModalFooter>
-                  </ModalContent>
-                </Modal>
+                <TicketEditorModal
+                  isOpen={isOpen}
+                  onClose={() => {
+                    // Cancel discards the draft, as the inline dialog did.
+                    setTempTicket({ id: "", title: "", description: "", price: 0 });
+                    onClose();
+                  }}
+                  ticket={tempTicket}
+                  onTicketChange={setTempTicket}
+                  isEditing={editIndex !== null}
+                  eventRequireApproval={!!values.requireApproval}
+                  canManageMemberships={isAdmin}
+                  onSave={(normalised) => {
+                    if (editIndex !== null) {
+                      replace(editIndex, normalised);
+                    } else {
+                      push({ ...normalised, id: new Date().getTime().toString() });
+                    }
+                    setTempTicket({ id: "", title: "", description: "", price: 0 });
+                    onClose();
+                  }}
+                />
               )}
             </FieldArray>
           </Form>

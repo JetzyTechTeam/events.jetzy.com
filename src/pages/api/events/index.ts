@@ -8,6 +8,7 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 import { getEventStatus, sortEvents } from "@/utils/eventSort"
 import { escapeRegExp } from "@/utils/text"
+import { attachEventViewCounts } from "@/lib/event-view-counts"
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
 	try {
@@ -109,8 +110,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const skip = (page - 1) * LIMIT
 		const paginated = statusFiltered.slice(skip, skip + LIMIT)
 
+		// View counts for the cards — admins only, and only for the page being returned. The
+		// field's presence is the gate: everyone else gets the same payload as before.
+		const data = isAdmin ? await attachEventViewCounts(paginated as any[]) : paginated
+
 		return res.status(200).json({
-			data: paginated,
+			data,
 			pagination: { total, page, showing: paginated.length, limit: LIMIT, totalPages },
 			message: "Events retrieved successfully!",
 			status: true,

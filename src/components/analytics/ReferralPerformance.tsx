@@ -25,6 +25,7 @@ import {
 } from "@chakra-ui/react"
 import { FiUsers, FiTag, FiTrendingUp, FiCreditCard } from "react-icons/fi"
 import MetricsCard from "@/components/analytics/MetricsCard"
+import { phoneTableSx } from "@/components/analytics/AnalyticsPanel"
 
 /**
  * "Who came in on which referral code" — the same report for one event and for the whole
@@ -176,12 +177,12 @@ export default function ReferralPerformance({
 
 	return (
 		<>
-			<SimpleGrid columns={{ base: 1, sm: 2, lg: code ? 4 : 5 }} spacing={4} mb={6}>
-				{!code && <MetricsCard dark title="Codes used" value={rows.length.toLocaleString()} icon={FiTag} iconColor="#F79432" />}
-				<MetricsCard dark title="Buyers" value={(visibleTotals?.buyers ?? 0).toLocaleString()} icon={FiUsers} iconColor="#F79432" subtitle="Unique email addresses" />
-				<MetricsCard dark title="Bookings" value={(visibleTotals?.bookings ?? 0).toLocaleString()} icon={FiTrendingUp} iconColor="#F79432" />
-				<MetricsCard dark title="Tickets" value={(visibleTotals?.tickets ?? 0).toLocaleString()} icon={FiTag} iconColor="#F79432" />
-				<MetricsCard dark title="Collected" value={money(visibleTotals?.revenue)} icon={FiCreditCard} iconColor="#F79432" subtitle={`${money(visibleTotals?.discountGiven)} discounted`} />
+			<SimpleGrid columns={{ base: 2, sm: 2, lg: code ? 4 : 5 }} spacing={{ base: 2, sm: 4 }} mb={6}>
+				{!code && <MetricsCard dark compactOnMobile title="Codes used" value={rows.length.toLocaleString()} icon={FiTag} iconColor="#F79432" />}
+				<MetricsCard dark compactOnMobile title="Buyers" value={(visibleTotals?.buyers ?? 0).toLocaleString()} icon={FiUsers} iconColor="#F79432" subtitle="Unique email addresses" />
+				<MetricsCard dark compactOnMobile title="Bookings" value={(visibleTotals?.bookings ?? 0).toLocaleString()} icon={FiTrendingUp} iconColor="#F79432" />
+				<MetricsCard dark compactOnMobile title="Tickets" value={(visibleTotals?.tickets ?? 0).toLocaleString()} icon={FiTag} iconColor="#F79432" />
+				<MetricsCard dark compactOnMobile title="Collected" value={money(visibleTotals?.revenue)} icon={FiCreditCard} iconColor="#F79432" subtitle={`${money(visibleTotals?.discountGiven)} discounted`} />
 			</SimpleGrid>
 
 			<Box bg="#1a1a1a" border="1px solid #2a2a2a" borderRadius="lg" p={4}>
@@ -217,7 +218,7 @@ export default function ReferralPerformance({
 							: "No bookings carry a referral code yet. Numbers appear here as soon as someone books with one."}
 					</Text>
 				) : (
-					<TableContainer>
+					<TableContainer sx={phoneTableSx(1)}>
 						<Table size="sm" variant="simple">
 							<Thead>
 								<Tr>
@@ -269,7 +270,7 @@ export default function ReferralPerformance({
 
 			{/* The people behind one code — the list to hand over when someone asks who a campaign
 			    actually brought in. */}
-			<Modal isOpen={detailCode !== null} onClose={() => setDetailCode(null)} size="4xl" isCentered scrollBehavior="inside">
+			<Modal isOpen={detailCode !== null} onClose={() => setDetailCode(null)} size={{ base: "full", md: "4xl" }} isCentered scrollBehavior="inside">
 				<ModalOverlay />
 				<ModalContent bg="#1E1E1E" color="white" border="1px solid #434343">
 					<ModalHeader fontFamily={detailCode ? "mono" : undefined}>{detailCode || "Everyone who used a referral code"}</ModalHeader>
@@ -288,7 +289,7 @@ export default function ReferralPerformance({
 								<Spinner color="#F79432" />
 							</Center>
 						) : (
-							<TableContainer>
+							<TableContainer sx={phoneTableSx(detailCode ? 2 : 3, "#1E1E1E")}>
 								<Table size="sm" variant="simple">
 									<Thead>
 										<Tr>

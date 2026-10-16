@@ -1,5 +1,6 @@
 import React from "react"
-import { Box, Button, Flex, Tooltip } from "@chakra-ui/react"
+import { Box, Button, Flex, IconButton, Tooltip } from "@chakra-ui/react"
+import { FiEdit2 } from "react-icons/fi"
 import { isCaptureFailed, isHoldExpired, holdTimeRemaining } from "@/lib/booking-status"
 import type { BookingApprovalsController } from "./useBookingApprovals"
 
@@ -9,6 +10,10 @@ import type { BookingApprovalsController } from "./useBookingApprovals"
  * Shared by the Approvals tab and the Guests tab so the gating rules — a lapsed hold disables
  * Approve, a failed capture relabels it "Retry charge" — exist once. Both screens showing a
  * button the other doesn't is exactly the drift this prevents.
+ *
+ * Edit (the name on the request, and how many tickets it is for) sits beside them. Not offered
+ * once the hold has lapsed: that request can no longer be approved, so there is nothing an
+ * edit could lead to.
  */
 
 const HOUR = 60 * 60 * 1000
@@ -48,6 +53,20 @@ export function ApprovalActions({
 			<Button size={size} variant="outline" colorScheme="red" isDisabled={busy} onClick={() => controller.requestReject(booking)}>
 				Reject
 			</Button>
+			{!expired && (
+				<Tooltip label="Edit name or tickets" hasArrow>
+					<IconButton
+						aria-label="Edit name or tickets"
+						icon={<FiEdit2 />}
+						size={size}
+						variant="ghost"
+						color="#D6D6D6"
+						_hover={{ color: "white", bg: "#2A2D31" }}
+						isDisabled={busy}
+						onClick={() => controller.requestEdit(booking)}
+					/>
+				</Tooltip>
+			)}
 		</Flex>
 	)
 }

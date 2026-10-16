@@ -3,6 +3,14 @@
 > Comprehensive codebase snapshot. Read this instead of re-reading source files.
 > **Keep updated** after any feature, API, model, or significant refactor.
 
+> **Mobile contracts (repo root).** The mobile back-end builds its own APIs on the same database and
+> Stripe account and implements from these: **`BOOKING_FLOW.md`** — the complete booking flow
+> (checkout session shapes, fulfilment, approvals and partial capture, editing requests and
+> bookings, cancellation, waiting list, check-in, emails, admin vs host permissions, helper code
+> verified identical to `src/lib/booking-*.ts`); `TICKET_SCHEMA.md` — ticket fields and capacity
+> (its §12–13 are superseded by `BOOKING_FLOW.md`); `ALBUM_API.md`; `MEDIA_CONTRACT.md`. Update
+> `BOOKING_FLOW.md` in the same commit as any booking behaviour change.
+
 ---
 
 ## Stack
@@ -257,6 +265,8 @@ if (!isAdmin && event.ownerId?.toString() !== userId) {
 `/api/bookings/cancel` — POST `{ bookingRef }`. Session ⇒ admin, event owner, or the booker; no session ⇒ `bookingRef` as bearer token (email link). **Guests and bearer-token callers are held to the event-start cutoff** (`canGuestCancel`); admins/owners are not. Releases an uncaptured hold, **never refunds**, sets `cancelledAt`/`cancelledBy`, deletes the `CheckIn` row, decrements `EventTracker` only when the booking was CONFIRMED, then emails guest (`sendBookingCancellation`) + host and `ADMIN_NOTIFICATION_EMAIL` (`sendHostCancellationNotice`). Both emails are best-effort. Returns `{ booking, moneyState, releasedAmount, cancelledBy }`.
 
 `/api/bookings/update-tickets` — POST `{ bookingRef, tickets: [{ ticketId, quantity }] }`. **Session required** (no bearer path), admin OR event owner. **Free bookings only** — refuses `hold`/`captured`/`released`/`unknown`. Ticket set must be an exact permutation of the stored one; capacity re-checked on increase (this booking excluded); check-in count is a floor. Money fields untouched. Adjusts `EventTracker` by the delta via `adjustBookedTickets`, only when the booking was CONFIRMED. Writes `ticketsEditedAt`/`ticketsEditedBy`/`ticketsEditHistory`.
+
+`/api/bookings/update-request` — POST `{ bookingRef, customerName?, tickets?: [{ ticketId, quantity }] }`. **Session required**, admin OR event owner. **PENDING requests only.** Name: booking only, audited in `customerNameEditHistory`. Tickets by `requestEditMode`: **free** → `tickets` changed up or down (no capacity check, no tracker write); **card hold** → DOWN only, `tickets` untouched, the lower number stored as `adjustedTickets` and applied by `approve.ts`; **locked** (membership, multi-type hold, mid-capture, lapsed hold, unknown money) → 400. No money field is written. Atomic write refused once the request is decided or `payment.status` is `capturing`.
 
 `/api/bookings/my-for-event` — GET `?eventId`. The caller's live booking for one event, plus `moneyState`/`moneyAmount`/`canCancel`. Excludes CANCELLED/REJECTED/FAILED.
 
@@ -3105,7 +3115,7 @@ Capacity used to be one number for the whole event and, in practice, was not enf
 - `src/lib/ticket-availability.ts` — server only: `getEventAvailability`, `checkSelection`, `verifyAvailability`. One `$facet` aggregation.
 - `src/pages/api/events/[eventId]/availability.ts` — public, counts only, `Cache-Control: no-store`.
 - Enforcement: `api/checkout/index.ts`, `api/checkout/free-events.ts` (new), `api/bookings/approve.ts`, `api/waiting-list/approve.ts`.
-- Host input: `TicketEditorModal.tsx`, the duplicated inline modal in `console/events/create.tsx`, `TicketData` in `TicketCard.tsx`, manage's two mappers, `HostedEvents.tsx`'s seed + PATCH. Server: three zod copies + `resolveTickets`.
+- Host input: `TicketEditorModal.tsx` (also Create's dialog since 2026-10-15), `TicketData` in `TicketCard.tsx`, manage's two mappers, `HostedEvents.tsx`'s seed + PATCH. Server: three zod copies + `resolveTickets`.
 - Guest UI: `EventTicketsComponent.tsx` — stepper cap, "Sold out" / "Only N left" badges, blocked selection.
 
 **Rules that must not be broken**
@@ -3140,7 +3150,64 @@ Before this, a new booking emailed the buyer and the hardcoded `tech@jetzyapp.co
 - Money fields are never recomputed — no money moved, and rewriting `subTotal` on a 100%-discounted order would change what the growth report says that code achieved.
 - `src/lib/event-tracker-sync.ts` (`adjustBookedTickets`, `bookingConsumedCapacity`) applies the delta, clamped. `bookings/delete.ts` now routes through it, which clamps its previously-unclamped `$inc`.
 - Audit: `ticketsEditedAt`, `ticketsEditedBy`, `ticketsEditHistory` on the booking (no defaults).
-- UI: `EditBookingTicketsDialog.tsx` + an Edit action in `BookingEventsDetailsTable.tsx` (`eventTickets` prop supplies the names).
+- UI: ~~`EditBookingTicketsDialog.tsx`~~ deleted 2026-10-14 — the shared `EditBookingDialog` edits confirmed bookings now (see below).
+- Since 2026-10-14: also takes `customerName` (any live booking), refuses PENDING (→ `update-request.ts`), refuses an increase on a booking that sold a membership, and syncs the `CheckIn` doc (`customerName`, `totalTickets`, `isFullyCheckedIn`).
+
+## Feature: Edit a pending request from the Approvals interface (2026-10-13)
+
+CEO ask: change the number of tickets a request is for, and the name on it, without leaving the approval screen. An **Edit** icon sits beside Approve / Reject on every pending row, on the Approvals tab and the Guests tab alike (both mount `ApprovalActions` + `ApprovalDialogs`).
+
+**The no-refund rule decides what a quantity edit may do.**
+
+| Request | Quantity | How it is stored |
+|---|---|---|
+| Free, no membership (`mode: "free"`) | up or down | `booking.tickets` is changed |
+| Card hold (`authorized` / `failed`), with or without a membership (`mode: "reduce"`) | **down only** | `booking.tickets` untouched; lower number in `adjustedTickets` |
+| Free ticket that sells a membership (`mode: "reduce"`) | **down only** | same — plan, applied at approval |
+| Multi-type hold or multi-type membership request, mid-capture, lapsed hold, priced with no payment record | locked | — |
+
+**Membership requests became reduce-only on 2026-10-14** (they were locked). A membership is sold once per ORDER, so fewer tickets leaves it exactly as sold. On a hold, `approve.ts` captures with `approvalCaptureCents`: membership in full (less any the guest already owns), ticket part scaled. Never UP on a membership request, even a $0 one — that would step past the per-person membership-ticket limit (`PREMIUM_TICKET_LIMIT_PER_EVENT`) with nothing paid. The approval email adds "Your <membership> membership is not affected" (`partialApproval.membershipLabels`). `/console/bookings/[eventId]` now also projects `payment.memberships.amount` / `.trialMonths` and `payment.premiumAmount` for the editor's charge preview.
+
+- **Why a hold can't go up:** Stripe cannot capture more than was authorized, so an added ticket can't be charged without the guest paying again — and once captured, money is never returned. A guest who wants more books again.
+- **Why a hold's `tickets` is never rewritten:** the failure direction. A path that ignores `adjustedTickets` approves the request as the guest made it and charges the full hold for the full tickets — consistent. Had the edit rewritten `tickets`, a path that forgot would capture the full hold for fewer tickets, with no refund to fix it. Reject, guest cancel and hold expiry all read the booking unchanged and needed no edits.
+- **The reduction becomes real at approval**, through `approve.ts`'s partial path: `amount_to_capture` from `approvalCaptureCents` (ticket part scaled, any membership in full), the rest of the hold released (not a refund — never taken), `subTotal`/`discountAmount`/`total` scaled, `ticketsEditHistory` written, guest told.
+- **Until approval it can be put back up** to what was asked for; equal-to-requested `$unset`s the plan.
+- **`src/lib/booking-request-edit.ts`** (pure, client-safe) is the one home of the rules: `requestEditMode`, `plannedTickets` (THE reader of `adjustedTickets`), `isRequestAdjusted`, `holdPlanRefusal`, `freeTicketEditRefusal`, `normalizeGuestName`, `REQUEST_LOCK_MESSAGE`. The dialog and `update-request.ts` both import it. `freeTicketEditRefusal` was extracted from `update-tickets.ts`, which now imports it.
+- **`plannedTickets` ignores a plan that isn't a valid reduction** (wrong ticket id, above the hold, booking not pending) and returns the request as made. `approve.ts` reads through it too, so the server approves exactly what the console is showing.
+- **`approve.ts` applies the plan even when the caller sends no `tickets`** — an approval from a tab that loaded before the edit still seats what was decided. A caller may go lower than the plan (capacity ran short), never above it (400).
+- **Edit-vs-approve race:** `update-request.ts` writes with `{ status: PENDING, "payment.status": { $ne: "capturing" } }`; `approve.ts` re-reads the plan off the latched document and, if it moved, rolls the latch back and refuses before charging.
+- **`partialCaptureCents`** (`booking-approval.ts`) is the capture expression, used by `approve.ts` and by both dialogs' "card will be charged" figure — shown and taken cannot differ.
+- **Email:** `sendTicketConfirmation`'s `partialApproval` gained `reason: "adjusted"`; without it the note says "the event only had room for N", untrue when the host chose the number.
+- **Name edit is the booking only** — never the guest's account, never the email (identity and memberships follow the email). Whitespace collapsed, control characters refused, 120 code points. No email on edit; the approval confirmation greets the new name.
+- **Scope (since 2026-10-14): every live booking**, pending or confirmed — see the rule table below.
+- Schema: `adjustedTickets`, `adjustedTicketsAt`, `adjustedTicketsBy`, `customerNameEditHistory` — arrays `default: undefined`. Restart the dev server after pulling.
+
+**One Edit booking everywhere (2026-10-14)** — one `EditBookingDialog`, one hook `useBookingEdit` (`src/components/console/approvals/`; renamed from `EditRequestDialog` / `useRequestEdit`). Rule: `bookingEditMode`. Save → `update-request` (pending) or `update-tickets` (confirmed).
+
+| Booking | Name | Quantity | Applies |
+|---|---|---|---|
+| Pending, free | ✅ | up / down | now (still a request) |
+| Pending, hold and/or membership | ✅ | down only | at approval (plan) |
+| Confirmed, free | ✅ | up / down (capacity, check-in floor) | now |
+| Confirmed, free + membership | ✅ | down only | now |
+| Confirmed, paid (captured / released / unknown) | ✅ | 🔒 `paid_confirmed` | — |
+| Cancelled / rejected / expired, lapsed hold | — | — | no Edit |
+
+| Screen | Control |
+|---|---|
+| Approvals tab (Manage Event, `/console/bookings/[eventId]`, event page) | pencil beside Approve / Reject (pending) |
+| Manage Event → Guests tab | pencil on pending rows; **Edit** button + phone-menu "Edit booking" on confirmed rows (the row's primary booking) |
+| `/console/bookings/[eventId]` → Bookings tab | **Edit** on every live row |
+| Event page → host panel → Bookings | **Edit name or tickets** on every live booking |
+
+- Every one of them shows the PLANNED quantity with "asked for N" (`plannedTickets` / `isRequestAdjusted`), including the Guests tab's ticket text and its CSV.
+- A confirmed name change is not re-emailed; the QR code uses the booking reference, so it keeps working.
+- `/console/bookings/[eventId]` `getServerSideProps` projects a fixed field list and was extended: `adjustedTickets` (serialized; excluded from `exportable`), `payment.memberships.key`/`.status`, `payment.premiumStatus`. The table's `eventTickets` prop now carries `price` / `memberships` / `includesPremium`.
+- Not changed: the guest's own `/my-bookings` still shows what they requested (true until approval), and `/api/events/[eventId]/totals` still counts requested tickets in its pending figure.
+
+### Fixed in the same change: partial approval + failed capture + retry overcharged
+
+`approve.ts` wrote the reduced `tickets` and scaled totals onto the in-memory booking **before** the capture. Every capture-failure branch ends in `booking.save()`, which persisted them: the booking came back PENDING with fewer tickets and the **full** hold, and the "Retry charge" that followed was an ordinary approval (stored quantity already matched) that captured the whole hold. The reduction is now a closure (`applyReduction`) run only after the capture succeeds, or immediately when there is no hold; the capacity check takes the reduced selection directly (`seatTickets`). **Bookings already left in that state by the old code are not detected** — `payment.status: "failed"` with a `ticketsEditHistory` entry whose `from` is larger than the current `tickets`.
 
 # Feature: Blast sender identity + delivery detail
 
@@ -3307,13 +3374,13 @@ until it expired. Nothing in the tab warned them either.
   fit" server-side would be a race — another approval could free a seat between the host seeing
   the button and pressing it, and the request would fail for a reason they can't act on. The UI
   decides when to OFFER; the server decides what is legal.
-- **Two hard refusals, both about money, not policy** (`partialApprovalRefusal`):
+- **One hard refusal, about money, not policy** (`partialApprovalRefusal`):
   - **More than one ticket type.** A booking stores NO per-ticket price, so partial capture scales
     the held amount proportionally — exact under any discount, but only when every ticket costs
     the same. Single-select checkout guarantees one type; a mobile-posted order does not, so this
     fails closed.
-  - **The ticket sells a membership.** Quantity is tied to how many subscriptions get created and
-    to `PREMIUM_TICKET_LIMIT_PER_EVENT`.
+  - ~~The ticket sells a membership~~ — no longer refused (2026-10-14): a membership is sold once per
+    order, and `approvalCaptureCents` charges it in full while scaling only the ticket part.
 - **Capture math:** `amount_to_capture = round(ticketPortion × approved / requested × 100)`, where
   `ticketPortion = payment.amount − releasedAmount`. It COMPOSES with the existing membership
   release — both reasons to capture less apply at once. **Not a refund:** capturing under the
@@ -3841,9 +3908,102 @@ Below `md` (768px) `/console/events/[eventId]/manage` has its own layout. **Ever
 The Add / Edit ticket dialog was full-screen on phones but still the desktop dialog stretched: a 400px description editor filled the screen, and the title and the Add / Cancel buttons scrolled away with the form.
 
 - **Below 768px the dialog is exactly one screen tall; the header and footer stay put and only the fields scroll.** Footer is Cancel (left, outlined) + the save button (right, wider), 48px, with safe-area padding. Inputs are 48px; Require Approval is one card.
-- **There are TWO copies of this dialog** - `TicketEditorModal` (Manage Event + the public event page) and the inline duplicate in `console/events/create.tsx`. Both spread the prop objects in **`src/components/events/ticketModalMobile.ts`**, so the layout has one definition. The copies themselves are NOT merged: their save/cancel logic, labels and toasts differ.
+- ~~There are TWO copies of this dialog~~ — **merged 2026-10-15.** Create Event renders `TicketEditorModal` too (its `onSave` push/replaces into the Formik `FieldArray`, its `onClose` resets the draft). Phone rules: **`src/components/events/ticketModalMobile.ts`**. Desktop: `md`-only props inside the component — 2xl, fixed header/footer with a scrolling body, sections, Price | Quantity side by side, Cancel left of save, `RichTextEditor compact` (180px).
+- **Membership billing per membership (2026-10-15):** `TicketMembershipToggles` puts Monthly / Annual inside the row of a membership whose LIVE prices include a yearly one (`useMembershipPlans`), and "Monthly only · $X/month" in a monthly-only one's row, plus a "What a non-member pays at checkout" box. Still one `membershipInterval` per ticket; checkout already resolves a monthly-only membership to monthly.
 - **Every rule in `ticketModalMobile.ts` is inside one `max-width: 47.99em` media query** (via `sx`). There is no `md` value to get wrong because nothing applies at those widths. Verified: both pages and both open dialogs diff to 0 pixels at 1280px, and the dialogs measure the same size before and after.
 - **`RichTextEditor` has `compactOnMobile`** (default off): 120px minimum height on phones instead of 400px, still grows with content. Only the two ticket dialogs pass it. The same media query also sets **every** editor's font to 16px on phones - iOS zooms into a contenteditable under 16px, exactly as it does an input.
 - `inputMode="decimal"` on Price and `inputMode="numeric"` on Quantity are keypad hints only; the fields are still `type="number"` and their value handling is unchanged.
 - `TicketMembershipToggles` (admin-only block) got phone touch targets: taller checkbox rows, 44px Monthly / Annual buttons, a 48px free-months input.
+
+### Event Bookings pages on a phone + four QA fixes (IMPLEMENTED 2026-10-12)
+
+Below `md` only; ten before/after captures (both bookings pages, Manage's Approvals / Guests / Blasts tabs, the event page with and without the owner panel, at 1280px and 820px) diff to 0 pixels. No handler, guard or field changed.
+
+**Event Bookings pages**
+- `/console/bookings`: the events table becomes a card per event (name, starts / ends, booking count, View Bookings) with `Prev - Page X of Y - Next`. The search box takes the row and the buttons share the next one.
+- `/console/bookings/[eventId]`: three equal-width tabs instead of a sideways scroll; the filter row is a 2-column grid (search and date full width, Apply full width) instead of fixed pixel widths; the 8-column bookings table becomes cards.
+- **`bookingCells(row)` in `BookingEventsDetailsTable.tsx`** builds every cell once - the `Tr` and the card both render from it, the same pattern as `guestCells` on Manage. Edit / Cancel / Delete keep their guards (`!cancelled && canEdit(row)`, `canManage && !cancelled`, `isAdmin`) because they are the same JSX.
+- The bordered `70vh` scroll box around the table is desktop-only now (`md:` classes); cards scroll with the page.
+- The filter grid uses `width: 100% !important` inside the media query: each field sets its own pixel `width` at the same specificity, so nothing weaker wins.
+
+**QA fixes (all were layout, none was logic)**
+- **Event page, owner's Bookings panel**: the six figures are a small Tickets / Customers grid under the title on phones (the desktop one-row layout wrapped into a ragged block). Tab headers are single-line and centred; the status pill sits under the booking reference instead of beside the name, which it had been cutting to a few letters.
+- **Blasts, delivery details**: Edit / Delete took ~140px beside the text column that also holds the delivery list, so recipient cards were squeezed. On phones the text column is `display: contents` and `order` stacks subject, message, meta, the two buttons (full width), then delivery details at full width.
+- **Approvals / Guests cards, hold countdown**: `HoldExpiry` sets no font size. The table gave it 14px; a card let it inherit 16px, so "in 6 days" outgrew the badge above it. The cards wrap it at 12px, and the Approvals card says "Hold expires" in front of it. `HoldExpiry` itself is unchanged - **wrap it, don't restyle it**, other screens rely on inheriting.
+- **Event page, date-poll teaser**: avatars and "N voted" shared the row with the text and left it ~90px wide. On phones they sit under the text; one `voters` const renders in whichever place applies.
+
+### Premium Applications + My Events on a phone (IMPLEMENTED 2026-10-12)
+
+Before/after captures at 1280px and 820px diff to 0 pixels on both screens (Pending and Processed tabs; My Events as admin, as host, and with the Pending filter selected). No handler or condition changed.
+
+**Premium Applications** (`/console/admin/premium-applications`, admin-only) - below `md`
+- Pending and Processed render a card per application instead of a table; Approve / Decline are a full-width 44px row, where the table had pushed them off-screen.
+- `applicationActions(application)` and `planCell(application, withTrial)` are the one definition of the two buttons and of the plan + "Nmo free" badge - the table cell and the card both render them.
+- The page no longer adds its own 16px gutter on phones (it sat inside `ConsoleLayout`'s, insetting everything 32px).
+
+**My Events** (`/console/events`) - below its OWN breakpoints, which are kept
+- This page predates the redesign and switches at Tailwind `sm` (640px) for the card and Chakra `sm` (480px) for the search row - not at `md` like the newer screens. They were left alone so everything from 640px up is untouched (verified at 700px as well).
+- Search box takes the row and Search / Clear share the next one; the filter chips are one sideways-scrolling row; Approve takes a row with Manage and Delete side by side under it; paging is one row.
+- **The selected chip is scrolled into view within the row** (`chipRowRef`, keyed on `filter`), and again on `document.fonts.ready`: the chips widen when the web font swaps in, which pushed the selected chip back past the edge after the first pass. It sets `scrollLeft` on the row only - never scrolls the page.
+
+
+### Total views on event cards, admin only (IMPLEMENTED 2026-10-12)
+
+An admin scanning a list of events could see tickets and guests on each card but not views — "which of these is getting traffic" meant opening every event's Manage page in turn. Each card now carries the all-time view count.
+
+- **The number is Manage Event's "Views"**, not a new definition: every `EventInteraction` row with `interactionType: "view"` for the event (`api/analytics/events.ts` → `summary.views`). Visits, repeats included — not unique people. `?preview=1` visits are already excluded where they are recorded.
+- **`src/lib/event-view-counts.ts`** (server only): `getEventViewCounts(ids)` runs ONE aggregate over a page of ids; `attachEventViewCounts(events)` stamps `totalViews` onto each. It guards its own connection and loads the model through a dynamic import, like `ticket-availability.ts`.
+- **Counted per PAGE, attached server-side** — not a request per card. The cards already fire one `/totals` call each, and `/totals` is deliberately public, so it is the wrong home for an admin-only number.
+- **The field's presence is the gate.** Three call sites, each inside the `isAdmin` it already computes; a non-admin response is unchanged:
+  - `console/events/index.tsx` `getServerSideProps` (My Events) — after pagination and the out-of-range redirect.
+  - `api/events/index.ts` (public home page) — after the page is sliced.
+  - `api/events/list.ts` (the `/console` dashboard, which renders the shared card) — the route stays open to everyone; the session is read only to decide this.
+- **`null` is not zero.** `getEventViewCounts` returns `null` when the count couldn't be read, and `attachEventViewCounts` then returns the events untouched. Both cards render on `typeof totalViews === "number"`, so a failed count shows nothing rather than a false "0 views", and a listing never fails because analytics did.
+- Rendered in `EventListingCard` (`👁 N` beside guests/tickets, in the existing admin-only row — so `previewAsGuest` hides it for free) and My Events' `ListingCard` (`👁 N views`, gated on `props.isAdmin`). `toLocaleString("en-US")` with an explicit locale: My Events is server-rendered.
+- **Hosts don't get it on their cards**, by request. They still read Views on Manage Event for their own events. To extend it, drop the `isAdmin` condition in the console `getServerSideProps` — that list is already narrowed to `ownerId`.
+
+### Check-in portal on a phone (IMPLEMENTED 2026-10-13)
+
+`/console/events/[eventId]/check-in` is the one console screen used almost entirely on a phone, at the door, and it had no phone work at all. Below `md` only; six before/after captures (the page, a validated booking with guest details open, the scanner window - at 1280px and 820px) diff to 0 pixels. No handler changed: validate, check-in, guest details, scanning and the 30-second stats refresh are untouched.
+
+- **Stats are one row of four small tiles** (`CheckInStats`, `columns={{ base: 4, md: 2, lg: 4 }}`). Stacked one per row they were about 500px tall, so the email box and Scan button started below the first screen. The helper line under each number is hidden on phones.
+- **One gutter instead of three.** `ConsoleLayout`, the page `Container` and the portal `Box` each added 16px, leaving the form 48px in from both edges of a 390px screen.
+- **Email box** has `inputMode="email"`, `autoCapitalize="none"`, `autoCorrect="off"`, `spellCheck={false}` - keyboard hints only; what is typed, validated and sent is unchanged.
+- **Guest-details inputs are 44px / 16px** on phones (`size="sm"` is 32px with 14px text, and iOS zooms under 16px). The "Collect guest details" checkbox is 20px there; the guest-count stepper has a 44px-wide tap area.
+- **Scanner window**: Capture & Scan and Cancel are a full-width 48px row with safe-area padding. Cancel is a ghost button whose default text colour is near-black - on the scanner's black window it could barely be seen, so on phones it gets white text and an outline. (It is still near-invisible on desktop; left alone to keep desktop pixel-identical.)
+- Every phone rule in `CheckInPortal.tsx` / `CheckInStats.tsx` goes through one `PHONE` media-query constant via `sx`, so none of it can reach a tablet or desktop.
+- **Testing note:** the scanner window can be opened in headless Chrome with `--use-fake-device-for-media-stream --use-fake-ui-for-media-stream`. Reading a real QR code can only be checked on a real phone.
+
+### Per-event analytics on a phone (IMPLEMENTED 2026-10-13)
+
+`/console/events/[eventId]/analytics` (admin-only). Below `md` only; both tabs at 1280px and 820px diff to 0 pixels. Dates, both CSV exports, tab switching and every query are untouched.
+
+- **One gutter.** The page added 16px inside `ConsoleLayout`'s own, so everything sat 32px from both edges.
+- **Performance snapshot stays a TABLE.** Comparing the four windows side by side is its whole point, so it is not turned into cards. On phones the metric column is frozen (`position: sticky`) and may wrap, and cells are tightened. It still needs a short swipe inside its own box, because a money value like `$13,579.50` in four columns does not fit 356px - the page itself never scrolls sideways.
+- **Headline numbers** are two tiles per row. `MetricsCard` has an optional **`compactOnMobile`** prop (off by default): on phones it hides the icon bubble and uses a 20px value so a currency figure fits a half-width tile.
+- **`src/components/analytics/PhoneStatRows.tsx`** - a name-plus-numbers table laid out as a list for phones (`display={{ base: "block", md: "none" }}`). Used for Form drop-off, Where visitors came from, What they viewed it on and Top Albums. It decides nothing: every value and badge is handed in already built. Reuse it on platform analytics.
+- **Access Log** (7 columns) and **Per Viewer** (6 columns) are cards on phones.
+- Badges that carry a rule are built once - `rateBadge`, `referrerBadge`, `deviceBadge`, `verifiedBadge`, `actionBadge`, `interestChips`, `customChips` - and the table cell and the phone layout both render them.
+- **`DateRangeSelector` (shared with platform analytics)** got media-query-only rules: 44px / 16px date inputs side by side, Apply / Clear sharing a row, the five presets as one sideways-scrolling row. Its desktop was verified identical on platform analytics too.
+- **Verification gap worth knowing:** platform analytics shows "No data available" when rendered logged out, so its `MetricsCard` tiles were never on screen in the regression capture. They are covered by this page (same component, 0 pixels), and without `compactOnMobile` the component only gains two inert class names.
+
+### Platform analytics on a phone (IMPLEMENTED 2026-10-13)
+
+`/console/analytics` and its three sub-pages - Growth (`/growth`), Journey (`/journey`), QR Signups (`/qr-signups`) - all admin-only. Below `md` only; every tab of all four pages at 1280px and 820px diffs to 0 pixels against the previous build. Dates, exports, sorting, filters, paging and every query are untouched.
+
+- **One gutter on all four pages.** Each added 16px inside `ConsoleLayout`'s own, so content sat 32px from both edges.
+- **Headline numbers are two tiles per row** (`MetricsCard compactOnMobile`, the prop added for per-event analytics).
+- **Tab rows scroll sideways** instead of wrapping or being cut off (main page already did; Growth and Journey now do).
+- **Two ways a table is handled, chosen by what it is for:**
+  - **A list** (`PhoneStatRows`) where a row is "a name plus a few numbers": Top users, Referring sites, UTM campaigns, Devices, Browsers, Most viewed / Top entry / Top exit pages, Named events. The table is `display={{ base: "none", md: "block" }}`.
+  - **It stays a table with a frozen name column** where comparing down a column is the point or the row is a person with many fields: both Daily breakdowns, Event performance, Memberships, Signup invite codes, Page funnel, Referral share links, Referral codes + buyers, Journey sessions, QR signups. The table scrolls inside its own box; the page never scrolls sideways.
+- **`phoneTableSx(nameColumn = 1, background = "#1a1a1a")`** in `AnalyticsPanel.tsx` is that frozen-column rule, and `PHONE` is the media query every analytics phone rule sits in. `darkTableSx` spreads `phoneTableSx(1)`. Pass the 1-based index of the column that says what the row is (2 where a date or rank comes first) and the panel's background where it isn't `#1a1a1a` (the buyers dialog is `#1E1E1E`). To add rules for one table, spread `phoneTableSx(n)[PHONE]` inside your own `[PHONE]` block - a second `[PHONE]` key replaces the first rather than merging.
+- **`StatTable`** shows each row's explanation under the metric name on phones: the "What it means" column is hidden there and the text was simply gone.
+- **`TablePagination`** shows "Page X of Y" between 40px arrows on phones in place of up to seven numbered buttons. Same handlers.
+- **Event performance**: the frozen Event cell drops its 40px thumbnail and lets the name run to two lines (`.ev-thumb` / `.ev-name`, phone rules only).
+- **Trend charts** (Visitors, Bookings) scroll sideways inside their panel - one bar per day was wider than the panel past about a week and the rest was cut off. The charts themselves are unchanged, including their known faults (inverted axis, flat bars).
+- **QR Signups**: the signed-up date and time stack on two lines so the frozen address column starts sooner; a long location chip wraps instead of running off the panel.
+- **Session timeline** (Journey) and the **referral buyers** dialog are full screen on phones.
+- **`ReferralPerformance` is shared with Manage Event's Referral Codes tab**, so its phone changes show there too.
+- **Checked with mocked endpoints**, not real data: the pages need an admin session and live analytics to render anything.
 

@@ -3,9 +3,9 @@ import type { SystemStyleObject } from "@chakra-ui/react"
 /**
  * Phone styling for the Add / Edit ticket dialog.
  *
- * There are TWO copies of that dialog — `TicketEditorModal` (Manage Event, the public event
- * page) and an inline duplicate in `console/events/create.tsx` — and both spread these objects,
- * so the two cannot drift on layout the way two hand-styled copies would.
+ * There is ONE copy of that dialog — `TicketEditorModal`, used by Create Event, Manage Event and
+ * the public event page (Create's inline duplicate was removed 2026-10-15). Desktop layout lives
+ * in the component as `md`-only props; this file is the phone half.
  *
  * Everything sits inside ONE max-width media query (below Chakra's `md`, 768px). Nothing here
  * can reach a desktop or tablet: there is no `md` value to get wrong, because there is no rule
@@ -59,14 +59,8 @@ const footerStyles: SystemStyleObject = {
 	background: "#1E1E1E",
 }
 
-/** `ModalFooter` whose buttons sit in an inner wrapper (Create's copy). */
-export const ticketModalFooter = phone(footerStyles)
-
 /** `ModalFooter` holding the two buttons directly (`TicketEditorModal`): Cancel left, save right. */
 export const ticketModalFooterButtons = phone({ ...footerStyles, flexDirection: "row-reverse" })
-
-/** The inner wrapper around the two buttons, where a copy has one. */
-export const ticketFooterRow = phone({ flexDirection: "row-reverse", gap: "12px" })
 
 /** The save button: right-hand side, the wider of the two. */
 export const ticketPrimaryButton = phone({ flex: "2 1 0", width: "auto", height: "48px", marginRight: 0 })

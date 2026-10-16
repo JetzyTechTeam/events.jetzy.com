@@ -3,6 +3,10 @@ import { Box, SimpleGrid, Stat, StatLabel, StatNumber, StatHelpText, Card, CardB
 import { useQuery } from "@tanstack/react-query"
 import axios from "axios"
 
+// Phones only (below Chakra's `md`, 768px). Every rule that uses this sits inside the media
+// query, so nothing here can reach a tablet or a desktop.
+const PHONE = "@media screen and (max-width: 47.99em)"
+
 interface CheckInStatsProps {
 	eventId: string
 }
@@ -37,7 +41,21 @@ const CheckInStats: React.FC<CheckInStatsProps> = ({ eventId }) => {
 	}
 
 	return (
-		<SimpleGrid columns={{ base: 1, md: 2, lg: 4 }} spacing={6} mb={8}>
+		// Phones: ONE row of four small tiles. Stacked one per row (the old `base: 1`) they
+		// were about 500px tall, and this page is used at the door - the email box and the
+		// Scan button started below the first screen. The helper line under each number is
+		// dropped there; the label already says what the number is.
+		<SimpleGrid
+			columns={{ base: 4, md: 2, lg: 4 }}
+			spacing={{ base: 2, md: 6 }}
+			mb={{ base: 4, md: 8 }}
+			sx={{ [PHONE]: {
+				"& .chakra-card__body": { padding: "8px" },
+				"& .chakra-stat__label": { fontSize: "11px", lineHeight: 1.2 },
+				"& .chakra-stat__number": { fontSize: "20px", lineHeight: 1.3 },
+				"& .chakra-stat__help-text": { display: "none" },
+			} }}
+		>
 			<Card bg="#1E1E1E" border="1px solid #434343">
 				<CardBody>
 					<Stat>

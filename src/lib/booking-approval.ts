@@ -93,28 +93,30 @@ export const approvalFit = (
 	return { requested, seatable, fits: seatable >= requested, blockingTicketName }
 }
 
-export type PartialApprovalRefusal = "multiple_ticket_types" | "sells_membership" | "nothing_fits"
+export type PartialApprovalRefusal = "multiple_ticket_types" | "nothing_fits"
 
 /**
  * May this booking be approved for FEWER tickets than were asked for?
  *
- * Two hard refusals, both about money rather than policy:
+ * One hard refusal, about money rather than policy:
  *
  *  - **More than one ticket type.** A booking stores no per-ticket price, so a partial capture
  *    has to scale the held amount proportionally — which is only correct when every ticket in
  *    the order costs the same. Single-select checkout guarantees one type; a mobile-posted order
  *    does not, so this fails closed.
- *  - **The ticket sells a membership.** Quantity there is tied to how many subscriptions are
- *    created and to the per-event membership allowance. Reducing it silently would either
- *    over- or under-create subscriptions.
+ *
+ * A ticket that sells a membership used to be refused here too. It no longer is: a membership is
+ * sold ONCE PER ORDER (`api/checkout` puts every membership line in at `quantity: 1`), so seating
+ * fewer tickets never changes how many memberships are created. What it does change is the money,
+ * and `approvalCaptureCents` handles that — the membership is charged in full and only the
+ * ticket part of the hold is scaled.
  *
  * Returns `null` when a partial approval IS allowed.
  */
 export const partialApprovalRefusal = (
 	tickets: BookingTicketRow[] | null | undefined,
-	opts: { sellsMembership: boolean; seatable: number | null },
+	opts: { seatable: number | null },
 ): PartialApprovalRefusal | null => {
-	if (opts.sellsMembership) return "sells_membership"
 	if (bookingTicketTypeCount(tickets) > 1) return "multiple_ticket_types"
 	if (opts.seatable !== null && opts.seatable < 1) return "nothing_fits"
 	return null
@@ -123,9 +125,68 @@ export const partialApprovalRefusal = (
 export const PARTIAL_REFUSAL_MESSAGE: Record<PartialApprovalRefusal, string> = {
 	multiple_ticket_types:
 		"This request covers more than one ticket type, so it can't be partly approved. Approve it when more spots free up, or decline it.",
-	sells_membership:
-		"This ticket also sells a membership, so its quantity can't be reduced. Approve it when more spots free up, or decline it.",
 	nothing_fits: "There are no spots left at all, so none of this request can be approved right now.",
+}
+
+/**
+ * What to capture, in CENTS, when fewer tickets are approved than the card is held for.
+ *
+ * `ticketPortion` is the part of the hold that belongs to tickets (major units). It is scaled
+ * PROPORTIONALLY rather than by a unit price, because a booking stores no per-ticket price —
+ * exact under any discount, but only when every ticket in the order costs the same, which is
+ * why a multi-type booking is never reduced.
+ *
+ * One function for `api/bookings/approve.ts` and for the figure the console shows the host
+ * before they press Approve, so the amount promised and the amount taken cannot differ.
+ * Capturing under the authorization is not a refund: Stripe releases the difference at no cost.
+ */
+export const partialCaptureCents = (ticketPortion: number, approved: number, requested: number): number =>
+	Math.max(0, Math.round(ticketPortion * (approved / requested) * 100))
+
+/**
+ * What to capture, in CENTS, when fewer tickets are approved than the card is held for — on a
+ * hold that may ALSO cover memberships.
+ *
+ * A bundled hold is one amount: the tickets plus the first period of each membership sold with
+ * them. A membership is sold once per ORDER, not per ticket, so approving fewer tickets must
+ * charge the membership IN FULL and scale only the ticket part. Scaling the whole hold, as
+ * `partialCaptureCents` alone would, cuts the membership too — the guest would get a membership
+ * we were only partly paid for, and the arithmetic on the receipt would not add up.
+ *
+ *  - `held`            — the whole hold (`payment.amount`), major units.
+ *  - `membershipHeld`  — the part of it that is memberships (`bookingMembershipTotal`). A
+ *                        free-months row stores 0, which is right: nothing was held for it.
+ *  - `membershipKept`  — of that, what is still owed: memberships the guest turns out to own
+ *                        already are released, never charged (`approve.ts`'s `releasedAmount`).
+ *
+ * With no membership on the hold it IS `partialCaptureCents(held, …)`, so every ticket-only
+ * partial approval captures exactly what it did before. Never more than the hold: each part is
+ * clamped to its own share of it. Shared by `approve.ts` and both console dialogs, so the figure
+ * a host is shown is the figure taken.
+ */
+export const approvalCaptureCents = ({
+	held,
+	membershipHeld = 0,
+	membershipKept = 0,
+	approved,
+	requested,
+}: {
+	held: number
+	membershipHeld?: number
+	membershipKept?: number
+	approved: number
+	requested: number
+}): number => {
+	if (!(Number(membershipHeld) > 0) && !(Number(membershipKept) > 0)) {
+		return partialCaptureCents(Number(held) || 0, approved, requested)
+	}
+	// In cents throughout — subtracting dollar amounts in floating point drifts by a cent.
+	const heldCents = Math.max(0, Math.round((Number(held) || 0) * 100))
+	const membershipHeldCents = Math.min(heldCents, Math.max(0, Math.round((Number(membershipHeld) || 0) * 100)))
+	const membershipKeptCents = Math.min(membershipHeldCents, Math.max(0, Math.round((Number(membershipKept) || 0) * 100)))
+	const ticketHeldCents = heldCents - membershipHeldCents
+	const ticketCents = requested > 0 ? Math.max(0, Math.round(ticketHeldCents * (approved / requested))) : ticketHeldCents
+	return Math.min(heldCents, membershipKeptCents + Math.min(ticketHeldCents, ticketCents))
 }
 
 /** The reduced ticket list to send when seating only part of a request. */

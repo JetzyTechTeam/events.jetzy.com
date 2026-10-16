@@ -254,6 +254,52 @@ const bookingSchema = new Schema<IBookings>(
 			],
 			required: false,
 		},
+		// ---- A pending request edited from the Approvals interface (`api/bookings/update-request`) ----
+		//
+		// `adjustedTickets` is the LOWER quantity a host or admin intends to approve on a request
+		// that carries a card hold. It is stored BESIDE `tickets`, never in place of it: `tickets`
+		// stays exactly what the card is held for, and the reduction becomes real only at
+		// approval, where the existing partial capture takes less and Stripe releases the rest.
+		//
+		// The failure direction is the reason. A path that ignores this field approves the request
+		// as the guest made it and charges the full hold for the full tickets — consistent. Had
+		// the edit rewritten `tickets` instead, a path that forgot would capture the full hold for
+		// fewer tickets, and there are no refunds to put that right.
+		//
+		// A FREE request has no hold, so its edit changes `tickets` directly and never writes this.
+		//
+		// `default: undefined` on both arrays — mongoose otherwise gives every array path `[]`,
+		// which would turn "never edited" into "edited to nothing".
+		adjustedTickets: {
+			type: [{ _id: false, ticketId: Schema.Types.ObjectId, quantity: Number }],
+			required: false,
+			default: undefined,
+		},
+		adjustedTicketsAt: {
+			type: Date,
+			required: false,
+		},
+		adjustedTicketsBy: {
+			type: String,
+			enum: ["host", "admin"],
+			required: false,
+		},
+		// The name on the booking was corrected by a host or admin. The booking only — never the
+		// guest's account, and never the email, which is what identity and memberships follow.
+		customerNameEditHistory: {
+			type: [
+				{
+					_id: false,
+					at: { type: Date, required: true },
+					by: { type: String, required: true },
+					byUserId: { type: Schema.Types.ObjectId, required: false },
+					from: { type: String, required: false },
+					to: { type: String, required: true },
+				},
+			],
+			required: false,
+			default: undefined,
+		},
 		isDeleted: {
 			type: Boolean,
 			default: false,

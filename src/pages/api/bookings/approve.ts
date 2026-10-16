@@ -15,8 +15,9 @@ import { pricingFromBooking, type RecurringCharge } from "@/lib/ticket-pricing"
 import { getStripeClient } from "@/lib/premium"
 import { heldMemberships } from "@/lib/premium-eligibility"
 import { MEMBERSHIPS } from "@/lib/memberships"
-import { bookingMemberships } from "@/lib/booking-memberships"
-import { bookingTicketCount, partialApprovalRefusal, PARTIAL_REFUSAL_MESSAGE } from "@/lib/booking-approval"
+import { bookingMemberships, bookingMembershipTotal } from "@/lib/booking-memberships"
+import { approvalCaptureCents, bookingTicketCount, partialApprovalRefusal, PARTIAL_REFUSAL_MESSAGE } from "@/lib/booking-approval"
+import { plannedTickets } from "@/lib/booking-request-edit"
 import { Types } from "mongoose"
 import { startMembershipSubscription } from "@/lib/membership-subscriptions"
 import { addEventMember } from "@/utils/eventMembership"
@@ -52,7 +53,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	const parsed = schema.safeParse(req.body)
 	if (!parsed.success) return sendResponse(res, null, "Invalid input.", false, ResCode.BAD_REQUEST)
 
-	const { bookingRef, tickets: reducedTickets } = parsed.data
+	const { bookingRef, tickets: bodyTickets } = parsed.data
 	const booking = await Bookings.findOne({ bookingRef })
 	if (!booking) return sendResponse(res, null, "Booking not found.", false, ResCode.NOT_FOUND)
 
@@ -83,6 +84,50 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	let approvedQty = originalQty
 	let isPartial = false
 
+	// ---- A request a host or admin already edited down (`api/bookings/update-request`) ----
+	//
+	// On a request with a card hold the edit does NOT rewrite `booking.tickets` — that stays
+	// what the card is held for — it stores the lower number beside it. Here it becomes the
+	// reduced selection, and from this point it is an ordinary partial approval: same
+	// validation, same proportional capture, same release of the rest of the hold.
+	//
+	// It applies even when the caller sent no `tickets` at all, so an approval from a tab that
+	// loaded before the edit still seats what was decided rather than what was first asked for.
+	// A caller may go LOWER than the plan (capacity ran short since) but never above it.
+	//
+	// Read through `plannedTickets`, the one reader of `adjustedTickets`: it returns the
+	// booking's own rows unless the stored plan is a valid reduction of them. So a plan that is
+	// somehow malformed is ignored here exactly as the console ignores it — the request is
+	// approved as the host is being shown it, rather than refused for a reason they can't see.
+	const plannedRows = plannedTickets(booking as any)
+	const storedPlan = bookingTicketCount(plannedRows) < originalQty ? plannedRows : []
+	const planKey = (rows: Array<{ ticketId: string; quantity: number }>) =>
+		rows.map((r) => `${r.ticketId}:${r.quantity}`).sort().join(",")
+	let reducedTickets = bodyTickets
+	let reducedByEdit = false
+	if (storedPlan.length > 0) {
+		if (!reducedTickets) {
+			reducedTickets = storedPlan
+			reducedByEdit = true
+		} else {
+			const planById = new Map(storedPlan.map((t) => [t.ticketId, t.quantity]))
+			const abovePlan = reducedTickets.some((row) => {
+				const planned = planById.get(String(row.ticketId))
+				return planned !== undefined && row.quantity > planned
+			})
+			if (abovePlan) {
+				return sendResponse(res, null, "This request was edited since you opened it — refresh and try again.", false, ResCode.BAD_REQUEST)
+			}
+			reducedByEdit = bookingTicketCount(reducedTickets as any) === bookingTicketCount(storedPlan)
+		}
+	}
+
+	// The tickets this approval will seat. Equal to the booking's own unless it is partial.
+	let seatTickets: Array<{ ticketId: string; quantity: number }> = originalTickets
+	// Writes the reduction onto the booking. Deliberately NOT run until the money is settled —
+	// see where it is called.
+	let applyReduction: (() => void) | undefined
+
 	if (reducedTickets) {
 		const requestedQty = bookingTicketCount(reducedTickets as any)
 
@@ -105,45 +150,56 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		}
 
 		if (requestedQty < originalQty) {
-			// Both refusals are about money, not policy — see `booking-approval.ts`.
-			const refusal = partialApprovalRefusal(originalTickets, {
-				sellsMembership: bookingMemberships(booking.payment).length > 0,
-				seatable: requestedQty,
-			})
+			// About money, not policy — see `booking-approval.ts`. A membership on the booking is
+			// no longer a refusal: it is sold once per order, so the capture below charges it in
+			// full and scales only the ticket part of the hold.
+			const refusal = partialApprovalRefusal(originalTickets, { seatable: requestedQty })
 			if (refusal) {
 				return sendResponse(res, null, PARTIAL_REFUSAL_MESSAGE[refusal], false, ResCode.BAD_REQUEST)
 			}
 
 			isPartial = true
 			approvedQty = requestedQty
-			booking.tickets = reducedTickets.filter((r) => r.quantity > 0).map((r) => ({
-				ticketId: new Types.ObjectId(String(r.ticketId)),
-				quantity: r.quantity,
-			})) as any
+			const approvedRows = reducedTickets.filter((r) => r.quantity > 0)
+			seatTickets = approvedRows.map((r) => ({ ticketId: String(r.ticketId), quantity: r.quantity }))
 
-			// Scale the money the booking RECORDS alongside the quantity. Leaving `subTotal` at
-			// the two-ticket figure while `total` reflects one would put a receipt in front of
-			// the guest whose lines don't add up.
-			const ratio = approvedQty / originalQty
-			const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100
-			booking.subTotal = round2((Number(booking.subTotal) || 0) * ratio)
-			booking.discountAmount = round2((Number(booking.discountAmount) || 0) * ratio)
-			booking.total = round2((Number(booking.total) || 0) * ratio)
+			// The reduction is NOT written to the booking yet. Every failure branch of the
+			// capture below ends in `booking.save()`, and it used to persist these fields along
+			// with the failure: the booking came back PENDING with FEWER tickets and the FULL
+			// hold, and the "Retry charge" that followed — an ordinary approval by then, since
+			// the stored quantity already matched — captured the whole hold for them. An
+			// overcharge, with no refund to put it right. So the document keeps describing what
+			// the card is held for until the money has actually been taken.
+			applyReduction = () => {
+				booking.tickets = approvedRows.map((r) => ({
+					ticketId: new Types.ObjectId(String(r.ticketId)),
+					quantity: r.quantity,
+				})) as any
 
-			// Same audit shape the host-side quantity edit writes — one history, not two.
-			const now = new Date()
-			;(booking as any).ticketsEditedAt = now
-			;(booking as any).ticketsEditedBy = isAdmin ? "admin" : "host"
-			;(booking as any).ticketsEditHistory = [
-				...(((booking as any).ticketsEditHistory as any[]) || []),
-				{
-					at: now,
-					by: isAdmin ? "admin" : "host",
-					byUserId: Types.ObjectId.isValid(userId) ? new Types.ObjectId(userId) : undefined,
-					from: originalTickets.map((t) => ({ ticketId: new Types.ObjectId(t.ticketId), quantity: t.quantity })),
-					to: booking.tickets,
-				},
-			]
+				// Scale the money the booking RECORDS alongside the quantity. Leaving `subTotal` at
+				// the two-ticket figure while `total` reflects one would put a receipt in front of
+				// the guest whose lines don't add up.
+				const ratio = approvedQty / originalQty
+				const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100
+				booking.subTotal = round2((Number(booking.subTotal) || 0) * ratio)
+				booking.discountAmount = round2((Number(booking.discountAmount) || 0) * ratio)
+				booking.total = round2((Number(booking.total) || 0) * ratio)
+
+				// Same audit shape the host-side quantity edit writes — one history, not two.
+				const now = new Date()
+				;(booking as any).ticketsEditedAt = now
+				;(booking as any).ticketsEditedBy = isAdmin ? "admin" : "host"
+				;(booking as any).ticketsEditHistory = [
+					...(((booking as any).ticketsEditHistory as any[]) || []),
+					{
+						at: now,
+						by: isAdmin ? "admin" : "host",
+						byUserId: Types.ObjectId.isValid(userId) ? new Types.ObjectId(userId) : undefined,
+						from: originalTickets.map((t) => ({ ticketId: new Types.ObjectId(t.ticketId), quantity: t.quantity })),
+						to: booking.tickets,
+					},
+				]
+			}
 		}
 	}
 
@@ -163,7 +219,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const { verifyAvailability } = await import("@/lib/ticket-availability")
 		const verdict = await verifyAvailability(
 			event,
-			booking.tickets.map((t: any) => ({ id: String(t.ticketId), quantity: t.quantity || 0 })),
+			// What this approval will SEAT — the reduced selection on a partial approval, which
+			// is no longer written onto the booking before the capture.
+			seatTickets.map((t) => ({ id: t.ticketId, quantity: t.quantity || 0 })),
 			String(booking._id),
 		)
 		if (!verdict.ok) {
@@ -222,6 +280,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	if (needsCapture) {
 		const piId = booking.payment!.paymentIntentId!
 
+		const priorPaymentStatus = booking.payment!.status
+
 		// Atomic latch so a double-click or two admins acting at once can't double-capture.
 		const latched = await Bookings.findOneAndUpdate(
 			{ _id: booking._id, status: BookingStatus.PENDING, "payment.status": { $in: ["authorized", "failed"] } },
@@ -230,6 +290,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		)
 		if (!latched) {
 			return sendResponse(res, null, "This request is already being processed.", false, ResCode.BAD_REQUEST)
+		}
+
+		// No edit can land once the latch is set — `update-request.ts` refuses a booking that is
+		// "capturing" — but one could have landed between reading the booking above and setting
+		// it. If the planned quantity moved in that window, the amount about to be captured is
+		// no longer the one that was decided. Put the latch back and make the caller look again;
+		// nothing has been charged yet.
+		if (planKey(plannedTickets(latched as any)) !== planKey(plannedRows)) {
+			await Bookings.updateOne(
+				{ _id: booking._id, "payment.status": "capturing" },
+				{ $set: { "payment.status": priorPaymentStatus } },
+			)
+			return sendResponse(res, null, "This request was edited while it was being approved — refresh and try again.", false, ResCode.BAD_REQUEST)
+		}
+		// Same window, same reason: a name corrected in it is the one the confirmation should use.
+		if (latched.customerName && latched.customerName !== booking.customerName) {
+			booking.customerName = latched.customerName
 		}
 		booking.payment!.status = "capturing"
 
@@ -257,8 +334,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			// simply releases the difference.
 			const heldAmount = Number(booking.payment!.amount) || 0
 			const ticketPortion = heldAmount - releasedAmount
+			// A partial capture on a bundled hold charges each membership still owed IN FULL and
+			// scales only the ticket part — a membership is sold once per order, not per ticket.
+			// `approvalCaptureCents` is the same function the console uses to tell the host what
+			// will be charged, so the figure shown and the figure taken cannot differ. With no
+			// membership on the hold it is exactly the old proportional capture.
+			const membershipHeld = bookingMembershipTotal(booking.payment as any, pendingMemberships)
 			const captureAmount = isPartial
-				? Math.max(0, Math.round(ticketPortion * (approvedQty / originalQty) * 100))
+				? approvalCaptureCents({
+					held: heldAmount,
+					membershipHeld,
+					membershipKept: membershipHeld - releasedAmount,
+					approved: approvedQty,
+					requested: originalQty,
+				})
 				: Math.max(0, Math.round(ticketPortion * 100))
 
 			pi = releasedAmount > 0 || isPartial
@@ -304,6 +393,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		}
 
 		capturedPi = pi
+		// The money is taken — only now does the booking record the smaller order. Before the
+		// lines below, which set `total` from what was actually captured.
+		applyReduction?.()
 		amountCharged = (pi.amount_received ?? pi.amount ?? 0) / 100
 		booking.payment!.status = "captured"
 		booking.payment!.capturedAt = new Date()
@@ -317,6 +409,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			.filter((row) => !skipKeys.includes(row.key))
 			.reduce((sum, row) => sum + (Number(row.amount) || 0), 0)
 		booking.total = Math.round((amountCharged - capturedMemberships + Number.EPSILON) * 100) / 100
+	} else {
+		// No hold to capture, so nothing can fail between here and the save below.
+		applyReduction?.()
 	}
 
 	if (pendingMemberships.length > 0) {
@@ -503,7 +598,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		await sendTicketConfirmation({
 			// Says plainly that fewer tickets were confirmed than asked for. Without it the guest
 			// would read an ordinary confirmation and believe they still hold two.
-			...(isPartial ? { partialApproval: { requested: originalQty, confirmed: approvedQty } } : {}),
+			// `reason: "adjusted"` when the lower number was the host's edit rather than a lack of
+			// room — "the event only had room for 2" would be untrue then.
+			...(isPartial
+				? {
+					partialApproval: {
+						requested: originalQty,
+						confirmed: approvedQty,
+						...(reducedByEdit ? { reason: "adjusted" as const } : {}),
+						// Fewer tickets, same membership — said outright, or a guest who asked for two
+						// Premium tickets and got one reasonably wonders whether the membership went too.
+						...(pendingMemberships.length > 0
+							? { membershipLabels: pendingMemberships.map((row) => MEMBERSHIPS[row.key as keyof typeof MEMBERSHIPS]?.label || "membership") }
+							: {}),
+					},
+				}
+				: {}),
 			event,
 			firstName: firstName || booking.customerName,
 			lastName,

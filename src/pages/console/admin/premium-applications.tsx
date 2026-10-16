@@ -157,6 +157,25 @@ export default function PremiumApplicationsPage() {
 		}
 	}
 
+	// Shared by the tables (from `md` up) and the phone cards, so a decision made on a card is
+	// the same call, with the same busy state, as one made in a table row.
+	const planCell = (application: Application, withTrial: boolean) => (
+		<>
+			{application.interval === "year" ? "Annual" : "Monthly"}
+			{withTrial && application.trialMonths ? <Badge ml={2} colorScheme="green">{application.trialMonths}mo free</Badge> : null}
+		</>
+	)
+	const applicationActions = (application: Application) => (
+		<Flex gap={2} sx={{ "@media screen and (max-width: 47.99em)": { "& > button": { flex: "1 1 0", height: "44px" } } }}>
+			<Button size="sm" colorScheme="green" isLoading={busyId === application._id} onClick={() => approve(application)}>
+				Approve
+			</Button>
+			<Button size="sm" colorScheme="red" variant="outline" isLoading={busyId === application._id} onClick={() => openReject(application)}>
+				Decline
+			</Button>
+		</Flex>
+	)
+
 	return (
 		<>
 			<Head>
@@ -164,7 +183,7 @@ export default function PremiumApplicationsPage() {
 				<meta name="robots" content="noindex, nofollow" />
 			</Head>
 			<ConsoleLayout page={Pages.Analytics} maxW="100%" backBtn="/console/analytics">
-				<Box maxW="1200px" mx="auto" px={{ base: 4, md: 0 }} py={6}>
+				<Box maxW="1200px" mx="auto" px={0} py={{ base: 2, md: 6 }}>
 					<Flex bg="#1a1a1a" color="white" p={4} borderRadius="lg" border="1px solid" borderColor="#2a2a2a" mb={6} justify="space-between" align="center" gap={4} wrap="wrap">
 						<Text fontSize="lg" fontWeight="bold">Jetzy Premium Applications</Text>
 						<Link href="/console/admin/premium-settings">
@@ -185,7 +204,25 @@ export default function PremiumApplicationsPage() {
 									{pending.length === 0 ? (
 										<Text color="#6B7280">No applications waiting for review.</Text>
 									) : (
-										<TableContainer bg="#1a1a1a" borderRadius="lg" border="1px solid" borderColor="#2a2a2a">
+										<>
+										{/* Phones: a card per application. The table put Approve / Decline off-screen. */}
+										<Stack display={{ base: "flex", md: "none" }} spacing={3}>
+											{pending.map((application) => (
+												<Box key={application._id} bg="#1a1a1a" border="1px solid #2a2a2a" borderRadius="12px" p={4}>
+													<Text color="white" fontWeight={700} fontSize="15px">{application.name || "—"}</Text>
+													<Text color="#9C9C9C" fontSize="13px" wordBreak="break-all">{application.email}</Text>
+													<Flex mt={3} justify="space-between" align="center" gap={3} fontSize="13px">
+														<Box color="#D1D5DB">{planCell(application, true)}</Box>
+														<Text color="#9C9C9C" flexShrink={0}>Submitted {day(application.createdAt)}</Text>
+													</Flex>
+													<Box mt={3} sx={{ "& a, & p": { overflowWrap: "anywhere" } }}>
+														<ApplicationAnswers answers={application.answers} questions={questions} />
+													</Box>
+													<Box mt={3} pt={3} borderTop="1px solid #2a2a2a">{applicationActions(application)}</Box>
+												</Box>
+											))}
+										</Stack>
+										<TableContainer display={{ base: "none", md: "block" }} bg="#1a1a1a" borderRadius="lg" border="1px solid" borderColor="#2a2a2a">
 											<Table size="sm">
 												<Thead>
 													<Tr>
@@ -203,34 +240,48 @@ export default function PremiumApplicationsPage() {
 																<Text color="white" fontWeight="medium">{application.name || "—"}</Text>
 																<Text color="#9C9C9C" fontSize="sm">{application.email}</Text>
 															</Td>
-															<Td color="#D1D5DB">
-																{application.interval === "year" ? "Annual" : "Monthly"}
-																{application.trialMonths ? <Badge ml={2} colorScheme="green">{application.trialMonths}mo free</Badge> : null}
-															</Td>
+															<Td color="#D1D5DB">{planCell(application, true)}</Td>
 															<Td maxW="320px"><ApplicationAnswers answers={application.answers} questions={questions} /></Td>
 															<Td color="#9C9C9C">{day(application.createdAt)}</Td>
-															<Td>
-																<Flex gap={2}>
-																	<Button size="sm" colorScheme="green" isLoading={busyId === application._id} onClick={() => approve(application)}>
-																		Approve
-																	</Button>
-																	<Button size="sm" colorScheme="red" variant="outline" isLoading={busyId === application._id} onClick={() => openReject(application)}>
-																		Decline
-																	</Button>
-																</Flex>
-															</Td>
+															<Td>{applicationActions(application)}</Td>
 														</Tr>
 													))}
 												</Tbody>
 											</Table>
 										</TableContainer>
+										</>
 									)}
 								</TabPanel>
 								<TabPanel px={0}>
 									{processed.length === 0 ? (
 										<Text color="#6B7280">No applications reviewed yet.</Text>
 									) : (
-										<TableContainer bg="#1a1a1a" borderRadius="lg" border="1px solid" borderColor="#2a2a2a">
+										<>
+										<Stack display={{ base: "flex", md: "none" }} spacing={3}>
+											{processed.map((application) => (
+												<Box key={application._id} bg="#1a1a1a" border="1px solid #2a2a2a" borderRadius="12px" p={4}>
+													<Flex justify="space-between" align="flex-start" gap={3}>
+														<Text minW={0} color="white" fontWeight={700} fontSize="15px">{application.name || "—"}</Text>
+														<Badge flexShrink={0} colorScheme={application.status === "approved" ? "green" : "red"}>{application.status}</Badge>
+													</Flex>
+													{/* Own line: beside the badge a long address broke mid-word. */}
+													<Text color="#9C9C9C" fontSize="13px" wordBreak="break-all">{application.email}</Text>
+													<Flex mt={3} justify="space-between" align="center" gap={3} fontSize="13px">
+														<Box color="#D1D5DB">{planCell(application, false)}</Box>
+														<Text color="#9C9C9C" flexShrink={0}>Reviewed {day(application.reviewedAt)}</Text>
+													</Flex>
+													<Box mt={3} sx={{ "& a, & p": { overflowWrap: "anywhere" } }}>
+														<ApplicationAnswers answers={application.answers} questions={questions} />
+													</Box>
+													{application.rejectionReason && (
+														<Text mt={3} pt={3} borderTop="1px solid #2a2a2a" color="#9C9C9C" fontSize="13px">
+															Note: {application.rejectionReason}
+														</Text>
+													)}
+												</Box>
+											))}
+										</Stack>
+										<TableContainer display={{ base: "none", md: "block" }} bg="#1a1a1a" borderRadius="lg" border="1px solid" borderColor="#2a2a2a">
 											<Table size="sm">
 												<Thead>
 													<Tr>
@@ -249,7 +300,7 @@ export default function PremiumApplicationsPage() {
 																<Text color="white" fontWeight="medium">{application.name || "—"}</Text>
 																<Text color="#9C9C9C" fontSize="sm">{application.email}</Text>
 															</Td>
-															<Td color="#D1D5DB">{application.interval === "year" ? "Annual" : "Monthly"}</Td>
+															<Td color="#D1D5DB">{planCell(application, false)}</Td>
 															<Td>
 																<Badge colorScheme={application.status === "approved" ? "green" : "red"}>{application.status}</Badge>
 															</Td>
@@ -261,6 +312,7 @@ export default function PremiumApplicationsPage() {
 												</Tbody>
 											</Table>
 										</TableContainer>
+										</>
 									)}
 								</TabPanel>
 							</TabPanels>
@@ -287,7 +339,7 @@ export default function PremiumApplicationsPage() {
 							_placeholder={{ color: "#6B7280" }}
 						/>
 					</ModalBody>
-					<ModalFooter>
+					<ModalFooter sx={{ "@media screen and (max-width: 47.99em)": { "& > button": { flex: "1 1 0", height: "44px" } } }}>
 						<Button variant="ghost" color="white" _hover={{ bg: "#2a2a2a" }} mr={3} onClick={onClose}>Cancel</Button>
 						<Button colorScheme="red" isLoading={busyId === rejectTarget?._id} onClick={confirmReject}>Decline application</Button>
 					</ModalFooter>

@@ -4,6 +4,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useToast } from "@chakra-ui/react"
 import { isPendingBooking, isCancelledBooking } from "@/lib/booking-status"
 import { approvalFit, bookingTicketCount, buildPartialSelection, type ApprovalFit } from "@/lib/booking-approval"
+import { plannedTickets } from "@/lib/booking-request-edit"
+import { useBookingEdit, type BookingEditController } from "./useBookingEdit"
 import type { EventAvailability } from "@/lib/ticket-availability"
 
 /**
@@ -55,7 +57,9 @@ export type BookingApprovalsController = {
 	closeReject: () => void
 	confirmApprove: (seatable?: number) => Promise<void>
 	confirmReject: () => Promise<void>
-}
+	// Plus editing a booking's name / ticket quantity — see `useBookingEdit`, which the
+	// booking lists that cannot approve anything mount on their own.
+} & BookingEditController
 
 export function useBookingApprovals({
 	eventId,
@@ -70,6 +74,23 @@ export function useBookingApprovals({
 	const [rejectTarget, setRejectTarget] = React.useState<any | null>(null)
 	const [approveTarget, setApproveTarget] = React.useState<any | null>(null)
 
+	// Refreshed on a failed save too — a refusal usually means the booking moved under the
+	// dialog. The same three `act()` keeps in step (the name is on the guest roster, and the
+	// quantity decides which requests still fit), the event page's own Bookings panel and its
+	// counters, which sit beside the Approvals tab there under different keys, and the check-in
+	// figures — the Guests tab edits CONFIRMED bookings too, and their check-in record follows.
+	const requestEditor = useBookingEdit({
+		onSettled: () => {
+			queryClient.invalidateQueries({ queryKey: ["event-bookings", eventId] })
+			queryClient.invalidateQueries({ queryKey: ["guests-list", eventId] })
+			queryClient.invalidateQueries({ queryKey: ["event-availability", eventId] })
+			queryClient.invalidateQueries({ queryKey: ["eventBookings", eventId] })
+			queryClient.invalidateQueries({ queryKey: ["eventTotals", eventId] })
+			queryClient.invalidateQueries({ queryKey: ["check-in-status", eventId] })
+			queryClient.invalidateQueries({ queryKey: ["checkInStats", eventId] })
+		},
+	})
+
 	// How many seats are actually left. The same public endpoint the event page uses, so the
 	// host and the guest can never be looking at two different numbers.
 	//
@@ -82,7 +103,9 @@ export function useBookingApprovals({
 		enabled: !!eventId,
 	})
 
-	const fitFor = (b: any): ApprovalFit => approvalFit(b?.tickets, availability)
+	// Judged against what the request WILL be approved for — a host who has edited a request
+	// down from 3 to 2 must not go on being told it needs 3 seats.
+	const fitFor = (b: any): ApprovalFit => approvalFit(plannedTickets(b), availability)
 
 	const limitedTickets = (availability?.tickets || []).filter((t) => t.remaining !== null)
 
@@ -177,12 +200,20 @@ export function useBookingApprovals({
 	const confirmApprove = async (seatable?: number) => {
 		if (!approveTarget) return
 		const ref = approveTarget.bookingRef
-		// Built from the SAME helper the server validates against, so the two cannot disagree
-		// about what a reduced selection looks like.
+		// Two reasons to seat fewer than were asked for, and the smaller one wins: capacity ran
+		// short (`seatable`), or the request was edited down beforehand (the saved plan).
+		//
+		// Built from the SAME helpers the server validates against, so the two cannot disagree
+		// about what a reduced selection looks like. The plan is sent explicitly even though the
+		// server would apply it unprompted — what the dialog showed is then what is asked for.
+		const planned = plannedTickets(approveTarget)
+		const plannedQty = bookingTicketCount(planned)
 		const reduced =
-			seatable !== undefined && seatable < bookingTicketCount(approveTarget?.tickets)
+			seatable !== undefined && seatable < plannedQty
 				? buildPartialSelection(approveTarget.tickets, seatable)
-				: undefined
+				: plannedQty < bookingTicketCount(approveTarget?.tickets)
+					? planned
+					: undefined
 		setApproveTarget(null)
 		await act(ref, "approve", reduced)
 	}
@@ -202,5 +233,6 @@ export function useBookingApprovals({
 		closeReject: () => setRejectTarget(null),
 		confirmApprove,
 		confirmReject,
+		...requestEditor,
 	}
 }

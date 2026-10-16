@@ -253,17 +253,36 @@ export const resolveBundleMode = (tickets: BundleTicketLike[] | null | undefined
  * `EventCheckoutModel`. `AUTH_HOLD_DAYS` rather than a literal 7, because this sentence quotes
  * the deadline that `authExpiresAt` actually enforces and the two must not drift.
  */
-export const bundleApprovalNotice = (keys: MembershipKey[], interval?: string | null): string => {
-	const annual = interval === "year"
+export const bundleApprovalNotice = (
+	keys: MembershipKey[],
+	/**
+	 * How each membership is billed — the interval it RESOLVES to, not the ticket's setting: a
+	 * ticket set to annual still bills a monthly-only membership (Full Concierge) monthly. A
+	 * single string applies to every key, which is the old call shape.
+	 */
+	intervals?: string | null | Partial<Record<MembershipKey, string>>,
+): string => {
+	const intervalOf = (key: MembershipKey) =>
+		(intervals && typeof intervals === "object" ? intervals[key] : intervals) === "year" ? "year" : "month"
+	const cadence = (interval: string) => (interval === "year" ? "yearly" : "monthly")
 	// Premium alone keeps the exact approved wording, which is what the vast majority of
 	// bundled tickets are. Anything else has the membership named instead, so a Concierge
 	// ticket — or one selling both — can't claim "the first month's premium".
 	const period =
 		keys.length === 1 && keys[0] === "premium"
-			? annual ? "the first year's premium" : "the first month's premium"
+			? intervalOf("premium") === "year" ? "the first year's premium" : "the first month's premium"
 			: `the first period of ${membershipLabelList(keys) || "the membership"}`
 
-	return `Payment Hold: Cards are authorized for the ticket plus ${period} at checkout, but are only charged if you approve the guest within ${AUTH_HOLD_DAYS} days; after that, the membership renews ${annual ? "yearly" : "monthly"}.`
+	// One cadence for everything → the old sentence. Two memberships billed differently → each
+	// named with its own, because "the membership renews yearly" on a ticket that also sells a
+	// monthly-only membership tells the host something untrue about half of it.
+	const resolved = keys.map(intervalOf)
+	const renewal =
+		resolved.length > 1 && resolved.some((interval) => interval !== resolved[0])
+			? keys.map((key) => `${MEMBERSHIPS[key].label} renews ${cadence(intervalOf(key))}`).join(" and ")
+			: `the membership${keys.length > 1 ? "s renew" : " renews"} ${cadence(resolved[0] || "month")}`
+
+	return `Payment Hold: Cards are authorized for the ticket plus ${period} at checkout, but are only charged if you approve the guest within ${AUTH_HOLD_DAYS} days; after that, ${renewal}.`
 }
 
 /** @deprecated Premium-only wording. Use `bundleApprovalNotice`. */

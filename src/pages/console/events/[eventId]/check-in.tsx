@@ -45,7 +45,9 @@ export default function CheckInPage({ event }: CheckInPageProps) {
 
 	return (
 		<ConsoleLayout page={Pages.Manage} maxW="max-w-7xl">
-			<Container maxW="container.xl" py={8}>
+			{/* Phones: ConsoleLayout already insets 16px. This container and the portal each added
+			    16px more, leaving the form 48px in from both edges of a 390px screen. */}
+			<Container maxW="container.xl" py={8} sx={{ "@media screen and (max-width: 47.99em)": { paddingLeft: 0, paddingRight: 0, paddingTop: "4px", paddingBottom: "8px" } }}>
 				<CheckInStats eventId={eventData._id.toString()} />
 				<CheckInPortal eventId={eventData._id.toString()} eventName={eventData.name} />
 			</Container>

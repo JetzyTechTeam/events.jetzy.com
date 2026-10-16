@@ -34,6 +34,7 @@ import { FiUsers, FiTag, FiGift, FiCreditCard, FiTrendingUp, FiEye, FiShoppingCa
 import MetricsCard from "@/components/analytics/MetricsCard"
 import ReferralPerformance from "@/components/analytics/ReferralPerformance"
 import DateRangeSelector from "@/components/analytics/DateRangeSelector"
+import { phoneTableSx } from "@/components/analytics/AnalyticsPanel"
 
 /**
  * Referral and membership reporting — the "where did these people come from" page.
@@ -266,14 +267,14 @@ export default function GrowthAnalytics() {
 				<meta name="robots" content="noindex, nofollow" />
 			</Head>
 			<ConsoleLayout page={Pages.Analytics} maxW="100%" backBtn="/console/analytics">
-				<Box maxW="1400px" mx="auto" px={{ base: 4, md: 0 }} py={6}>
-					<Flex bg="#1a1a1a" color="white" p={4} borderRadius="lg" border="1px solid" borderColor="#2a2a2a" mb={6} justify="space-between" align="center" gap={4} wrap="wrap">
+				<Box maxW="1400px" mx="auto" px={0} py={{ base: 2, md: 6 }}>
+					<Flex bg="#1a1a1a" color="white" p={{ base: 3, md: 4 }} borderRadius="lg" border="1px solid" borderColor="#2a2a2a" mb={{ base: 4, md: 6 }} justify="space-between" align="center" gap={4} wrap="wrap" sx={{ "@media screen and (max-width: 47.99em)": { "& > div:first-of-type": { width: "100%", minWidth: 0 } } }}>
 						<DateRangeSelector dark dateFrom={dateFrom} dateTo={dateTo} onDateChange={(from, to) => { setDateFrom(from); setDateTo(to); setPage(1) }} />
 						<Text fontSize="sm" color="#9C9C9C">Referral codes &amp; membership sales</Text>
 					</Flex>
 
 					<Tabs variant="soft-rounded" colorScheme="orange">
-						<TabList mb={4}>
+						<TabList mb={4} sx={{ "@media screen and (max-width: 47.99em)": { overflowX: "auto", flexWrap: "nowrap", scrollbarWidth: "none", "&::-webkit-scrollbar": { display: "none" }, "& > button": { flexShrink: 0, whiteSpace: "nowrap" } } }}>
 							<Tab color="#9C9C9C" _selected={{ bg: "#F79432", color: "black" }}>Referral codes</Tab>
 							<Tab color="#9C9C9C" _selected={{ bg: "#F79432", color: "black" }}>Jetzy Premium</Tab>
 							<Tab color="#9C9C9C" _selected={{ bg: "#F79432", color: "black" }}>Signup invite codes</Tab>
@@ -291,20 +292,20 @@ export default function GrowthAnalytics() {
 
 							{/* -------------------------------- Memberships -------------------------------- */}
 							<TabPanel px={0}>
-								<SimpleGrid columns={{ base: 1, sm: 2, lg: 6 }} spacing={4} mb={6}>
-									<MetricsCard dark title="Memberships sold" value={totalMembers.toLocaleString()} icon={FiUsers} iconColor="#F5C518" />
-									<MetricsCard dark title="Bought directly" value={(bySource.subscribe || 0).toLocaleString()} icon={FiCreditCard} iconColor="#F5C518" subtitle="/subscribe or the paywall" />
-									<MetricsCard dark title="With a ticket" value={(bySource.ticket || 0).toLocaleString()} icon={FiTag} iconColor="#F5C518" />
+								<SimpleGrid columns={{ base: 2, sm: 2, lg: 6 }} spacing={{ base: 2, sm: 4 }} mb={6}>
+									<MetricsCard dark compactOnMobile title="Memberships sold" value={totalMembers.toLocaleString()} icon={FiUsers} iconColor="#F5C518" />
+									<MetricsCard dark compactOnMobile title="Bought directly" value={(bySource.subscribe || 0).toLocaleString()} icon={FiCreditCard} iconColor="#F5C518" subtitle="/subscribe or the paywall" />
+									<MetricsCard dark compactOnMobile title="With a ticket" value={(bySource.ticket || 0).toLocaleString()} icon={FiTag} iconColor="#F5C518" />
 									<MetricsCard
-										dark
+										dark compactOnMobile
 										title="Given free months"
 										value={((bySource.gift || 0) + (bySource.signup || 0)).toLocaleString()}
 										icon={FiGift}
 										iconColor="#F5C518"
 										subtitle={`${bySource.signup || 0} at signup · ${bySource.gift || 0} with a ticket`}
 									/>
-									<MetricsCard dark title="Invite codes redeemed" value={inviteRedemptions.toLocaleString()} icon={FiGift} iconColor="#F5C518" subtitle={`${inviteCodes.length} code${inviteCodes.length === 1 ? "" : "s"}`} />
-									<MetricsCard dark title="Referral-link redemptions" value={referralLinkTotal.toLocaleString()} icon={FiGift} iconColor="#F5C518" subtitle={`${referralLinkRedemptions.length} code${referralLinkRedemptions.length === 1 ? "" : "s"}`} />
+									<MetricsCard dark compactOnMobile title="Invite codes redeemed" value={inviteRedemptions.toLocaleString()} icon={FiGift} iconColor="#F5C518" subtitle={`${inviteCodes.length} code${inviteCodes.length === 1 ? "" : "s"}`} />
+									<MetricsCard dark compactOnMobile title="Referral-link redemptions" value={referralLinkTotal.toLocaleString()} icon={FiGift} iconColor="#F5C518" subtitle={`${referralLinkRedemptions.length} code${referralLinkRedemptions.length === 1 ? "" : "s"}`} />
 								</SimpleGrid>
 
 								{inviteCodes.length > 0 && (
@@ -412,7 +413,7 @@ export default function GrowthAnalytics() {
 										</Text>
 									) : (
 										<>
-											<TableContainer>
+											<TableContainer sx={phoneTableSx(2)}>
 												<Table size="sm" variant="simple">
 													<Thead>
 														<Tr>
@@ -469,11 +470,11 @@ export default function GrowthAnalytics() {
 								    code and never opened their verification email has no membership, and they
 								    are exactly who a campaign report has to show. The gap between "typed" and
 								    "granted" is the number worth acting on. */}
-								<SimpleGrid columns={{ base: 1, sm: 2, lg: 4 }} spacing={4} mb={6}>
-									<MetricsCard dark title="Typed a code" value={(sgSummary?.typed ?? 0).toLocaleString()} icon={FiGift} iconColor="#A78BFA" />
-									<MetricsCard dark title="Verified their email" value={(sgSummary?.verified ?? 0).toLocaleString()} icon={FiUsers} iconColor="#A78BFA" />
-									<MetricsCard dark title="Membership granted" value={(sgSummary?.granted ?? 0).toLocaleString()} icon={FiCreditCard} iconColor="#A78BFA" subtitle="Free months actually created" />
-									<MetricsCard dark title="Not redeemed" value={(sgSummary?.pending ?? 0).toLocaleString()} icon={FiTrendingUp} iconColor="#A78BFA" subtitle="Typed it, never finished" />
+								<SimpleGrid columns={{ base: 2, sm: 2, lg: 4 }} spacing={{ base: 2, sm: 4 }} mb={6}>
+									<MetricsCard dark compactOnMobile title="Typed a code" value={(sgSummary?.typed ?? 0).toLocaleString()} icon={FiGift} iconColor="#A78BFA" />
+									<MetricsCard dark compactOnMobile title="Verified their email" value={(sgSummary?.verified ?? 0).toLocaleString()} icon={FiUsers} iconColor="#A78BFA" />
+									<MetricsCard dark compactOnMobile title="Membership granted" value={(sgSummary?.granted ?? 0).toLocaleString()} icon={FiCreditCard} iconColor="#A78BFA" subtitle="Free months actually created" />
+									<MetricsCard dark compactOnMobile title="Not redeemed" value={(sgSummary?.pending ?? 0).toLocaleString()} icon={FiTrendingUp} iconColor="#A78BFA" subtitle="Typed it, never finished" />
 								</SimpleGrid>
 
 								<Box bg="#1a1a1a" border="1px solid #2a2a2a" borderRadius="lg" p={4}>
@@ -522,7 +523,7 @@ export default function GrowthAnalytics() {
 										<Text color="#9C9C9C" py={6}>Nobody has signed up with a membership invite code in this period.</Text>
 									) : (
 										<>
-											<TableContainer>
+											<TableContainer sx={phoneTableSx(2)}>
 												<Table size="sm" variant="simple">
 													<Thead>
 														<Tr>
@@ -584,12 +585,12 @@ export default function GrowthAnalytics() {
 								{/* Reads `premium_page_views`, written on every /premium and /subscribe load and
 								    checkout attempt, closed out by the Stripe webhook when a sale confirms. Rows
 								    from before this shipped don't exist — same as every other funnel here. */}
-								<SimpleGrid columns={{ base: 1, sm: 2, lg: 4 }} spacing={4} mb={6}>
-									<MetricsCard dark title="Opened the offer" value={pfTotalOpens.toLocaleString()} icon={FiEye} iconColor="#60A5FA" subtitle="/premium + /subscribe + Buy Premium button" />
-									<MetricsCard dark title="Started checkout" value={pfTotalCheckout.toLocaleString()} icon={FiShoppingCart} iconColor="#60A5FA" />
-									<MetricsCard dark title="Purchased" value={pfTotalPurchased.toLocaleString()} icon={FiCreditCard} iconColor="#60A5FA" />
+								<SimpleGrid columns={{ base: 2, sm: 2, lg: 4 }} spacing={{ base: 2, sm: 4 }} mb={6}>
+									<MetricsCard dark compactOnMobile title="Opened the offer" value={pfTotalOpens.toLocaleString()} icon={FiEye} iconColor="#60A5FA" subtitle="/premium + /subscribe + Buy Premium button" />
+									<MetricsCard dark compactOnMobile title="Started checkout" value={pfTotalCheckout.toLocaleString()} icon={FiShoppingCart} iconColor="#60A5FA" />
+									<MetricsCard dark compactOnMobile title="Purchased" value={pfTotalPurchased.toLocaleString()} icon={FiCreditCard} iconColor="#60A5FA" />
 									<MetricsCard
-										dark
+										dark compactOnMobile
 										title="Opened via a referral link"
 										value={pfReferralOpens.toLocaleString()}
 										icon={FiGift}
@@ -610,7 +611,7 @@ export default function GrowthAnalytics() {
 									{pfLoading ? (
 										<Center py={10}><Spinner color="#F79432" /></Center>
 									) : (
-										<TableContainer>
+										<TableContainer sx={phoneTableSx(1)}>
 											<Table size="sm" variant="simple">
 												<Thead>
 													<Tr>
@@ -671,7 +672,7 @@ export default function GrowthAnalytics() {
 									) : pfLinks.length === 0 ? (
 										<Text color="#9C9C9C" py={6}>No referral share link has been opened in this period.</Text>
 									) : (
-										<TableContainer>
+										<TableContainer sx={phoneTableSx(1)}>
 											<Table size="sm" variant="simple">
 												<Thead>
 													<Tr>

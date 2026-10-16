@@ -286,6 +286,22 @@ export interface IBookings extends IBaseModelProps {
 		from: Array<{ ticketId: Types.ObjectId; quantity: number }>
 		to: Array<{ ticketId: Types.ObjectId; quantity: number }>
 	}>
+	/**
+	 * The lower quantity a host/admin intends to approve on a HELD request. `tickets` stays what
+	 * the card is held for. Read through `plannedTickets()` in `booking-request-edit.ts`, never
+	 * directly. Undefined = the request stands as the guest made it.
+	 */
+	adjustedTickets?: Array<{ ticketId: Types.ObjectId; quantity: number }>
+	adjustedTicketsAt?: Date
+	adjustedTicketsBy?: "host" | "admin"
+	/** Set when a host/admin corrected the name on the booking. Undefined = never edited. */
+	customerNameEditHistory?: Array<{
+		at: Date
+		by: string
+		byUserId?: Types.ObjectId
+		from?: string
+		to: string
+	}>
 	updateEventTracker: () => Promise<void>
 	getEvent: () => Promise<IEvent>
 }
