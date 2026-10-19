@@ -38,7 +38,10 @@ export default function GuestsInvited({ event }: { event: string }) {
     setIsStatusLoading(true);
     try {
       const response = await axios.get(`/api/guests/find-by-email?eventId=${data._id}&email=${encodeURIComponent(email as string)}`);
-      setGuestStatus(response.data?.status || null); 
+      setGuestStatus(response.data?.status || null);
+      // The host may have supplied the name (typed or from an imported guest list) — don't make
+      // the guest type it again.
+      if (response.data?.name) setName((prev) => prev || response.data.name);
     } catch (err) {
       console.error("Failed to fetch guest status:", err);
       setGuestStatus(null);
@@ -55,10 +58,11 @@ export default function GuestsInvited({ event }: { event: string }) {
         name: name,
       });
       setIsRegistered(true);
+      // Accepting is NOT a booking — take them straight to the tickets so they can book one.
       setTimeout(() => {
         handleCloseModal();
-        router.push(eventPath(data.slug));
-      }, 2000);
+        router.push(ticketsPath);
+      }, 2500);
     } catch (err: any) {
       setError(err.message || "Registration failed");
       toast({
@@ -105,6 +109,7 @@ export default function GuestsInvited({ event }: { event: string }) {
     fetchGuestStatus();
   }, [data?._id, email]);
 
+  const ticketsPath = `${eventPath(data.slug)}#event-tickets`;
   const isAccepted = guestStatus === 'accepted';
   const isDeclined = guestStatus === 'declined';
   const isButtonDisabled = isLoading || isStatusLoading || isAccepted || isDeclined;
@@ -216,8 +221,16 @@ export default function GuestsInvited({ event }: { event: string }) {
           {!isStatusLoading && isAccepted && (
             <Alert status="success" borderRadius="lg" mt={5} bg="#1a3a2a" color="white">
               <AlertIcon color="green.300" />
-              <AlertDescription>You&apos;re already registered for this event.</AlertDescription>
+              <AlertDescription>
+                You&apos;ve accepted this invitation. If you haven&apos;t booked your ticket yet, book it now to secure your spot.
+              </AlertDescription>
             </Alert>
+          )}
+
+          {!isStatusLoading && isAccepted && (
+            <Button colorScheme="orange" color='black' w='full' mt={4} onClick={() => router.push(ticketsPath)}>
+              Book Ticket
+            </Button>
           )}
 
           {!isStatusLoading && isDeclined && (
@@ -228,9 +241,15 @@ export default function GuestsInvited({ event }: { event: string }) {
           )}
 
           {!isAccepted && !isDeclined && (
-            <Flex gap={4} mt={5}>
+            <Text mt={5} color="#FFFFFFA3" fontSize="sm">
+              Accept the invitation and book your ticket to secure your spot.
+            </Text>
+          )}
+
+          {!isAccepted && !isDeclined && (
+            <Flex gap={4} mt={3}>
               <Button colorScheme="orange" color='black' w='full' onClick={handleOpenModal} disabled={isButtonDisabled}>
-                Accept
+                Accept &amp; Book Ticket
               </Button>
               <Button bg='#3E3E3E' color='white' w='full' _hover={{ bg: '#3E3E3E'}} _active={{bg: '#3E3E3E'}} onClick={handleDecline} isLoading={isLoading} disabled={isButtonDisabled}>
                 Decline
@@ -245,15 +264,15 @@ export default function GuestsInvited({ event }: { event: string }) {
         <ModalContent bg='#1E1E1E'>
           <ModalHeader>
             <Heading fontSize={30}>Your Info</Heading>
-            <Text fontSize={15} color='#A5A5A5'>Please provide your details to register</Text>
+            <Text fontSize={15} color='#A5A5A5'>Confirm your details, then book your ticket</Text>
           </ModalHeader>
           {!isRegistered && <ModalCloseButton />}
           <ModalBody pb={6}>
             {isRegistered ? (
               <Flex direction="column" align="center" py={4} gap={3}>
                 <Text fontSize="4xl">🎉</Text>
-                <Heading fontSize={22} textAlign="center">You&apos;re registered!</Heading>
-                <Text color="#A5A5A5" textAlign="center">Redirecting you to the event page...</Text>
+                <Heading fontSize={22} textAlign="center">Invitation accepted!</Heading>
+                <Text color="#A5A5A5" textAlign="center">Now book your ticket to secure your spot. Taking you to the tickets...</Text>
               </Flex>
             ) : (
               <>
@@ -274,7 +293,7 @@ export default function GuestsInvited({ event }: { event: string }) {
           {!isRegistered && (
             <ModalFooter>
               <Button w='full' color='black' colorScheme="orange" mr={3} onClick={handleRegister} isLoading={isLoading} disabled={isLoading || isAccepted || isDeclined}>
-                Register
+                Accept &amp; Continue to Tickets
               </Button>
             </ModalFooter>
           )}
