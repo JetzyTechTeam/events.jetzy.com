@@ -1416,3 +1416,9 @@ Since `TICKET_SCHEMA.md` Revision 5 (2026-09-24), which covered approvals and ed
   Premium subscription on the same customer is set `cancel_at_period_end` with
   `metadata.cancelledReason = "included_with_concierge"` (no refund). Web: `splitBundleCharges`,
   `expandEntitlements`, `retireIncludedSubscriptions`.
+- **Concierge sells annually (2026-10-19).** Concierge Annual is a SEPARATE Stripe product
+  (test `prod_UlPxrsQgIknFRQ`, $595/yr). Detect a membership by ANY of its products
+  (`membershipProductIds`); resolve a ticket's annual price across them (`listMembershipPrices`).
+  A ticket's `membershipInterval: "year"` now sells Concierge annually. When one subscription to a
+  membership ends while another to the same membership is live (monthly → annual), the record
+  stays on the live one.

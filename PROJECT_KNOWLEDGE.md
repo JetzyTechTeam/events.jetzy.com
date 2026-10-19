@@ -506,6 +506,8 @@ Recorded 2026-08-11. **Membership is resolved by PRODUCT id, never by price** �
 | ~~Premium $200/yr~~ — retired 2026-09-18 | `price_1U3KA0B7XccR5GE0ZRwK6yKH` | `price_1U3KGWB7XccR5GE0h8qqEOtm` |
 | Concierge product | `prod_UjabUJ9OXWhLPJ` | `prod_UlQTOgXS73TAEV` |
 | Concierge $59.50/mo | `price_1Tk7QPB7XccR5GE0ZxMClLxs` | — |
+| Concierge Annual product (separate) | `prod_UlPxrsQgIknFRQ` | TBD — set `NEXT_STRIPE_CONCIERGE_EXTRA_PRODUCT_IDS` |
+| Concierge $595/yr | `price_1Tlt7EB7XccR5GE03XkqG2Yd` | TBD |
 
 - Test and live product ids share no resemblance. Never derive one from the other.
 - **`default_price` must stay on the monthly price.** [api/subscriptions/plan.ts](src/pages/api/subscriptions/plan.ts) returns only `default_price`, and that figure is the recurring disclosure on every bundled ticket. Repointing it to annual would quote $200/yr on a $60 ticket.
@@ -554,6 +556,15 @@ Portal configuration, per environment (test config `bpc_1LsNj0B7XccR5GE0wle5UYCH
 2. Nothing records a *pending* scheduled downgrade, so between the request and the period end our record shows the old plan with no hint a change is queued.
 
 Also note Stripe Adaptive Pricing converts for non-USD customers — the test member was charged PKR against a USD price. Our disclosure quotes the USD figure, which is what the price is denominated in; Stripe adds its own "charges can vary based on exchange rates" line.
+
+### Concierge sells annually + SelectMember review fixes (IMPLEMENTED 2026-10-19)
+- **Concierge Annual is its OWN Stripe product** (test `prod_UlPxrsQgIknFRQ`, $595/yr; the old misconfigured `prod_Ujacr6ekzXDpo1` is archived). `MEMBERSHIPS.concierge.alsoProductIds` lists every product that IS Concierge (both modes' ids — one from the other mode just never matches) plus env **`NEXT_STRIPE_CONCIERGE_EXTRA_PRODUCT_IDS`** (comma-separated; the LIVE annual id goes here until recorded). **Detect with `isMembershipProduct` / `membershipProductIds`; sell from `productId`.** `membershipKeyForProductId`, `hasActiveMembershipSubscription`, `hasEverHadMembership`, `findActiveSubscriptionForProduct` all match any of them.
+- **Annual Concierge is sellable on tickets.** `listMembershipPrices(key)` (`premium.ts`) gathers active recurring prices across those products (skips ones missing in this mode or archived); `findMembershipPriceForInterval` and `/api/subscriptions/plan` read it, so `offersAnnual` turns on for Concierge in the ticket dialog and the buyer is quoted $595/year. Main product's default wins its interval; `getMembershipPrice` (monthly default) is unchanged. Premium has no `alsoProductIds` — byte-identical.
+- **SelectMember plan name follows the interval** — `selectMemberPlanFor(key, interval)`; `selectMemberPlans.year` is NOT known yet, so annual mirrors as `select_monthly` with a warning until SelectMember gives the name.
+- **`SELECT_MEMBER_API_URL`** (server-only) is the SelectMember BACKEND — staging `https://test.jetzy.com`. `NEXT_PUBLIC_SELECT_MEMBER_URL` pointed at their Vercel site and every status/sync call was an HTML 404. Old var kept as fallback. Prod URL: TBD from SelectMember.
+- **Membership lookup by email asks STRIPE** (`customers.search` + subscriptions, any product of the key) after our own records — catches SelectMember buyers with no account here. Their `/status` is a fallback trusted only with `includesPremium` or a known `plan`; a bare `active` counts only while Stripe is unreachable (a hotels-only member must not read as Concierge).
+- **Webhook: a replaced subscription doesn't revoke the membership** — `otherLiveMembershipSubscription`. Monthly → annual Concierge leaves the old one ending after the new one is live; `subscription.updated` (ending) and `.deleted` now keep the record on the live one and send no "ended" email / mirror.
+- **No cleanup of existing double-holders (Concierge + Premium) — by decision (2026-10-19).** Only NEW Concierge activations retire a separate Premium.
 
 ### Concierge INCLUDES Jetzy Premium (IMPLEMENTED 2026-10-19)
 - **CEO: a Full Concierge member is a Jetzy Premium member — every benefit — and is billed for Concierge only.** Nothing new is STORED: no Premium subscription, no `premiumSubscription` write. The rule is DERIVED: **Premium = `premiumSubscription.active` OR `conciergeSubscription.active`.** Ending Concierge ends the included Premium by itself.

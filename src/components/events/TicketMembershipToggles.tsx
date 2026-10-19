@@ -23,7 +23,7 @@ import { planPriceForInterval, useMembershipPlans } from "@/hooks/usePremiumPlan
  * BILLING SITS INSIDE EACH MEMBERSHIP'S OWN ROW. A ticket carries ONE `membershipInterval`, but
  * not every membership is sold at every interval: checkout resolves each membership with
  * `findMembershipPriceForInterval(key, interval) || getMembershipPrice(key)`, so a ticket set to
- * annual still bills a monthly-only membership (Full Concierge today) monthly. A single
+ * annual still bills a monthly-only membership monthly. A single
  * "Billed: Monthly / Annual" control under both checkboxes read as applying to both, and hosts
  * believed they were selling annual Concierge. Now the choice appears only on a membership that
  * actually offers it, and a monthly-only one says so in its own row.

@@ -9,7 +9,7 @@ import {
 	setUserMembershipStatus,
 	subscriptionMembershipKey,
 } from "@/lib/premium"
-import { MEMBERSHIPS, activeMembershipsOnDoc, isMembershipKey, membershipLabel, type MembershipKey } from "@/lib/memberships"
+import { MEMBERSHIPS, activeMembershipsOnDoc, isMembershipKey, isMembershipProduct, membershipLabel, type MembershipKey } from "@/lib/memberships"
 import { syncSelectMembership } from "@/lib/select-member"
 import {
 	sendMembershipCancelled,
@@ -78,6 +78,7 @@ const mirrorToSelectMember = async (
 		key,
 		status,
 		externalSubscriptionId: subscription?.id,
+		interval: subscription?.items?.data?.[0]?.price?.recurring?.interval,
 		...(subscription?.start_date ? { startedAt: new Date(subscription.start_date * 1000) } : {}),
 		...(subscription?.current_period_end ? { expiresAt: new Date(subscription.current_period_end * 1000) } : {}),
 	})
@@ -112,6 +113,47 @@ const includedMembershipCancelExtras = async (
 	const alsoEnds = included.filter((k) => !ownActive.includes(k)).map(membershipLabel)
 	return alsoEnds.length > 0 ? { alsoEnds } : {}
 }
+
+/**
+ * ANOTHER live subscription to the same membership on this customer, if any.
+ *
+ * One membership can be several Stripe products (Concierge monthly and annual), so a member who
+ * moves from one to the other briefly holds both, and the old one's update / deletion arrives
+ * after the new one is live. Writing that old state would mark a paying member inactive. When
+ * this returns a subscription, the record follows IT and the old one's ending is not announced.
+ */
+const otherLiveMembershipSubscription = async (
+	customerId: string,
+	key: MembershipKey,
+	excludeId: string,
+): Promise<Stripe.Subscription | null> => {
+	try {
+		const list = await getStripeClient().subscriptions.list({ customer: customerId, status: "all", limit: 100 })
+		return (
+			list.data.find(
+				(other) =>
+					other.id !== excludeId &&
+					(other.status === "active" || other.status === "trialing") &&
+					!other.cancel_at_period_end &&
+					other.items.data.some((item) => {
+						const product = item.price?.product
+						return isMembershipProduct(key, typeof product === "string" ? product : product?.id)
+					}),
+			) || null
+		)
+	} catch (error: any) {
+		console.error("[webhooks/stripe] Couldn't list subscriptions to check for a replacement:", error?.message || error)
+		return null
+	}
+}
+
+const membershipStateOf = (subscription: Stripe.Subscription) => ({
+	active: subscription.status === "active" || subscription.status === "trialing",
+	stripeSubscriptionId: subscription.id,
+	status: subscription.status,
+	currentPeriodEnd: new Date(subscription.current_period_end * 1000),
+	cancelAtPeriodEnd: subscription.cancel_at_period_end,
+})
 
 // Stripe needs the raw, unparsed request body to verify the webhook signature.
 export const config = {
@@ -493,6 +535,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				const wasCancelling = !!previous?.doc?.[MEMBERSHIPS[key].userField]?.cancelAtPeriodEnd
 				const wasActive = !!previous?.doc?.[MEMBERSHIPS[key].userField]?.active
 
+				// This one is ending, but the member holds the same membership on another live
+				// subscription (Concierge monthly → annual) — keep the record on that one, and say
+				// nothing about an ending that changes nothing for them.
+				const thisEnding =
+					subscription.cancel_at_period_end || !(subscription.status === "active" || subscription.status === "trialing")
+				if (thisEnding) {
+					const replacement = await otherLiveMembershipSubscription(customerId, key, subscription.id)
+					if (replacement) {
+						await setMembershipStatusByStripeCustomerId(customerId, key, membershipStateOf(replacement))
+						console.log("[webhooks/stripe] Ending subscription replaced by a live one; record kept on it:", subscription.id, "->", replacement.id)
+						break
+					}
+				}
+
 				await setMembershipStatusByStripeCustomerId(customerId, key, {
 					active: subscription.status === "active" || subscription.status === "trialing",
 					stripeSubscriptionId: subscription.id,
@@ -599,6 +655,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				const key = subscriptionMembershipKey(subscription)
 				if (!key) {
 					console.error("[webhooks/stripe] subscription.deleted for an unrecognised product, ignoring:", subscription.id)
+					break
+				}
+
+				// Replaced by another live subscription to the same membership (monthly → annual)?
+				// Then the member still holds it: record that one, no cancellation mirror or email.
+				const replacement = await otherLiveMembershipSubscription(customerId, key, subscription.id)
+				if (replacement) {
+					await setMembershipStatusByStripeCustomerId(customerId, key, membershipStateOf(replacement))
+					console.log("[webhooks/stripe] Deleted subscription replaced by a live one; record kept on it:", subscription.id, "->", replacement.id)
 					break
 				}
 

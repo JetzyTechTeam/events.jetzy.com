@@ -1,6 +1,6 @@
 import { sendResponse } from "@/lib/helpers"
 import { ResCode } from "@/lib/responseCodes"
-import { getStripeClient } from "@/lib/premium"
+import { listMembershipPrices } from "@/lib/premium"
 import { MEMBERSHIPS, isMembershipKey } from "@/lib/memberships"
 import { NextApiRequest, NextApiResponse } from "next"
 import Stripe from "stripe"
@@ -24,9 +24,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	const definition = MEMBERSHIPS[key]
 
 	try {
-		const stripe = getStripeClient()
-		const product = await stripe.products.retrieve(definition.productId, { expand: ["default_price"] })
-		const price = product.default_price as Stripe.Price | null
+		// Across every product that IS this membership: Concierge Annual is its own Stripe product,
+		// so reading `productId` alone hid the annual plan from every ticket and disclosure.
+		const catalog = await listMembershipPrices(key)
+		const price = catalog.mainDefault
 
 		if (!price) {
 			return sendResponse(res, null, `${definition.label} has no active price configured.`, false, ResCode.INTERNAL_SERVER_ERROR)
@@ -39,7 +40,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		//
 		// One-time prices are filtered out: a membership is a subscription by definition, and a
 		// stray one-time price on the product would otherwise be offered as a plan.
-		const allPrices = await stripe.prices.list({ product: definition.productId, active: true, limit: 100 })
+		const allPrices = { data: catalog.prices }
 
 		// EXACTLY ONE PRICE PER INTERVAL, and the product's default always wins its own.
 		//
@@ -59,7 +60,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			const existing = byInterval.get(slot)
 			// Stripe lists newest first, so the first seen is the most recent — the right guess
 			// for "the current price" when several share an interval and none is the default.
-			if (!existing || candidate.id === price.id) byInterval.set(slot, candidate)
+			// The main default wins its interval; another product's own default beats a stray price.
+			if (
+				!existing ||
+				candidate.id === price.id ||
+				(existing.id !== price.id && !catalog.defaultIds.has(existing.id) && catalog.defaultIds.has(candidate.id))
+			)
+				byInterval.set(slot, candidate)
 		}
 
 		const prices = [...byInterval.values()]
@@ -76,7 +83,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		return sendResponse(res, {
 			membership: key,
-			productId: product.id,
+			productId: definition.productId,
 			// The registry label, not Stripe's product name: the two drift, and this is the name
 			// shown next to a price the buyer is about to be charged.
 			name: definition.label,

@@ -28,9 +28,17 @@
  * sent as `x-api-key` when set, so the shared-secret upgrade needs no code change here.
  */
 
-import { MEMBERSHIPS, type MembershipKey } from "@/lib/memberships"
+import { MEMBERSHIPS, selectMemberPlanFor, type MembershipKey } from "@/lib/memberships"
 
-const SELECT_MEMBER_BASE = (process.env.NEXT_PUBLIC_SELECT_MEMBER_URL || "https://selectmember.jetzy.com").replace(/\/$/, "")
+// The API lives on SelectMember's BACKEND (staging `https://test.jetzy.com`), not on their
+// website — `NEXT_PUBLIC_SELECT_MEMBER_URL` pointed at the Vercel site, where every call here was
+// a 404 (found by SelectMember, 2026-10-19). `SELECT_MEMBER_API_URL` is the server-only setting
+// for it; the old variable is only a fallback for environments not yet updated.
+const SELECT_MEMBER_BASE = (
+	process.env.SELECT_MEMBER_API_URL ||
+	process.env.NEXT_PUBLIC_SELECT_MEMBER_URL ||
+	"https://selectmember.jetzy.com"
+).replace(/\/$/, "")
 
 const SUBSCRIPTION_PATH = "/api/v1/subscription/select"
 
@@ -56,6 +64,8 @@ type SyncArgs = {
 	externalSubscriptionId?: string
 	startedAt?: Date
 	expiresAt?: Date
+	/** The subscription's billing interval — picks the monthly or annual plan name. */
+	interval?: string | null
 }
 
 const headers = (): Record<string, string> => {
@@ -89,14 +99,14 @@ const request = async (path: string, init: RequestInit): Promise<{ ok: boolean; 
  * Returns true on success and false on any failure, so callers can log the gap without
  * having to reason about which errors are retryable — none of them are, here.
  */
-export async function syncSelectMembership({ email, key, status, externalSubscriptionId, startedAt, expiresAt }: SyncArgs): Promise<boolean> {
+export async function syncSelectMembership({ email, key, status, externalSubscriptionId, startedAt, expiresAt, interval }: SyncArgs): Promise<boolean> {
 	const trimmed = typeof email === "string" ? email.trim() : ""
 	if (!trimmed) {
 		console.error("[select-member] syncSelectMembership called with no email")
 		return false
 	}
 
-	const plan = MEMBERSHIPS[key]?.selectMemberPlan
+	const plan = selectMemberPlanFor(key, interval)
 	if (!plan) {
 		// A product we own outright has nothing to mirror. Both callers check this before
 		// calling, so reaching here means the two disagree — say so rather than PATCHing their

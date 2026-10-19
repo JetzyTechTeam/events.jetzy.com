@@ -713,8 +713,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					// metadata so the subscription created later uses the exact rate quoted here.
 					//
 					// Falls back to the product default when this membership isn't sold at the
-					// ticket's interval — Full Concierge has no annual price, and a host who set a
-					// ticket to annual meant Premium. Unlike direct checkout, where a missing
+					// ticket's interval (both Premium and Concierge sell annually now, Concierge
+					// through its separate Annual product). Unlike direct checkout, where a missing
 					// interval is an error because the BUYER chose it, here the host did, and the
 					// line carries whatever price was actually resolved so the recurring
 					// disclosure and the eventual subscription both stay truthful.

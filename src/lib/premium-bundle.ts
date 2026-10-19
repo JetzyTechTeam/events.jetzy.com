@@ -281,7 +281,7 @@ export const bundleApprovalNotice = (
 	keys: MembershipKey[],
 	/**
 	 * How each membership is billed — the interval it RESOLVES to, not the ticket's setting: a
-	 * ticket set to annual still bills a monthly-only membership (Full Concierge) monthly. A
+	 * ticket set to annual still bills a monthly-only membership monthly. A
 	 * single string applies to every key, which is the old call shape.
 	 */
 	intervals?: string | null | Partial<Record<MembershipKey, string>>,

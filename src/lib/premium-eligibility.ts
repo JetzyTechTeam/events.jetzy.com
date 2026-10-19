@@ -29,7 +29,15 @@
  * pure and isomorphic.
  */
 
-import { MEMBERSHIPS, MEMBERSHIP_KEYS, expandEntitlements, membershipsIncluding, type MembershipKey } from "@/lib/memberships"
+import {
+	MEMBERSHIPS,
+	MEMBERSHIP_KEYS,
+	expandEntitlements,
+	isMembershipProduct,
+	membershipsIncluding,
+	selectMemberPlanNames,
+	type MembershipKey,
+} from "@/lib/memberships"
 
 /**
  * Escape a user-supplied string for safe use inside a RegExp literal.
@@ -107,34 +115,51 @@ async function ownMemberships(email: string, scope?: MembershipKey[]): Promise<M
 		return !!(inUsers as any)?.[field]?.active || !!(inEventUsers as any)?.[field]?.active
 	})
 
-	// ---- Ask the membership's own system, when it has one ----
-	//
-	// Our records only know about memberships WE sold. Full Concierge has been sold on
-	// selectmember.jetzy.com since before this integration existed, and those subscribers have
-	// no `conciergeSubscription` here — so on our own data they look like non-members. Left
-	// alone, an existing Concierge member buying a bundled ticket would be charged $59.50 for a
-	// membership they already pay for, and end up with two live subscriptions.
-	//
-	// Only consulted for products in `scope`, so an event that doesn't sell Concierge never
-	// touches their API — this runs behind the unauthenticated `/api/premium/check-email` on a
-	// debounced keystroke, and there is no reason to point that at a third party's site.
-	//
-	// A failed lookup falls back to our own record: strictly the behaviour we'd have had
-	// anyway, never worse. Their outage must not block a purchase.
-	// A key in scope can be satisfied by a membership that includes it, so those are looked up too.
+	// A key in scope can be satisfied by a membership that includes it (Premium ← Concierge), so
+	// those are looked up too.
 	const lookup = new Set<MembershipKey>()
 	;(scope || []).forEach((key) => {
 		lookup.add(key)
 		membershipsIncluding(key).forEach((including) => lookup.add(including))
 	})
-	const remoteKeys = MEMBERSHIP_KEYS.filter(
-		(key) => lookup.has(key) && MEMBERSHIPS[key].selectMemberPlan && !held.includes(key),
-	)
+	const missing = () => MEMBERSHIP_KEYS.filter((key) => lookup.has(key) && !held.includes(key))
+
+	// ---- Ask STRIPE, by email ----
+	//
+	// Our records only know memberships we could attach to an account here. selectmember.jetzy.com
+	// sells Premium and Concierge (monthly AND annual, separate products) on the SAME Stripe
+	// account, and a buyer of theirs may have no document in our collections at all — on our own
+	// data they look like non-members, and a bundled ticket would charge them for a membership they
+	// already pay for. Stripe is the one record both sites write to, so it answers for both.
+	// SelectMember's own advice (2026-10-19): their status API can't yet tell Concierge from their
+	// other plans, so Stripe is the more reliable check.
+	//
+	// Only for products in scope — this runs behind the unauthenticated `/api/premium/check-email`
+	// on a debounced keystroke. A failure falls back below; it never blocks a purchase.
+	let stripeFailed = false
+	if (missing().length > 0) {
+		const fromStripe = await membershipsInStripeByEmail(trimmed, missing())
+		if (fromStripe === null) stripeFailed = true
+		else fromStripe.forEach((key) => !held.includes(key) && held.push(key))
+	}
+
+	// ---- Then SelectMember's own status API, as a fallback ----
+	//
+	// Trusted only when it says WHICH plan: `includesPremium`, or a `plan` that is one of ours for
+	// that membership. A bare `status: "active"` could be a hotels-only member, and reading it as
+	// Concierge would give away Premium — that is accepted only while Stripe itself is unreachable,
+	// which is the behaviour this had before the Stripe check existed.
+	const remoteKeys = missing().filter((key) => MEMBERSHIPS[key].selectMemberPlan)
 	if (remoteKeys.length > 0) {
 		const { getSelectMembershipStatus } = await import("@/lib/select-member")
 		const status = await getSelectMembershipStatus(trimmed)
-		if (String(status?.status || "").toLowerCase() === "active") {
-			remoteKeys.forEach((key) => held.push(key))
+		const active = String(status?.status || "").toLowerCase() === "active"
+		const plan = typeof status?.plan === "string" ? status.plan : ""
+		if (active) {
+			remoteKeys.forEach((key) => {
+				const named = (status as any)?.includesPremium === true || (!!plan && selectMemberPlanNames(key).includes(plan))
+				if (named || (stripeFailed && !plan)) held.push(key)
+			})
 		}
 	}
 
@@ -149,4 +174,37 @@ export async function hasMembership(email: string, key: MembershipKey): Promise<
 /** @deprecated Premium-only shim. Use `hasMembership(email, "premium")`. */
 export async function isPremiumEmail(email: string): Promise<boolean> {
 	return hasMembership(email, "premium")
+}
+
+/**
+ * Which of `keys` does any Stripe customer with this email hold right now (`active`/`trialing`,
+ * on any product of the membership)? Null when Stripe couldn't be asked — distinct from "none".
+ *
+ * Customer SEARCH, not `customers.list({ email })`: list matches the address exactly, and
+ * neither site lowercases what it stores. One person can have a customer on each site.
+ */
+async function membershipsInStripeByEmail(email: string, keys: MembershipKey[]): Promise<MembershipKey[] | null> {
+	try {
+		const { getStripeClient } = await import("@/lib/premium")
+		const stripe = getStripeClient()
+		// Stripe search query syntax: backslash and double quote are escaped inside a quoted value.
+		const quoted = email.replace(/\\/g, "\\\\").replace(/"/g, '\\"')
+		const customers = await stripe.customers.search({ query: `email:"${quoted}"`, limit: 10 })
+		const found = new Set<MembershipKey>()
+		for (const customer of customers.data) {
+			const subscriptions = await stripe.subscriptions.list({ customer: customer.id, status: "all", limit: 100 })
+			for (const subscription of subscriptions.data) {
+				if (subscription.status !== "active" && subscription.status !== "trialing") continue
+				for (const item of subscription.items.data) {
+					const product = item.price?.product
+					const productId = typeof product === "string" ? product : product?.id
+					keys.forEach((key) => isMembershipProduct(key, productId) && found.add(key))
+				}
+			}
+		}
+		return MEMBERSHIP_KEYS.filter((key) => found.has(key))
+	} catch (error: any) {
+		console.error("[premium-eligibility] Stripe lookup by email failed:", error?.message || error)
+		return null
+	}
 }

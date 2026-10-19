@@ -43,6 +43,16 @@ export type MembershipDefinition = {
 	 * wrong thing.
 	 */
 	productId: string
+	/**
+	 * OTHER Stripe products that are this same membership — recognised, never sold from here.
+	 *
+	 * selectmember.jetzy.com sells Full Concierge Annual as a SEPARATE product on the shared Stripe
+	 * account, so matching `productId` alone missed every annual member: no Premium for them, a
+	 * second Concierge offered on a bundled ticket, and their old Premium never stopped. Both
+	 * modes' ids may sit in the list — a test id simply never matches in live, and vice versa.
+	 * Extend without a deploy via the `<KEY>` env var named in each entry.
+	 */
+	alsoProductIds?: string[]
 	/** Dot-path prefix of the subscription sub-document on `Users` / `EventUsers`. */
 	userField: "premiumSubscription" | "conciergeSubscription"
 	/**
@@ -50,6 +60,12 @@ export type MembershipDefinition = {
 	 * Absent means "we own this membership outright; nothing to mirror".
 	 */
 	selectMemberPlan?: string
+	/**
+	 * SelectMember's plan identifier per billing interval, when it differs from `selectMemberPlan`.
+	 * Read through `selectMemberPlanFor` — an interval with no entry falls back to
+	 * `selectMemberPlan` and logs, rather than sending them a plan name we invented.
+	 */
+	selectMemberPlans?: Partial<Record<"month" | "year", string>>
 	/**
 	 * Other memberships this one ENTITLES its holder to, at no extra charge.
 	 *
@@ -83,8 +99,23 @@ export const MEMBERSHIPS: Record<MembershipKey, MembershipDefinition> = {
 		// Production `prod_UlQTOgXS73TAEV`; staging `prod_UjabUJ9OXWhLPJ` must be supplied
 		// through the env var.
 		productId: process.env.NEXT_STRIPE_CONCIERGE_PRODUCT_ID || "prod_UlQTOgXS73TAEV",
+		// Concierge Annual — test `prod_UlPxrsQgIknFRQ` ($595/year). The live id goes in
+		// `NEXT_STRIPE_CONCIERGE_EXTRA_PRODUCT_IDS` (comma-separated) until it is recorded here.
+		// Monthly is listed too so an env pointing `productId` at one mode still knows the other.
+		alsoProductIds: [
+			"prod_UjabUJ9OXWhLPJ",
+			"prod_UlQTOgXS73TAEV",
+			"prod_UlPxrsQgIknFRQ",
+			...String(process.env.NEXT_STRIPE_CONCIERGE_EXTRA_PRODUCT_IDS || "")
+				.split(",")
+				.map((id) => id.trim())
+				.filter(Boolean),
+		],
 		userField: "conciergeSubscription",
 		selectMemberPlan: "select_monthly",
+		// The annual plan name is SelectMember's to give — until it is, annual sales mirror as
+		// `select_monthly` with a warning (see `selectMemberPlanFor`).
+		selectMemberPlans: { month: "select_monthly" },
 		includes: ["premium"],
 	},
 }
@@ -118,8 +149,19 @@ export const membershipLabelList = (keys: MembershipKey[]): string => {
  */
 export const membershipKeyForProductId = (productId?: string | null): MembershipKey | null => {
 	if (!productId) return null
-	return MEMBERSHIP_KEYS.find((key) => MEMBERSHIPS[key].productId === productId) || null
+	return MEMBERSHIP_KEYS.find((key) => isMembershipProduct(key, productId)) || null
 }
+
+/** Every Stripe product that IS this membership: the one we sell, plus `alsoProductIds`. */
+export const membershipProductIds = (key: MembershipKey): string[] => {
+	const definition = MEMBERSHIPS[key]
+	if (!definition) return []
+	return Array.from(new Set([definition.productId, ...(definition.alsoProductIds || [])].filter(Boolean)))
+}
+
+/** Is this Stripe product one of this membership's? Use for DETECTION; sell from `productId`. */
+export const isMembershipProduct = (key: MembershipKey, productId?: string | null): boolean =>
+	!!productId && membershipProductIds(key).includes(productId)
 
 /**
  * The memberships a set of HELD memberships entitles someone to: what they hold, plus
@@ -174,3 +216,26 @@ export const membershipEntitlementSource = (doc: any, key: MembershipKey): Membe
 /** What a Concierge member is told when something tries to sell them Premium. */
 export const PREMIUM_INCLUDED_MESSAGE =
 	"Jetzy Premium is already included with your Full Concierge Membership — there's nothing more to buy."
+
+/**
+ * The plan name SelectMember expects for this membership at this billing interval, or undefined
+ * when the product isn't theirs. Annual Concierge is a separate SelectMember plan; until its name
+ * is recorded in `selectMemberPlans`, the base plan is sent and the gap is logged.
+ */
+export const selectMemberPlanFor = (key: MembershipKey, interval?: string | null): string | undefined => {
+	const definition = MEMBERSHIPS[key]
+	if (!definition?.selectMemberPlan) return undefined
+	const exact = interval === "month" || interval === "year" ? definition.selectMemberPlans?.[interval] : undefined
+	if (exact) return exact
+	if (interval && interval !== "month") {
+		console.warn(`[memberships] No SelectMember plan recorded for ${key} at "${interval}" — sending ${definition.selectMemberPlan}`)
+	}
+	return definition.selectMemberPlan
+}
+
+/** Every SelectMember plan name that means this membership — to recognise one in their status reply. */
+export const selectMemberPlanNames = (key: MembershipKey): string[] => {
+	const definition = MEMBERSHIPS[key]
+	if (!definition?.selectMemberPlan) return []
+	return Array.from(new Set([definition.selectMemberPlan, ...Object.values(definition.selectMemberPlans || {})].filter(Boolean) as string[]))
+}

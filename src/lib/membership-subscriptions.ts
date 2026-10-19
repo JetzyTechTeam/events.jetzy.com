@@ -161,6 +161,7 @@ export async function startMembershipSubscription(args: StartMembershipArgs): Pr
 			key,
 			status: "active",
 			externalSubscriptionId: subscription.id,
+			interval: subscription.items?.data?.[0]?.price?.recurring?.interval || interval,
 			startedAt: new Date(),
 			expiresAt: new Date(subscription.current_period_end * 1000),
 		})
