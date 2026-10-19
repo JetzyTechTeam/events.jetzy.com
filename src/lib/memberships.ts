@@ -99,13 +99,15 @@ export const MEMBERSHIPS: Record<MembershipKey, MembershipDefinition> = {
 		// Production `prod_UlQTOgXS73TAEV`; staging `prod_UjabUJ9OXWhLPJ` must be supplied
 		// through the env var.
 		productId: process.env.NEXT_STRIPE_CONCIERGE_PRODUCT_ID || "prod_UlQTOgXS73TAEV",
-		// Concierge Annual — test `prod_UlPxrsQgIknFRQ` ($595/year). The live id goes in
-		// `NEXT_STRIPE_CONCIERGE_EXTRA_PRODUCT_IDS` (comma-separated) until it is recorded here.
-		// Monthly is listed too so an env pointing `productId` at one mode still knows the other.
+		// Concierge Annual is its own product — test `prod_UlPxrsQgIknFRQ`, live `prod_UlQT3lIpJo2PK6`
+		// ($595/year; confirmed by SelectMember 2026-10-19). Monthly (test `prod_UjabUJ9OXWhLPJ`,
+		// live `prod_UlQTOgXS73TAEV`) is listed too so an env pointing `productId` at one mode still
+		// knows the other. `NEXT_STRIPE_CONCIERGE_EXTRA_PRODUCT_IDS` (comma-separated) adds more.
 		alsoProductIds: [
 			"prod_UjabUJ9OXWhLPJ",
 			"prod_UlQTOgXS73TAEV",
 			"prod_UlPxrsQgIknFRQ",
+			"prod_UlQT3lIpJo2PK6",
 			...String(process.env.NEXT_STRIPE_CONCIERGE_EXTRA_PRODUCT_IDS || "")
 				.split(",")
 				.map((id) => id.trim())
@@ -113,9 +115,8 @@ export const MEMBERSHIPS: Record<MembershipKey, MembershipDefinition> = {
 		],
 		userField: "conciergeSubscription",
 		selectMemberPlan: "select_monthly",
-		// The annual plan name is SelectMember's to give — until it is, annual sales mirror as
-		// `select_monthly` with a warning (see `selectMemberPlanFor`).
-		selectMemberPlans: { month: "select_monthly" },
+		// Plan names confirmed by SelectMember (2026-10-19); their backend treats both as Concierge.
+		selectMemberPlans: { month: "select_monthly", year: "select_yearly" },
 		includes: ["premium"],
 	},
 }

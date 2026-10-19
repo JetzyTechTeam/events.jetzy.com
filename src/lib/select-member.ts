@@ -30,14 +30,16 @@
 
 import { MEMBERSHIPS, selectMemberPlanFor, type MembershipKey } from "@/lib/memberships"
 
-// The API lives on SelectMember's BACKEND (staging `https://test.jetzy.com`), not on their
-// website — `NEXT_PUBLIC_SELECT_MEMBER_URL` pointed at the Vercel site, where every call here was
-// a 404 (found by SelectMember, 2026-10-19). `SELECT_MEMBER_API_URL` is the server-only setting
-// for it; the old variable is only a fallback for environments not yet updated.
+// The API lives on SelectMember's BACKEND — production `https://prod-api.jetzy.com`, staging
+// `https://test.jetzy.com` — not on their website. `NEXT_PUBLIC_SELECT_MEMBER_URL` pointed at the
+// Vercel site, where every call here was a 404 (found by SelectMember, 2026-10-19).
+// `SELECT_MEMBER_API_URL` is the server-only setting for it. The website variable is deliberately
+// NOT a fallback any more — it is the wrong host. Unset, only a Vercel PRODUCTION deploy defaults to
+// the production backend; every other environment defaults to staging, so a preview or local run
+// can never sync test data into SelectMember's live records.
 const SELECT_MEMBER_BASE = (
 	process.env.SELECT_MEMBER_API_URL ||
-	process.env.NEXT_PUBLIC_SELECT_MEMBER_URL ||
-	"https://selectmember.jetzy.com"
+	(process.env.VERCEL_ENV === "production" ? "https://prod-api.jetzy.com" : "https://test.jetzy.com")
 ).replace(/\/$/, "")
 
 const SUBSCRIPTION_PATH = "/api/v1/subscription/select"
