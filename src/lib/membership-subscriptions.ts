@@ -29,6 +29,7 @@ import { MEMBERSHIPS, type MembershipKey } from "@/lib/memberships"
 import {
 	getStripeClient,
 	hasActiveMembershipSubscription,
+	retireIncludedSubscriptions,
 	setMembershipStatusByStripeCustomerId,
 	setUserMembershipStatus,
 } from "@/lib/premium"
@@ -145,6 +146,10 @@ export async function startMembershipSubscription(args: StartMembershipArgs): Pr
 	// account the Stripe customer was created for.
 	await setMembershipStatusByStripeCustomerId(customerId, key, activation)
 	if (subscriberId) await setUserMembershipStatus(String(subscriberId), key, activation).catch(() => {})
+
+	// Concierge includes Premium: a separate Premium subscription on this customer stops at the
+	// end of its paid period rather than billing alongside. Best-effort, never throws.
+	if (activation.active) await retireIncludedSubscriptions(customerId, key)
 
 	// Mirror to selectmember.jetzy.com when the product is theirs. Best-effort by design —
 	// `syncSelectMembership` swallows its own failures, because the card is already charged and

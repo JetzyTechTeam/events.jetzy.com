@@ -13,8 +13,8 @@ import { CheckmarkSVG } from "@/assets/icons";
 import { eventHasAnyApprovalTicket, eventRequiresApprovalForAllTickets, selectionRequiresApproval, ticketApprovalFlag } from "@/lib/ticket-approval";
 import { eventPath } from "@/lib/event-slug";
 import { buildTicketPricing } from "@/lib/ticket-pricing";
-import { freeMonthsLabel, membershipQuantityInSelection, premiumOrderCapMessage, PREMIUM_TICKET_MAX_PER_ORDER, selectionMemberships, selectionMembershipFreeMonths, selectionMembershipInterval, ticketMemberships } from "@/lib/premium-bundle";
-import { MEMBERSHIPS, type MembershipKey } from "@/lib/memberships";
+import { freeMonthsLabel, membershipQuantityInSelection, premiumOrderCapMessage, PREMIUM_TICKET_MAX_PER_ORDER, selectionMemberships, selectionMembershipFreeMonths, selectionMembershipInterval, splitBundleCharges, ticketMemberships } from "@/lib/premium-bundle";
+import { MEMBERSHIPS, MEMBERSHIP_KEYS, expandEntitlements, type MembershipKey } from "@/lib/memberships";
 import { planPriceForInterval, useMembershipPlans } from "@/hooks/usePremiumPlan";
 import {
   Button,
@@ -85,7 +85,13 @@ const TicketDescription: React.FC<{ description: string }> = ({ description }) =
 
 const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEditTickets }) => {
   const dispatcher = useAppDispatch();
-  const { isPremium } = usePremiumStatus();
+  const { isPremium, memberships: heldMembershipRecords } = usePremiumStatus();
+  // Everything the logged-in viewer holds, entitlements included (Concierge → Premium). Checkout
+  // re-decides from the typed email; this only shapes the preview beside the total.
+  const viewerHeld = expandEntitlements([
+    ...MEMBERSHIP_KEYS.filter((key) => !!(heldMembershipRecords as any)?.[key]?.active),
+    ...(isPremium ? (["premium"] as MembershipKey[]) : []),
+  ]);
   const [showPremiumPromo, setShowPremiumPromo] = useState(false);
   usePremiumSubscriptionReturn();
 
@@ -364,12 +370,14 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
     (acc, ticket) => (ticket.isSelected ? acc + ticket.price : acc),
     0
   );
-  // Which memberships does the CURRENT selection add? Jetzy Premium is dropped for a
-  // logged-in member — an existing subscriber pays the ticket alone. Concierge status isn't
-  // known here (no email field on this card), so it is always shown; checkout settles it.
-  const selectionAddedKeys = selectionMemberships(tickets.filter((t) => t.isSelected) as any).filter(
-    (key) => !(key === "premium" && isPremium),
-  );
+  // Which memberships does the CURRENT selection add? Anything the logged-in viewer already
+  // holds (`viewerHeld`, Concierge counting as Premium) is dropped, and `splitBundleCharges` drops
+  // Premium when the ticket sells Concierge too. Our own records only — a Concierge member known
+  // solely to SelectMember still sees the line here; checkout settles it from the typed email.
+  const selectionAddedKeys = splitBundleCharges(
+    selectionMemberships(tickets.filter((t) => t.isSelected) as any),
+    viewerHeld,
+  ).toCharge;
   // Priced at the SELECTED TICKET's interval, not the product default, so an annual bundle
   // reads "$200/year" beside the order total rather than the monthly figure.
   const selectionInterval = selectionMembershipInterval(tickets as any);

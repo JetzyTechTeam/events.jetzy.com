@@ -2,7 +2,7 @@ import { sendResponse } from "@Jetzy/lib/helpers"
 import { ResCode } from "@Jetzy/lib/responseCodes"
 import type { NextApiRequest, NextApiResponse } from "next"
 import { Types } from "mongoose"
-import { heldMemberships } from "@/lib/premium-eligibility"
+import { membershipHoldings } from "@/lib/premium-eligibility"
 import { eventHasAnyPremiumTicket, selectionMemberships } from "@/lib/premium-bundle"
 import { getMembershipTicketAllowances } from "@/lib/premium-ticket-limit"
 import { MEMBERSHIP_KEYS } from "@/lib/memberships"
@@ -101,8 +101,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// Scoped to what this event actually sells, so an event with no Concierge ticket never
 		// sends a request to SelectMember's API from this unauthenticated endpoint.
 		const eventKeys = selectionMemberships(((event as any).tickets || []).map((t: any) => ({ ...t, isSelected: true })))
-		const [held, allowances] = await Promise.all([
-			heldMemberships(String(email), eventKeys),
+		const [{ held, includedWith }, allowances] = await Promise.all([
+			membershipHoldings(String(email), eventKeys),
 			getMembershipTicketAllowances(String(eventId), String(email)),
 		])
 
@@ -112,6 +112,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				// Which memberships this address already has. The modal subtracts these from
 				// what the ticket sells to decide what it will actually be charged for.
 				held,
+				// For a membership held only because another includes it — `{ premium: "concierge" }`
+				// for a Concierge member — so the modal can say where it comes from.
+				includedWith,
 				sellsPremium: true,
 				// How many tickets of each membership this address may still buy FOR THIS EVENT.
 				allowances: MEMBERSHIP_KEYS.reduce((acc, key) => {

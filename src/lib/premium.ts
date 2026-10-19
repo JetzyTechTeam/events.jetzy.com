@@ -451,6 +451,45 @@ export async function findActiveSubscriptionForProduct(customerId: string, key: 
 	}
 }
 
+/** `metadata.cancelledReason` on a Premium subscription we stopped because Concierge includes it. */
+export const INCLUDED_MEMBERSHIP_CANCEL_REASON = "included_with_concierge"
+
+/**
+ * A membership that INCLUDES others has just started on this customer — stop the separate
+ * subscriptions it makes redundant.
+ *
+ * Full Concierge includes Jetzy Premium (CEO, 2026-10-19), so a member who was already paying
+ * for Premium would otherwise pay for it twice. The Premium subscription is set to
+ * `cancel_at_period_end`: they keep the period they already paid for (no refunds — by decision),
+ * and Concierge covers Premium from then on. Stamped with `metadata.cancelledReason` so the
+ * webhook sends the "now included" note instead of the win-back cancellation email.
+ *
+ * Idempotent (an already-cancelling subscription is left alone), so it is safe from both the
+ * webhook and `startMembershipSubscription`, and alongside selectmember.jetzy.com doing the same.
+ * Best-effort: never throws — a failure here must not fail a webhook or a booking.
+ */
+export async function retireIncludedSubscriptions(customerId: string, key: MembershipKey): Promise<string[]> {
+	const retired: string[] = []
+	const included = MEMBERSHIPS[key]?.includes || []
+	if (!customerId || included.length === 0) return retired
+	for (const includedKey of included) {
+		try {
+			const subscription = await findActiveSubscriptionForProduct(customerId, includedKey)
+			if (!subscription || subscription.cancel_at_period_end) continue
+			if (!["active", "trialing", "past_due"].includes(subscription.status)) continue
+			await getStripeClient().subscriptions.update(subscription.id, {
+				cancel_at_period_end: true,
+				metadata: { ...(subscription.metadata || {}), cancelledReason: INCLUDED_MEMBERSHIP_CANCEL_REASON, includedWith: key },
+			})
+			retired.push(subscription.id)
+			console.log(`[membership] ${includedKey} subscription ${subscription.id} set to end — now included with ${key}:`, customerId)
+		} catch (error: any) {
+			console.error(`[membership] Couldn't retire the ${includedKey} subscription included with ${key}:`, customerId, error?.message || error)
+		}
+	}
+	return retired
+}
+
 /**
  * Who to email about a subscription, resolved from its Stripe customer id.
  *

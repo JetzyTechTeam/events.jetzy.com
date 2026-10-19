@@ -23,7 +23,7 @@ import {
 } from "@/lib/premium-bundle"
 import { getMembershipTicketAllowances } from "@/lib/premium-ticket-limit"
 import { findMembershipPriceForInterval, getMembershipPrice, hasActiveMembershipSubscription, resolveStripeCustomerForUser } from "@/lib/premium"
-import { MEMBERSHIPS, membershipLabelList, type MembershipKey } from "@/lib/memberships"
+import { MEMBERSHIPS, membershipLabelList, membershipsIncluding, type MembershipKey } from "@/lib/memberships"
 import { validateReferralCodeForEvent, type ReferralCodeData } from "@/lib/referral-validation"
 import { REFERRAL_NOT_FOR_SELECTION_MESSAGE, referralCoversTicket, referralEligibleSubtotal } from "@/lib/referral-ticket-scope"
 import Stripe from "stripe"
@@ -288,7 +288,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		//   mode "bundle"         → at least one membership still to sell. `plan.toCharge`
 		//                           names exactly which, so holding one of two still pays for
 		//                           the other.
-		let bundlePlan: BundlePlan = { selected: [], toCharge: [], alreadyHeld: [], mode: "none" }
+		let bundlePlan: BundlePlan = { selected: [], toCharge: [], alreadyHeld: [], included: [], mode: "none" }
 
 		// Resolve the flags from the EVENT record, not the request body — a crafted body could
 		// otherwise drop the membership and buy a bundled ticket at the plain ticket price.
@@ -672,8 +672,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				// is a cache that can lag.
 				const stillOwed: MembershipKey[] = []
 				for (const key of bundlePlan.toCharge) {
-					if (await hasActiveMembershipSubscription(customerId, key)) {
-						console.warn(`[checkout/index] Customer already subscribed to ${key}; not charging for it:`, customerId)
+					// A membership that includes this one counts as holding it — an active Concierge
+					// subscription means Premium is already theirs (`MEMBERSHIPS.concierge.includes`).
+					let subscribedVia: MembershipKey | null = null
+					for (const candidate of [key, ...membershipsIncluding(key)]) {
+						if (await hasActiveMembershipSubscription(customerId, candidate)) {
+							subscribedVia = candidate
+							break
+						}
+					}
+					if (subscribedVia) {
+						console.warn(`[checkout/index] Customer already holds ${key} (via ${subscribedVia}); not charging for it:`, customerId)
 					} else {
 						stillOwed.push(key)
 					}
@@ -681,7 +690,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				bundlePlan = {
 					...bundlePlan,
 					toCharge: stillOwed,
-					alreadyHeld: bundlePlan.selected.filter((key) => !stillOwed.includes(key)),
+					alreadyHeld: bundlePlan.selected.filter((key) => !stillOwed.includes(key) && !bundlePlan.included.includes(key)),
 					mode: stillOwed.length > 0 ? "bundle" : "already-member",
 				}
 

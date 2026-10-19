@@ -1408,3 +1408,11 @@ Since `TICKET_SCHEMA.md` Revision 5 (2026-09-24), which covered approvals and ed
   `customerNameEditHistory`.
 - **Approval email** names a host's reduction ("the organizer has confirmed N") and says the
   membership is not affected.
+- **Concierge includes Jetzy Premium (2026-10-19).** Premium = `premiumSubscription.active` OR
+  `conciergeSubscription.active`. A Concierge member is never charged for Premium on a bundled
+  ticket; a ticket selling BOTH charges Concierge only (Premium gets no line item, no subscription,
+  no `payment.memberships` row); at approval a pending Premium row is released when the buyer holds
+  Concierge or a Concierge row on the same order is being started. When Concierge starts, a separate
+  Premium subscription on the same customer is set `cancel_at_period_end` with
+  `metadata.cancelledReason = "included_with_concierge"` (no refund). Web: `splitBundleCharges`,
+  `expandEntitlements`, `retireIncludedSubscriptions`.

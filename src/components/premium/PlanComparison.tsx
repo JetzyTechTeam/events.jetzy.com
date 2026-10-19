@@ -3,6 +3,7 @@ import { CheckIcon } from "@heroicons/react/24/solid"
 import Spinner from "@/components/misc/Spinner"
 import { trialEndsOn } from "@/lib/invite-trial"
 import { ROUTES } from "@/configs/routes"
+import { isMembershipKey, membershipLabel, type MembershipKey } from "@/lib/memberships"
 
 /**
  * What Jetzy Premium gets you.
@@ -163,6 +164,8 @@ type Props = {
 		/** No card means the trial ENDS rather than converting. */
 		hasPaymentMethod?: boolean
 		canSwitch: boolean
+		/** Premium comes with another membership (e.g. "concierge") — no Premium price of its own. */
+		includedWith?: string | null
 	} | null
 	/** Opens Stripe's plan-switching flow. Omit and no switch button renders. */
 	onSwitchInterval?: () => void
@@ -383,6 +386,7 @@ const PlanComparison: React.FC<Props> = ({
 
 	// Members never see the comparison — see `hideFreePlan`.
 	const showFreePlan = !hideFreePlan && !isPremium
+	const includedWithKey = isPremium && isMembershipKey(currentPlan?.includedWith) ? currentPlan!.includedWith as MembershipKey : null
 
 	return (
 		<div className={showFreePlan ? "grid gap-6 sm:grid-cols-2" : "grid gap-6 max-w-md mx-auto"}>
@@ -418,7 +422,20 @@ const PlanComparison: React.FC<Props> = ({
 
 				{/* ---- MEMBER STATE ---- what they pay now, not what they could buy. ---- */}
 				{isPremium ? (
-					onTrial ? (
+					includedWithKey ? (
+						/* ---- INCLUDED WITH CONCIERGE ----
+						   No Premium subscription exists, so there is no Premium price, renewal date or
+						   switch to show. Billing is the Concierge membership's. */
+						<div className="mb-6">
+							<p className="text-2xl font-bold" style={{ color: "#F5C518" }}>
+								Included
+							</p>
+							<p className="text-sm mt-1" style={{ color: "#F5C518" }}>
+								Jetzy Premium is included with your {membershipLabel(includedWithKey)}. You&apos;re only billed for{" "}
+								{membershipLabel(includedWithKey)}.
+							</p>
+						</div>
+					) : onTrial ? (
 						/* ---- ON A FREE TRIAL ----
 						   Leading with "$20 /month" here was reading as a charge that had already
 						   happened: someone who was just given a free month saw a large price and a

@@ -3952,6 +3952,8 @@ export const sendMembershipCancelled = async ({
 	amount,
 	interval,
 	reactivateUrl,
+	includedWith,
+	alsoEnds,
 }: {
 	email: string
 	firstName?: string
@@ -3972,10 +3974,52 @@ export const sendMembershipCancelled = async ({
 	interval?: string
 	/** Where "Reactivate" points. Omitted and no win-back block renders. */
 	reactivateUrl?: string
+	/**
+	 * This subscription was stopped BY US because another membership now includes it (a Premium
+	 * subscription ended because the member bought Full Concierge). The label of that membership.
+	 * They lose nothing — so no win-back, just a note that they won't pay twice.
+	 */
+	includedWith?: string
+	/**
+	 * The membership ending INCLUDES others (Concierge → Premium) and the member has no separate
+	 * subscription to them, so those benefits end on the same date. Their labels.
+	 */
+	alsoEnds?: string[]
 }) => {
 	const name = firstName || email.split("@")[0]
 	const product = label || DEFAULT_MEMBERSHIP_LABEL
 	const endsOnLabel = endsOn ? dayjs(endsOn).format("MMMM D, YYYY") : null
+
+	// ---- Stopped because another membership now includes it ----
+	if (includedWith) {
+		const headline = alreadyEnded
+			? `Your separate ${product} subscription has ended.`
+			: endsOnLabel
+				? `Your separate ${product} subscription won't renew after <strong>${endsOnLabel}</strong>.`
+				: `Your separate ${product} subscription won't renew after your current billing period.`
+		const body = `${product} is now included with your ${includedWith}, so you keep every ${product} benefit and won't be charged for it twice. Nothing else changes.`
+		try {
+			await sgMail.send({
+				to: email,
+				from: mailFrom(),
+				subject: `${product} is now included with your ${includedWith}`,
+				html: membershipShell(`
+        <p style="color:#1F2937;font-size:16px;line-height:1.6;margin:0;">Hi ${name},</p>
+        <p style="color:#1F2937;font-size:16px;line-height:1.6;margin:15px 0;">${headline}</p>
+        <p style="color:#4B5563;font-size:15px;line-height:1.6;margin:15px 0;">${body}</p>
+      `, "#F5C518"),
+				text: `Hi ${name},\n\n${stripHtml(headline)}\n\n${body}\n\n— Team Jetzy`,
+			})
+			console.log(`✅ Membership now-included email sent to: ${email}`)
+		} catch (error) {
+			console.error("❌ Failed to send membership now-included email:", error)
+		}
+		return
+	}
+	const alsoEndsLine =
+		alsoEnds && alsoEnds.length > 0
+			? `Your ${alsoEnds.join(" and ")} benefits, included with this membership, end ${alreadyEnded ? "with it" : "on the same date"}.`
+			: null
 
 	// The win-back copy is Jetzy Premium's, supplied by the CEO. Full Concierge is sold on
 	// selectmember.jetzy.com's own terms, so it keeps the plain message it always had — quoting
@@ -4009,8 +4053,9 @@ export const sendMembershipCancelled = async ({
         <p style="color:#1F2937;font-size:16px;line-height:1.6;margin:0;">Hi ${name},</p>
         <p style="color:#1F2937;font-size:16px;line-height:1.6;margin:15px 0;">${headline}</p>
         <p style="color:#4B5563;font-size:15px;line-height:1.6;margin:15px 0;">${body}</p>
+        ${alsoEndsLine ? `<p style="color:#4B5563;font-size:15px;line-height:1.6;margin:15px 0;">${alsoEndsLine}</p>` : ""}
       `, "#6B7280"),
-				text: `Hi ${name},\n\n${stripHtml(headline)}\n\n${body}\n\n— Team Jetzy`,
+				text: `Hi ${name},\n\n${stripHtml(headline)}\n\n${body}${alsoEndsLine ? `\n\n${alsoEndsLine}` : ""}\n\n— Team Jetzy`,
 			})
 			console.log(`✅ Membership cancellation email sent to: ${email} (alreadyEnded=${alreadyEnded})`)
 		} catch (error) {

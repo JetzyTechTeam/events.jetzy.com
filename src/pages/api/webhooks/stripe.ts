@@ -3,11 +3,13 @@ import {
 	findEmailRecipientByStripeCustomerId,
 	findUserByStripeCustomerId,
 	getStripeClient,
+	INCLUDED_MEMBERSHIP_CANCEL_REASON,
+	retireIncludedSubscriptions,
 	setMembershipStatusByStripeCustomerId,
 	setUserMembershipStatus,
 	subscriptionMembershipKey,
 } from "@/lib/premium"
-import { MEMBERSHIPS, isMembershipKey, type MembershipKey } from "@/lib/memberships"
+import { MEMBERSHIPS, activeMembershipsOnDoc, isMembershipKey, membershipLabel, type MembershipKey } from "@/lib/memberships"
 import { syncSelectMembership } from "@/lib/select-member"
 import {
 	sendMembershipCancelled,
@@ -79,6 +81,36 @@ const mirrorToSelectMember = async (
 		...(subscription?.start_date ? { startedAt: new Date(subscription.start_date * 1000) } : {}),
 		...(subscription?.current_period_end ? { expiresAt: new Date(subscription.current_period_end * 1000) } : {}),
 	})
+}
+
+/**
+ * The extra a cancellation email needs because of included memberships (Concierge → Premium):
+ *
+ *   - a Premium subscription WE stopped because Concierge now includes it → `includedWith`
+ *     (the member loses nothing; no win-back);
+ *   - a Concierge membership ending while the member has no separate Premium → `alsoEnds`
+ *     (their Premium benefits end with it, and they should hear that).
+ */
+const includedMembershipCancelExtras = async (
+	subscription: Stripe.Subscription,
+	key: MembershipKey,
+	customerId: string,
+): Promise<{ includedWith?: string; alsoEnds?: string[] }> => {
+	const metadata = (subscription.metadata || {}) as Record<string, string | undefined>
+	if (metadata.cancelledReason === INCLUDED_MEMBERSHIP_CANCEL_REASON) {
+		const including = isMembershipKey(metadata.includedWith) ? metadata.includedWith : "concierge"
+		return { includedWith: membershipLabel(including) }
+	}
+	const record = await findUserByStripeCustomerId(customerId)
+	const ownActive = activeMembershipsOnDoc(record?.doc)
+	// The member cancelled Premium themselves while holding Concierge — they keep every Premium
+	// benefit, so the win-back ("you'll lose Premium") would be false.
+	const stillIncludedBy = ownActive.find((other) => other !== key && (MEMBERSHIPS[other].includes || []).includes(key))
+	if (stillIncludedBy) return { includedWith: membershipLabel(stillIncludedBy) }
+	const included = MEMBERSHIPS[key].includes || []
+	if (included.length === 0) return {}
+	const alsoEnds = included.filter((k) => !ownActive.includes(k)).map(membershipLabel)
+	return alsoEnds.length > 0 ? { alsoEnds } : {}
 }
 
 // Stripe needs the raw, unparsed request body to verify the webhook signature.
@@ -208,6 +240,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 							cancelAtPeriodEnd: subscription.cancel_at_period_end,
 						})
 						await mirrorToSelectMember(key, customerId, "active", subscription)
+
+						// Concierge includes Premium: a separate Premium subscription stops at the end of
+						// its paid period. Runs for SelectMember's Concierge sales too — the member is
+						// the same person on the same customer either way. Idempotent, never throws.
+						if (subscription.status === "active" || subscription.status === "trialing") {
+							await retireIncludedSubscriptions(customerId, key)
+						}
 
 						// Welcome the buyer — but only for a signup WE sold.
 						//
@@ -452,6 +491,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				// doesn't arrive until the period actually ends, up to a month later.
 				const previous = await findUserByStripeCustomerId(customerId)
 				const wasCancelling = !!previous?.doc?.[MEMBERSHIPS[key].userField]?.cancelAtPeriodEnd
+				const wasActive = !!previous?.doc?.[MEMBERSHIPS[key].userField]?.active
 
 				await setMembershipStatusByStripeCustomerId(customerId, key, {
 					active: subscription.status === "active" || subscription.status === "trialing",
@@ -460,6 +500,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					currentPeriodEnd: new Date(subscription.current_period_end * 1000),
 					cancelAtPeriodEnd: subscription.cancel_at_period_end,
 				})
+
+				// Concierge just BECAME active (a SelectMember sale, a recovered payment) → retire a
+				// separate Premium subscription. Only on the transition: a member who later chooses
+				// to renew Premium themselves must not have it re-cancelled on every Concierge update.
+				if (!wasActive && (subscription.status === "active" || subscription.status === "trialing")) {
+					await retireIncludedSubscriptions(customerId, key)
+				}
 
 				// Their site has to learn about a portal cancellation too — it never passes
 				// through our checkout code. Still "active" until the period actually ends.
@@ -536,6 +583,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 							label: MEMBERSHIPS[key].label,
 							...cancellationRate(subscription),
 							reactivateUrl: reactivateMembershipUrl(),
+							...(await includedMembershipCancelExtras(subscription, key, customerId)),
 						})
 					}
 				}
@@ -566,7 +614,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 				await mirrorToSelectMember(key, customerId, "cancelled", subscription)
 
-				if (recipient && billedByJetzy(subscription, key)) {
+				// A Premium subscription WE retired because Concierge includes it was already explained
+				// when it was set to end; its actual ending changes nothing for the member.
+				const retiredAsIncluded =
+					(subscription.metadata as any)?.cancelledReason === INCLUDED_MEMBERSHIP_CANCEL_REASON
+				if (recipient && billedByJetzy(subscription, key) && !retiredAsIncluded) {
 					await sendMembershipCancelled({
 						...recipient,
 						alreadyEnded: true,
@@ -575,6 +627,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 						label: MEMBERSHIPS[key].label,
 						...cancellationRate(subscription),
 						reactivateUrl: reactivateMembershipUrl(),
+						...(await includedMembershipCancelExtras(subscription, key, customerId)),
 					})
 				}
 				break

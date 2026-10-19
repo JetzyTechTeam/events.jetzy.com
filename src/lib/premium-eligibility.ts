@@ -29,7 +29,7 @@
  * pure and isomorphic.
  */
 
-import { MEMBERSHIPS, MEMBERSHIP_KEYS, type MembershipKey } from "@/lib/memberships"
+import { MEMBERSHIPS, MEMBERSHIP_KEYS, expandEntitlements, membershipsIncluding, type MembershipKey } from "@/lib/memberships"
 
 /**
  * Escape a user-supplied string for safe use inside a RegExp literal.
@@ -49,8 +49,40 @@ const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$
  * `lowercase: true`, so a subscriber who signed up as `Fahad@Example.com` would never be
  * found by an exact match against the lowercased address they type at checkout. This is the
  * same trap already documented for `Bookings.customerEmail`.
+ *
+ * Returns ENTITLEMENTS, not just subscriptions: a Concierge member holds Premium too, because
+ * Concierge includes it (`MEMBERSHIPS.concierge.includes`). So a ticket selling Premium never
+ * charges a Concierge member for it, and `approve.ts` releases the Premium part of their hold.
+ * When `scope` asks about Premium, Concierge is consulted as well — including on
+ * selectmember.jetzy.com, where most Concierge members live.
  */
 export async function heldMemberships(email: string, scope?: MembershipKey[]): Promise<MembershipKey[]> {
+	return (await membershipHoldings(email, scope)).held
+}
+
+/**
+ * `heldMemberships` with the WHY: `own` is what the address actually subscribes to; `held` adds
+ * what those include. `includedWith` names, for each membership held only through another, the
+ * one that includes it (`{ premium: "concierge" }`) — so copy can say "included with your
+ * Concierge" rather than calling a Concierge member a Premium subscriber.
+ */
+export async function membershipHoldings(
+	email: string,
+	scope?: MembershipKey[],
+): Promise<{ own: MembershipKey[]; held: MembershipKey[]; includedWith: Partial<Record<MembershipKey, MembershipKey>> }> {
+	const own = await ownMemberships(email, scope)
+	const held = expandEntitlements(own)
+	const includedWith: Partial<Record<MembershipKey, MembershipKey>> = {}
+	held
+		.filter((key) => !own.includes(key))
+		.forEach((key) => {
+			const via = own.find((k) => (MEMBERSHIPS[k].includes || []).includes(key))
+			if (via) includedWith[key] = via
+		})
+	return { own, held, includedWith }
+}
+
+async function ownMemberships(email: string, scope?: MembershipKey[]): Promise<MembershipKey[]> {
 	const trimmed = typeof email === "string" ? email.trim() : ""
 	if (!trimmed) return []
 
@@ -89,7 +121,15 @@ export async function heldMemberships(email: string, scope?: MembershipKey[]): P
 	//
 	// A failed lookup falls back to our own record: strictly the behaviour we'd have had
 	// anyway, never worse. Their outage must not block a purchase.
-	const remoteKeys = (scope || []).filter((key) => MEMBERSHIPS[key].selectMemberPlan && !held.includes(key))
+	// A key in scope can be satisfied by a membership that includes it, so those are looked up too.
+	const lookup = new Set<MembershipKey>()
+	;(scope || []).forEach((key) => {
+		lookup.add(key)
+		membershipsIncluding(key).forEach((including) => lookup.add(including))
+	})
+	const remoteKeys = MEMBERSHIP_KEYS.filter(
+		(key) => lookup.has(key) && MEMBERSHIPS[key].selectMemberPlan && !held.includes(key),
+	)
 	if (remoteKeys.length > 0) {
 		const { getSelectMembershipStatus } = await import("@/lib/select-member")
 		const status = await getSelectMembershipStatus(trimmed)

@@ -22,6 +22,7 @@ import {
 	MEMBERSHIPS,
 	MEMBERSHIP_KEYS,
 	membershipLabelList,
+	membershipsIncluding,
 	sanitizeMembershipKeys,
 	type MembershipKey,
 } from "@/lib/memberships"
@@ -214,7 +215,31 @@ export type BundlePlan = {
 	toCharge: MembershipKey[]
 	/** The subset the buyer already pays for elsewhere. */
 	alreadyHeld: MembershipKey[]
+	/**
+	 * The subset this order gives at no charge because another membership being CHARGED here
+	 * includes it — Premium on a ticket that also sells Concierge. Not billed, no subscription
+	 * created: the Concierge subscription is what makes them a Premium member.
+	 */
+	included: MembershipKey[]
 	mode: BundleMode
+}
+
+/**
+ * The one split of "what this ticket sells" into charged / already held / included.
+ * Shared by `resolveBundlePlan` (server) and `EventCheckoutModel` (preview), so the two can't
+ * disagree about whether Premium is billed on a Concierge order.
+ *
+ * `alreadyHeld` must already be EXPANDED (`heldMemberships` returns entitlements), so a
+ * Concierge member reads as holding Premium here too.
+ */
+export const splitBundleCharges = (selected: MembershipKey[], alreadyHeld: MembershipKey[]) => {
+	const held = selected.filter((key) => alreadyHeld.includes(key))
+	const owed = selected.filter((key) => !alreadyHeld.includes(key))
+	// Concierge includes Premium (CEO, 2026-10-19): when Concierge is being bought on this order,
+	// Premium comes with it and is never billed on top.
+	const included = owed.filter((key) => membershipsIncluding(key).some((other) => owed.includes(other)))
+	const toCharge = owed.filter((key) => !included.includes(key))
+	return { toCharge, alreadyHeld: held, included }
 }
 
 export const resolveBundlePlan = (
@@ -222,14 +247,13 @@ export const resolveBundlePlan = (
 	alreadyHeld: MembershipKey[],
 ): BundlePlan => {
 	const selected = selectionMemberships(tickets)
-	const held = selected.filter((key) => alreadyHeld.includes(key))
-	const toCharge = selected.filter((key) => !alreadyHeld.includes(key))
+	const { toCharge, alreadyHeld: held, included } = splitBundleCharges(selected, alreadyHeld)
 
 	// "already-member" means NOTHING is left to sell — the order is an ordinary paid ticket.
 	// A buyer who holds one of two still needs the bundle machinery for the other.
 	const mode: BundleMode = selected.length === 0 ? "none" : toCharge.length === 0 ? "already-member" : "bundle"
 
-	return { selected, toCharge, alreadyHeld: held, mode }
+	return { selected, toCharge, alreadyHeld: held, included, mode }
 }
 
 /** @deprecated Single-product shim. Use `resolveBundlePlan`. */

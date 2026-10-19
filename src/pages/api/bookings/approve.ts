@@ -14,7 +14,7 @@ import { notifyApprovalApproved } from "@/lib/booking-notify"
 import { pricingFromBooking, type RecurringCharge } from "@/lib/ticket-pricing"
 import { getStripeClient } from "@/lib/premium"
 import { heldMemberships } from "@/lib/premium-eligibility"
-import { MEMBERSHIPS } from "@/lib/memberships"
+import { MEMBERSHIPS, membershipsIncluding, type MembershipKey } from "@/lib/memberships"
 import { bookingMemberships, bookingMembershipTotal } from "@/lib/booking-memberships"
 import { approvalCaptureCents, bookingTicketCount, partialApprovalRefusal, PARTIAL_REFUSAL_MESSAGE } from "@/lib/booking-approval"
 import { plannedTickets } from "@/lib/booking-request-edit"
@@ -257,6 +257,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				pendingMemberships.map((row) => row.key),
 			)
 			skipKeys = pendingMemberships.filter((row) => alreadyHeld.includes(row.key)).map((row) => row.key)
+			// A membership another row on this same order INCLUDES is not started either: Concierge
+			// includes Premium, so a request held before that rule (both rows pending) gets the
+			// Concierge subscription and its Premium portion released, not two subscriptions.
+			const startingKeys = pendingMemberships.map((row) => row.key).filter((key) => !skipKeys.includes(key))
+			pendingMemberships.forEach((row) => {
+				if (!skipKeys.includes(row.key) && membershipsIncluding(row.key as MembershipKey).some((k) => startingKeys.includes(k))) {
+					skipKeys.push(row.key)
+				}
+			})
 			if (skipKeys.length > 0) {
 				console.warn("[bookings/approve] Buyer already holds", skipKeys.join(", "), "— releasing that portion:", booking.bookingRef)
 			}

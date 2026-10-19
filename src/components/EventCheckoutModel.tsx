@@ -6,9 +6,9 @@ import Spinner from "./misc/Spinner"
 import { sendGAEvent } from "@next/third-parties/google"
 import { AUTH_HOLD_DAYS, selectionRequiresApproval } from "@/lib/ticket-approval"
 import { buildTicketPricing } from "@/lib/ticket-pricing"
-import { membershipQuantityInSelection, premiumAllowanceMessage, resolveFreeMonthsForKey, selectionMemberships, selectionMembershipFreeMonths, selectionMembershipInterval, ticketMemberships } from "@/lib/premium-bundle"
+import { membershipQuantityInSelection, premiumAllowanceMessage, resolveFreeMonthsForKey, selectionMemberships, splitBundleCharges, selectionMembershipFreeMonths, selectionMembershipInterval, ticketMemberships } from "@/lib/premium-bundle"
 import { REFERRAL_NOT_FOR_SELECTION_MESSAGE, referralAppliesToAllTickets, referralCoversTicket, referralEligibleSubtotal } from "@/lib/referral-ticket-scope"
-import { MEMBERSHIPS, membershipLabelList, sanitizeMembershipKeys, type MembershipKey } from "@/lib/memberships"
+import { MEMBERSHIPS, isMembershipKey, membershipLabelList, sanitizeMembershipKeys, type MembershipKey } from "@/lib/memberships"
 import { ROUTES } from "@/configs/routes"
 import { planPriceForInterval, useMembershipPlans } from "@/hooks/usePremiumPlan"
 import { usePremiumStatus } from "@/hooks/usePremiumStatus"
@@ -125,6 +125,8 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 	const selectionSellsPremium = selectionKeys.length > 0
 	// null = not checked yet (or the address just changed) — distinct from a checked "none".
 	const [heldByEmail, setHeldByEmail] = useState<MembershipKey[] | null>(null)
+	// For memberships held only because another includes them — `{ premium: "concierge" }`.
+	const [includedWithByEmail, setIncludedWithByEmail] = useState<Partial<Record<MembershipKey, MembershipKey>>>({})
 	const [checkingPremiumEmail, setCheckingPremiumEmail] = useState(false)
 	const premiumEmailTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 	// Monotonic id so a slow reply for a previous address can't overwrite a newer verdict.
@@ -132,8 +134,16 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 	const { plans: membershipPlans } = useMembershipPlans(selectionKeys)
 	// Charged only for the memberships this ticket sells that this address doesn't already
 	// hold — so a buyer with one of two still pays for the other.
-	const chargedKeys = heldByEmail === null ? [] : selectionKeys.filter((key) => !heldByEmail.includes(key))
-	const heldSelectionKeys = heldByEmail === null ? [] : selectionKeys.filter((key) => heldByEmail.includes(key))
+	// `splitBundleCharges` is the server's rule too — including "Concierge includes Premium", so a
+	// ticket selling both bills Concierge only.
+	const bundleSplit = heldByEmail === null ? null : splitBundleCharges(selectionKeys, heldByEmail)
+	const chargedKeys = bundleSplit?.toCharge || []
+	const heldSelectionKeys = bundleSplit?.alreadyHeld || []
+	const includedKeys = bundleSplit?.included || []
+	// Held memberships split by WHY: their own subscription, or included with another (Concierge →
+	// Premium). A Concierge member is told Premium is included, not called a Premium subscriber.
+	const ownHeldKeys = heldSelectionKeys.filter((key) => !includedWithByEmail[key])
+	const viaHeldKeys = heldSelectionKeys.filter((key) => !!includedWithByEmail[key])
 	// How many more membership tickets this address may buy for THIS event, per product.
 	// null = not checked.
 	const [allowanceRemaining, setAllowanceRemaining] = useState<Record<string, number> | null>(null)
@@ -638,6 +648,14 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 			const result = await response.json()
 			if (requestId !== premiumCheckIdRef.current) return
 			setHeldByEmail(result?.status ? sanitizeMembershipKeys(result?.data?.held) : [])
+			const includedWith = result?.status ? result?.data?.includedWith : null
+			setIncludedWithByEmail(
+				includedWith && typeof includedWith === "object"
+					? Object.fromEntries(
+							Object.entries(includedWith).filter(([k, v]) => isMembershipKey(k) && isMembershipKey(v)),
+					  )
+					: {},
+			)
 			// Membership status and remaining allowance come back together — one request,
 			// one debounce, one rate-limit bucket.
 			const allowances = result?.data?.allowances
@@ -1018,13 +1036,24 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 													    someone else. */}
 													{heldSelectionKeys.length > 0 && (
 														<div className="mt-1.5 rounded-lg p-2.5" style={{ background: "rgba(34,197,94,0.12)", border: "1px solid rgba(34,197,94,0.4)" }}>
-															<p className="text-xs text-green-400">
-																🎟️ {membershipLabelList(heldSelectionKeys)} Active Member:{" "}
-																{sessionEmail && sessionEmail.trim().toLowerCase() === formData.email.trim().toLowerCase()
-																	? `Logged in as ${sessionEmail}.`
-																	: `${formData.email.trim()}.`}{" "}
-																Your existing membership applies to this ticket
-															</p>
+															{ownHeldKeys.length > 0 && (
+																<p className="text-xs text-green-400">
+																	🎟️ {membershipLabelList(ownHeldKeys)} Active Member:{" "}
+																	{sessionEmail && sessionEmail.trim().toLowerCase() === formData.email.trim().toLowerCase()
+																		? `Logged in as ${sessionEmail}.`
+																		: `${formData.email.trim()}.`}{" "}
+																	Your existing membership applies to this ticket
+																</p>
+															)}
+															{viaHeldKeys.map((key) => (
+																<p key={key} className={`text-xs text-green-400${ownHeldKeys.length > 0 ? " mt-1" : ""}`}>
+																	🎟️ <strong>{MEMBERSHIPS[key].label} — included with your {MEMBERSHIPS[includedWithByEmail[key]!].label}.</strong>{" "}
+																	{sessionEmail && sessionEmail.trim().toLowerCase() === formData.email.trim().toLowerCase()
+																		? `Logged in as ${sessionEmail}.`
+																		: `${formData.email.trim()}.`}{" "}
+																	You won&apos;t be charged for it.
+																</p>
+															))}
 															<a
 																href={ROUTES.manageMembership}
 																target="_blank"
@@ -1093,6 +1122,14 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 																	</div>
 																)
 															})}
+
+															{/* Concierge includes Premium: named so the buyer sees they get it, and
+															    that it is not a second charge. */}
+															{includedKeys.length > 0 && (
+																<p className="text-xs" style={{ color: "#F5C518" }}>
+																	✨ Includes {membershipLabelList(includedKeys)} at no extra charge.
+																</p>
+															)}
 
 															<p className="text-xs" style={{ color: "#F5C518" }}>
 																Cancel anytime:{" "}

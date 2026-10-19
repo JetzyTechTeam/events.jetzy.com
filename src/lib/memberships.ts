@@ -50,6 +50,18 @@ export type MembershipDefinition = {
 	 * Absent means "we own this membership outright; nothing to mirror".
 	 */
 	selectMemberPlan?: string
+	/**
+	 * Other memberships this one ENTITLES its holder to, at no extra charge.
+	 *
+	 * Full Concierge includes Jetzy Premium (CEO, 2026-10-19): a Concierge member is a Premium
+	 * member for every purpose — badge, benefits, and "never sell them Premium again" — while
+	 * only Concierge is billed. Nothing is written for the included membership: there is no
+	 * Premium subscription and no `premiumSubscription` record behind it. It is DERIVED, every
+	 * time, through `expandEntitlements` / `isMembershipEntitled`, which is what makes it end by
+	 * itself the moment Concierge does. The mobile backend and selectmember.jetzy.com apply the
+	 * same rule against the same collections.
+	 */
+	includes?: MembershipKey[]
 }
 
 export const MEMBERSHIPS: Record<MembershipKey, MembershipDefinition> = {
@@ -73,6 +85,7 @@ export const MEMBERSHIPS: Record<MembershipKey, MembershipDefinition> = {
 		productId: process.env.NEXT_STRIPE_CONCIERGE_PRODUCT_ID || "prod_UlQTOgXS73TAEV",
 		userField: "conciergeSubscription",
 		selectMemberPlan: "select_monthly",
+		includes: ["premium"],
 	},
 }
 
@@ -107,3 +120,57 @@ export const membershipKeyForProductId = (productId?: string | null): Membership
 	if (!productId) return null
 	return MEMBERSHIP_KEYS.find((key) => MEMBERSHIPS[key].productId === productId) || null
 }
+
+/**
+ * The memberships a set of HELD memberships entitles someone to: what they hold, plus
+ * everything those include. Order-normalised.
+ *
+ * Use this — never re-derive "Concierge counts as Premium" inline. See `includes`.
+ */
+export const expandEntitlements = (held: MembershipKey[]): MembershipKey[] => {
+	const all = new Set<MembershipKey>(held)
+	held.forEach((key) => (MEMBERSHIPS[key]?.includes || []).forEach((included) => all.add(included)))
+	return MEMBERSHIP_KEYS.filter((key) => all.has(key))
+}
+
+/** The memberships that include `key` (e.g. `premium` → `["concierge"]`). */
+export const membershipsIncluding = (key: MembershipKey): MembershipKey[] =>
+	MEMBERSHIP_KEYS.filter((other) => (MEMBERSHIPS[other].includes || []).includes(key))
+
+/**
+ * Which of a user document's own memberships are ACTIVE — the stored flags, nothing derived.
+ * Accepts a lean doc, a mongoose doc, or a projection holding only the `active` flags.
+ */
+export const activeMembershipsOnDoc = (doc: any): MembershipKey[] =>
+	MEMBERSHIP_KEYS.filter((key) => !!doc?.[MEMBERSHIPS[key].userField]?.active)
+
+/**
+ * Is this user document entitled to `key`, directly or through a membership that includes it?
+ *
+ * `isMembershipEntitled(doc, "premium")` is THE answer to "is this person a Premium member".
+ * Reading `premiumSubscription.active` alone misses every Concierge member.
+ */
+export const isMembershipEntitled = (doc: any, key: MembershipKey): boolean =>
+	expandEntitlements(activeMembershipsOnDoc(doc)).includes(key)
+
+/**
+ * HOW the person holds `key`: through their own subscription to it, through a membership that
+ * includes it, or not at all. Their own subscription wins — someone paying for Premium while
+ * also holding Concierge is described by the subscription they actually pay for.
+ */
+export const membershipEntitlementSource = (doc: any, key: MembershipKey): MembershipKey | null => {
+	const active = activeMembershipsOnDoc(doc)
+	const via = active.find((held) => held !== key && (MEMBERSHIPS[held].includes || []).includes(key)) || null
+	if (active.includes(key)) {
+		// Their own subscription is ending (typically retired because Concierge now includes it) while
+		// another membership keeps it going — describe what actually keeps them Premium, or the card
+		// reads "Cancels <date>" to someone who loses nothing on that date.
+		const ownEnding = !!doc?.[MEMBERSHIPS[key].userField]?.cancelAtPeriodEnd
+		return ownEnding && via ? via : key
+	}
+	return via
+}
+
+/** What a Concierge member is told when something tries to sell them Premium. */
+export const PREMIUM_INCLUDED_MESSAGE =
+	"Jetzy Premium is already included with your Full Concierge Membership — there's nothing more to buy."
