@@ -25,7 +25,8 @@
 
 import dayjs from "dayjs"
 import Stripe from "stripe"
-import { MEMBERSHIPS, type MembershipKey } from "@/lib/memberships"
+import { MEMBERSHIPS, isMembershipProduct, type MembershipKey } from "@/lib/memberships"
+import { UPGRADED_CANCEL_REASON, subscriptionPaidThrough } from "@/lib/membership-upgrade"
 import {
 	getStripeClient,
 	hasActiveMembershipSubscription,
@@ -62,10 +63,17 @@ export type StartMembershipArgs = {
 	 * `gift` when months were given away, `ticket` otherwise — which is what every existing
 	 * caller means. Signup grants pass `signup` because no ticket was involved at all.
 	 */
-	source?: "ticket" | "gift" | "signup" | "application"
+	source?: "ticket" | "gift" | "signup" | "application" | "upgrade"
 	/** The invite code redeemed, when one was. Recorded, never used to price anything. */
 	inviteCode?: string
 	metadata?: Record<string, string>
+	/**
+	 * This purchase UPGRADES an existing subscription to the same membership on a longer billing
+	 * period (monthly Concierge → yearly; `src/lib/membership-upgrade.ts`). The new subscription
+	 * starts paying when the old one's already-paid time ends, and the old one is then set to end
+	 * at that same date. It may sit on another Stripe customer (one sold by selectmember.jetzy.com).
+	 */
+	replaces?: { subscriptionId: string }
 }
 
 export type StartMembershipResult = {
@@ -74,6 +82,9 @@ export type StartMembershipResult = {
 	subscriptionId?: string
 	/** When the first REAL charge lands — the trial end. Shown on the receipt. */
 	firstRenewalAt?: Date
+	/** On an upgrade: the billing period replaced, and when the new paid period began. */
+	replacedInterval?: string
+	startsAt?: Date
 }
 
 /**
@@ -91,9 +102,47 @@ export async function startMembershipSubscription(args: StartMembershipArgs): Pr
 
 	const stripe = getStripeClient()
 
+	// ---- An upgrade: read the subscription being replaced, fresh from Stripe ----
+	//
+	// Re-read now, not taken from checkout: on an approval order days can pass, and the monthly
+	// plan may have renewed (paid time moved on) or been cancelled meanwhile.
+	let replaced: Stripe.Subscription | null = null
+	if (args.replaces?.subscriptionId) {
+		try {
+			replaced = await stripe.subscriptions.retrieve(args.replaces.subscriptionId)
+		} catch (error: any) {
+			// Fail LOUDLY: falling through to the ordinary guard would see the still-live monthly
+			// plan, return "already subscribed", and leave a member charged the yearly price with no
+			// yearly subscription and nothing on the booking to say so. Throwing marks the row
+			// `failed` with this message instead, where it is visible and retryable.
+			if (error?.code !== "resource_missing") {
+				throw new Error(`couldn't read the monthly subscription being upgraded (${args.replaces.subscriptionId}): ${error?.message || error}`)
+			}
+		}
+		// Ended or deleted meanwhile → nothing to replace; the year simply starts now.
+		if (replaced && !(replaced.status === "active" || replaced.status === "trialing")) replaced = null
+	}
+
 	// Belt and braces against a subscription started elsewhere between the charge and this
-	// call — Stripe is the authority, our `active` copy lags the webhook.
-	if (await hasActiveMembershipSubscription(customerId, key)) {
+	// call — Stripe is the authority, our `active` copy lags the webhook. On an upgrade the
+	// subscription being replaced doesn't count; any OTHER live one still does (they may have gone
+	// yearly in the meantime).
+	if (replaced) {
+		const others = await stripe.subscriptions.list({ customer: customerId, status: "all", limit: 100 })
+		const anotherLive = others.data.some(
+			(sub) =>
+				sub.id !== replaced!.id &&
+				(sub.status === "active" || sub.status === "trialing") &&
+				sub.items.data.some((item) => {
+					const product = item.price?.product
+					return isMembershipProduct(key, typeof product === "string" ? product : product?.id)
+				}),
+		)
+		if (anotherLive) {
+			console.warn(`[membership] ${key}: upgrade target already has another live subscription, not creating one:`, customerId)
+			return { created: false }
+		}
+	} else if (await hasActiveMembershipSubscription(customerId, key)) {
 		console.warn(`[membership] ${key}: customer already subscribed, not creating a second one:`, customerId)
 		return { created: false }
 	}
@@ -107,8 +156,13 @@ export async function startMembershipSubscription(args: StartMembershipArgs): Pr
 	//
 	// Either way `trial_end` is the date the first real invoice lands, which is what the receipt
 	// and the billing portal show.
-	const trialEnd =
-		args.trialMonths && args.trialMonths > 0
+	//
+	// An upgrade pays for the period that starts when the OLD subscription's paid time ends — the
+	// month they already paid for is never wasted (CEO, 2026-10-19).
+	const upgradeStartsAt = replaced ? subscriptionPaidThrough(replaced) : null
+	const trialEnd = upgradeStartsAt
+		? dayjs(upgradeStartsAt).add(1, interval as dayjs.ManipulateType).unix()
+		: args.trialMonths && args.trialMonths > 0
 			? dayjs().add(args.trialMonths, "month").unix()
 			: dayjs().add(1, interval as dayjs.ManipulateType).unix()
 
@@ -126,8 +180,27 @@ export async function startMembershipSubscription(args: StartMembershipArgs): Pr
 		// `membershipKey` is what lets every webhook branch know which product this is without
 		// having to match product ids. It is the reason a Concierge cancellation can no longer
 		// revoke someone's Premium.
-		metadata: { ...(metadata || {}), membershipKey: key },
+		metadata: {
+			...(metadata || {}),
+			membershipKey: key,
+			...(replaced ? { upgradedFrom: replaced.id } : {}),
+		},
 	})
+
+	// The old subscription stops only once the new one EXISTS — never the other way round, or a
+	// failure here would leave a paying member with nothing. `replacedBy` is how the webhook knows
+	// its ending changes nothing for the member, even when it sits on another Stripe customer.
+	// Best-effort: the yearly subscription is never rolled back over this.
+	if (replaced) {
+		try {
+			await stripe.subscriptions.update(replaced.id, {
+				cancel_at_period_end: true,
+				metadata: { ...(replaced.metadata || {}), cancelledReason: UPGRADED_CANCEL_REASON, replacedBy: subscription.id },
+			})
+		} catch (error: any) {
+			console.error(`[membership] ${key}: yearly created but the old subscription could not be stopped:`, replaced.id, error?.message || error)
+		}
+	}
 
 	const firstRenewalAt = new Date(trialEnd * 1000)
 
@@ -184,7 +257,7 @@ export async function startMembershipSubscription(args: StartMembershipArgs): Pr
 		const soldPrice = subscription.items.data[0]?.price
 		await recordMembershipPurchase({
 			key,
-			source: args.source || "ticket",
+			source: args.source || (replaced ? "upgrade" : "ticket"),
 			email,
 			name: args.name,
 			userId: subscriberId ? String(subscriberId) : undefined,
@@ -205,5 +278,12 @@ export async function startMembershipSubscription(args: StartMembershipArgs): Pr
 		console.error("[membership] Could not record the membership sale:", recordError?.message || recordError)
 	}
 
-	return { created: true, subscriptionId: subscription.id, firstRenewalAt }
+	return {
+		created: true,
+		subscriptionId: subscription.id,
+		firstRenewalAt,
+		...(replaced && upgradeStartsAt
+			? { replacedInterval: replaced.items.data[0]?.price?.recurring?.interval || "month", startsAt: upgradeStartsAt }
+			: {}),
+	}
 }

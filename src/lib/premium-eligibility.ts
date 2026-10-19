@@ -33,7 +33,6 @@ import {
 	MEMBERSHIPS,
 	MEMBERSHIP_KEYS,
 	expandEntitlements,
-	isMembershipProduct,
 	membershipsIncluding,
 	selectMemberPlanNames,
 	type MembershipKey,
@@ -184,27 +183,8 @@ export async function isPremiumEmail(email: string): Promise<boolean> {
  * neither site lowercases what it stores. One person can have a customer on each site.
  */
 async function membershipsInStripeByEmail(email: string, keys: MembershipKey[]): Promise<MembershipKey[] | null> {
-	try {
-		const { getStripeClient } = await import("@/lib/premium")
-		const stripe = getStripeClient()
-		// Stripe search query syntax: backslash and double quote are escaped inside a quoted value.
-		const quoted = email.replace(/\\/g, "\\\\").replace(/"/g, '\\"')
-		const customers = await stripe.customers.search({ query: `email:"${quoted}"`, limit: 10 })
-		const found = new Set<MembershipKey>()
-		for (const customer of customers.data) {
-			const subscriptions = await stripe.subscriptions.list({ customer: customer.id, status: "all", limit: 100 })
-			for (const subscription of subscriptions.data) {
-				if (subscription.status !== "active" && subscription.status !== "trialing") continue
-				for (const item of subscription.items.data) {
-					const product = item.price?.product
-					const productId = typeof product === "string" ? product : product?.id
-					keys.forEach((key) => isMembershipProduct(key, productId) && found.add(key))
-				}
-			}
-		}
-		return MEMBERSHIP_KEYS.filter((key) => found.has(key))
-	} catch (error: any) {
-		console.error("[premium-eligibility] Stripe lookup by email failed:", error?.message || error)
-		return null
-	}
+	const { liveMembershipSubscriptionsByEmail } = await import("@/lib/membership-upgrade")
+	const live = await liveMembershipSubscriptionsByEmail(email)
+	if (live === null) return null
+	return MEMBERSHIP_KEYS.filter((key) => keys.includes(key) && live.some((sub) => sub.key === key))
 }

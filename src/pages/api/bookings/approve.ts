@@ -250,13 +250,40 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	// (live PENDING rows exist from the week before Concierge shipped) resolve identically.
 	const pendingMemberships = bookingMemberships(booking.payment).filter((row) => row.status === "pending")
 	let skipKeys: string[] = []
+	// Rows that UPGRADE a monthly subscription to yearly: the subscription to replace, re-checked
+	// now — days may have passed since checkout. Absent = start a fresh subscription.
+	const upgradeReplaces: Record<string, string | undefined> = {}
 	if (pendingMemberships.length > 0) {
 		try {
 			const alreadyHeld = await heldMemberships(
 				booking.customerEmail,
 				pendingMemberships.map((row) => row.key),
 			)
-			skipKeys = pendingMemberships.filter((row) => alreadyHeld.includes(row.key)).map((row) => row.key)
+			// An upgrade row is charged BECAUSE the buyer holds the membership (monthly), so
+			// "already held" can't decide it. Re-ask Stripe: gone yearly meanwhile → release it;
+			// still monthly → replace that subscription; monthly gone → start a new one now.
+			const { findMembershipUpgrade, liveMembershipSubscriptionsByEmail } = await import("@/lib/membership-upgrade")
+			const upgradeRows = pendingMemberships.filter((row) => row.upgradeFrom?.subscriptionId)
+			const live = upgradeRows.length > 0 ? await liveMembershipSubscriptionsByEmail(booking.customerEmail) : []
+			const upgradeSkips: string[] = []
+			for (const row of upgradeRows) {
+				if (live === null) {
+					// Stripe unreachable: replace what checkout recorded. `startMembershipSubscription`
+					// re-reads it and refuses if another live subscription already exists.
+					upgradeReplaces[row.key] = row.upgradeFrom!.subscriptionId
+					continue
+				}
+				const alreadyYearly = live.some((sub) => sub.key === row.key && sub.interval === (row.interval || "year"))
+				if (alreadyYearly) {
+					upgradeSkips.push(row.key)
+					continue
+				}
+				const upgrade = await findMembershipUpgrade(booking.customerEmail, row.key as MembershipKey, row.interval || "year", live)
+				upgradeReplaces[row.key] = upgrade?.subscriptionId
+			}
+			skipKeys = pendingMemberships
+				.filter((row) => (row.upgradeFrom?.subscriptionId ? upgradeSkips.includes(row.key) : alreadyHeld.includes(row.key)))
+				.map((row) => row.key)
 			// A membership another row on this same order INCLUDES is not started either: Concierge
 			// includes Premium, so a request held before that rule (both rows pending) gets the
 			// Concierge subscription and its Premium portion released, not two subscriptions.
@@ -491,6 +518,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					name: booking.customerName || undefined,
 					subscriberId: (booking as any).bookerUserId ? String((booking as any).bookerUserId) : undefined,
 					metadata: { bookingRef, eventId: String(booking.eventId), approvedAt: new Date().toISOString() },
+					// Monthly → yearly upgrade: the year starts when the monthly plan's paid time ends.
+					...(upgradeReplaces[pending.key] ? { replaces: { subscriptionId: upgradeReplaces[pending.key]! } } : {}),
 				})
 
 				if (row) {
@@ -512,6 +541,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 						// The trial end IS the first real charge date — surfaced in the receipt so
 						// "Free trial ends <date>" in Stripe's portal can't be read as a free month.
 						firstRenewalAt: result.firstRenewalAt,
+						...(result.replacedInterval && result.startsAt
+							? { replacesInterval: result.replacedInterval, startsAt: result.startsAt }
+							: {}),
 					})
 				}
 			} catch (subscriptionError: any) {

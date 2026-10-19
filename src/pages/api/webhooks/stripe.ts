@@ -126,7 +126,21 @@ const otherLiveMembershipSubscription = async (
 	customerId: string,
 	key: MembershipKey,
 	excludeId: string,
+	ending?: Stripe.Subscription,
 ): Promise<Stripe.Subscription | null> => {
+	// A ticket upgrade (monthly → yearly) names its replacement on the old subscription. Followed
+	// FIRST, because the replacement may sit on another Stripe customer — a monthly plan sold by
+	// selectmember.jetzy.com lives on their customer, the yearly one we create on ours — where the
+	// same-customer search below would never find it.
+	const replacedBy = (ending?.metadata as any)?.replacedBy
+	if (replacedBy && replacedBy !== excludeId) {
+		try {
+			const replacement = await getStripeClient().subscriptions.retrieve(String(replacedBy))
+			if (replacement.status === "active" || replacement.status === "trialing") return replacement
+		} catch (error: any) {
+			console.error("[webhooks/stripe] Couldn't read the replacement subscription:", replacedBy, error?.message || error)
+		}
+	}
 	try {
 		const list = await getStripeClient().subscriptions.list({ customer: customerId, status: "all", limit: 100 })
 		return (
@@ -541,7 +555,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				const thisEnding =
 					subscription.cancel_at_period_end || !(subscription.status === "active" || subscription.status === "trialing")
 				if (thisEnding) {
-					const replacement = await otherLiveMembershipSubscription(customerId, key, subscription.id)
+					const replacement = await otherLiveMembershipSubscription(customerId, key, subscription.id, subscription)
 					if (replacement) {
 						await setMembershipStatusByStripeCustomerId(customerId, key, membershipStateOf(replacement))
 						console.log("[webhooks/stripe] Ending subscription replaced by a live one; record kept on it:", subscription.id, "->", replacement.id)
@@ -660,7 +674,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 				// Replaced by another live subscription to the same membership (monthly → annual)?
 				// Then the member still holds it: record that one, no cancellation mirror or email.
-				const replacement = await otherLiveMembershipSubscription(customerId, key, subscription.id)
+				const replacement = await otherLiveMembershipSubscription(customerId, key, subscription.id, subscription)
 				if (replacement) {
 					await setMembershipStatusByStripeCustomerId(customerId, key, membershipStateOf(replacement))
 					console.log("[webhooks/stripe] Deleted subscription replaced by a live one; record kept on it:", subscription.id, "->", replacement.id)

@@ -1772,7 +1772,21 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
                 (membership) => `
             <div style="background-color: #fff8e1; border: 1px solid #f0d78c; border-radius: 8px; padding: 15px; margin-top: 15px;">
               <p style="margin: 0 0 6px 0; color: #7a5c00; font-weight: bold;">Your ${membership.label}</p>
-              ${membership.trialMonths
+              ${membership.replacesInterval && membership.startsAt
+                ? `<p style="margin: 0; color: #7a5c00; font-size: 14px; line-height: 1.5;">
+                This ticket moved your ${membership.label} from ${membership.replacesInterval}ly to
+                <strong>${membership.interval}ly billing</strong>. Your current ${membership.replacesInterval}ly plan is
+                already paid through <strong>${dayjs(membership.startsAt).format("MMMM D, YYYY")}</strong> and won't renew
+                after that. The ${membership.interval} you just paid for runs from
+                <strong>${dayjs(membership.startsAt).format("MMMM D, YYYY")}</strong>${
+                  membership.firstRenewalAt
+                    ? ` to <strong>${dayjs(membership.firstRenewalAt).format("MMMM D, YYYY")}</strong>, then renews at
+                <strong>$${membership.amount.toFixed(2)} every ${membership.interval}</strong>`
+                    : `, then renews at <strong>$${membership.amount.toFixed(2)} every ${membership.interval}</strong>`
+                } until you cancel. You can cancel any time from
+                <strong>Manage membership</strong> in your Jetzy account menu.
+              </p>`
+                : membership.trialMonths
                 ? `<p style="margin: 0; color: #7a5c00; font-size: 14px; line-height: 1.5;">
                 Your referral code included
                 <strong>${membership.trialMonths} ${membership.trialMonths === 1 ? "month" : "months"} free</strong> — you have

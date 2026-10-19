@@ -41,6 +41,22 @@ const bookingMembershipSchema = new Schema(
 		trialMonths: { type: Number, required: false },
 		/** What it renews at after the free months. `amount` is 0 on those, being money moved. */
 		renewalAmount: { type: Number, required: false },
+		/**
+		 * Present when this row upgrades an existing subscription (monthly → yearly). No default:
+		 * absent means an ordinary sale. `paidThrough` is ISO — when the new period starts.
+		 */
+		upgradeFrom: {
+			type: new Schema(
+				{
+					subscriptionId: { type: String, required: true },
+					customerId: { type: String, required: false },
+					paidThrough: { type: String, required: false },
+				},
+				{ _id: false },
+			),
+			required: false,
+			default: undefined,
+		},
 		subscriptionId: { type: String, required: false },
 		lastError: { type: String, required: false },
 	},

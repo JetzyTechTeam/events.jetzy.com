@@ -7,9 +7,10 @@ import { sendTicketConfirmation, sendApprovalPending } from "@/lib/send-grid"
 import { notifyApprovalRequest, notifyTicketSold } from "@/lib/booking-notify"
 import { generateQRCodeForBooking } from "@/lib/qr-generator"
 import { buildTicketPricing } from "@/lib/ticket-pricing"
-import { resolveBundlePlan, selectionMemberships } from "@/lib/premium-bundle"
+import { resolveBundlePlan, selectionMemberships, ticketIncludesMembership, ticketMembershipInterval } from "@/lib/premium-bundle"
+import { findOrderUpgrades } from "@/lib/membership-upgrade"
 import { heldMemberships } from "@/lib/premium-eligibility"
-import { membershipLabelList } from "@/lib/memberships"
+import { MEMBERSHIPS, membershipLabelList } from "@/lib/memberships"
 import { validateReferralCodeForEvent } from "@/lib/referral-validation"
 import { referralEligibleSubtotal } from "@/lib/referral-ticket-scope"
 import { incrementReferralUsage } from "@/lib/checkout-fulfillment"
@@ -166,7 +167,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const freeSelection = tickets
 			.map((t) => (event.tickets || []).find((et: any) => String(et._id) === String(t.id)) as any)
 			.filter(Boolean)
-		const bundlePlan = resolveBundlePlan(freeSelection, await heldMemberships(user.email, selectionMemberships(freeSelection)))
+		const sellsKeys = selectionMemberships(freeSelection)
+		const heldKeys = await heldMemberships(user.email, sellsKeys)
+		// A monthly member on a ticket selling the membership YEARLY is an upgrade — charged, so it
+		// must go through Stripe, never register here for free (`membership-upgrade.ts`).
+		const upgradeCandidates = sellsKeys.filter((key) => heldKeys.includes(key) && MEMBERSHIPS[key].upgradeOnTicket)
+		const upgradeKeys =
+			upgradeCandidates.length > 0
+				? (
+						await findOrderUpgrades(
+							user.email,
+							upgradeCandidates,
+							ticketMembershipInterval(freeSelection.find((t: any) => ticketIncludesMembership(t))),
+						)
+				  ).map((upgrade) => upgrade.key)
+				: []
+		const bundlePlan = resolveBundlePlan(freeSelection, heldKeys, upgradeKeys)
 
 		// Validated before the booking is written: a code that has expired or run out of uses
 		// must fail the whole request rather than be silently ignored on an order it was

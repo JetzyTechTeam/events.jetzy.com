@@ -1423,3 +1423,11 @@ Since `TICKET_SCHEMA.md` Revision 5 (2026-09-24), which covered approvals and ed
   A ticket's `membershipInterval: "year"` now sells Concierge annually. When one subscription to a
   membership ends while another to the same membership is live (monthly → annual), the record
   stays on the live one.
+- **A yearly ticket UPGRADES a monthly member (2026-10-19).** Concierge only (`upgradeOnTicket`).
+  A buyer with a live MONTHLY Concierge subscription (on any Stripe customer with their email) and
+  no yearly one is charged the yearly price (no free months) instead of "already held". New
+  membership-row field **`upgradeFrom: { subscriptionId, customerId?, paidThrough? }`**. The new
+  subscription's `trial_end` = the old one's paid-through + 1 year; after it is created the old one
+  is set `cancel_at_period_end` with `metadata.cancelledReason = "upgraded_to_yearly"`,
+  `replacedBy: <new id>`. At approval, re-check: already yearly → release; monthly gone → start
+  fresh. A $0 ticket with an upgrade goes through Stripe. Web: `src/lib/membership-upgrade.ts`.

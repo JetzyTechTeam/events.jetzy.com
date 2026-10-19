@@ -102,6 +102,7 @@ const SOURCE_LABELS: Record<string, string> = {
 	application: "Approved application",
 	mobile_referral: "Mobile referral code",
 	external: "Sold elsewhere",
+	upgrade: "Upgraded to yearly with a ticket",
 }
 
 const SOURCE_COLORS: Record<string, string> = {
@@ -112,6 +113,7 @@ const SOURCE_COLORS: Record<string, string> = {
 	application: "orange",
 	mobile_referral: "teal",
 	external: "gray",
+	upgrade: "cyan",
 }
 
 export default function GrowthAnalytics() {
@@ -366,6 +368,7 @@ export default function GrowthAnalytics() {
 											<option value="signup">Invite code at signup</option>
 												<option value="mobile_referral">Mobile referral code</option>
 												<option value="external">Sold elsewhere</option>
+												<option value="upgrade">Upgraded to yearly with a ticket</option>
 											</Select>
 											<Select size="sm" bg="#101010" color="white" borderColor="#2a2a2a" w="190px" value={hasInviteCode} onChange={(e) => { setHasInviteCode(e.target.value); setPage(1) }}>
 												<option value="">With or without a code</option>

@@ -53,6 +53,14 @@ export type MembershipDefinition = {
 	 * Extend without a deploy via the `<KEY>` env var named in each entry.
 	 */
 	alsoProductIds?: string[]
+	/**
+	 * A ticket selling this membership YEARLY to someone paying for it MONTHLY moves them onto
+	 * yearly billing (charged the yearly price; the year starts when the paid month ends; the
+	 * monthly subscription stops then) instead of treating them as already holding it.
+	 * See `src/lib/membership-upgrade.ts`. Concierge only (CEO, 2026-10-19); Premium has its own
+	 * monthly → annual switch in the billing portal.
+	 */
+	upgradeOnTicket?: boolean
 	/** Dot-path prefix of the subscription sub-document on `Users` / `EventUsers`. */
 	userField: "premiumSubscription" | "conciergeSubscription"
 	/**
@@ -118,6 +126,7 @@ export const MEMBERSHIPS: Record<MembershipKey, MembershipDefinition> = {
 		// Plan names confirmed by SelectMember (2026-10-19); their backend treats both as Concierge.
 		selectMemberPlans: { month: "select_monthly", year: "select_yearly" },
 		includes: ["premium"],
+		upgradeOnTicket: true,
 	},
 }
 

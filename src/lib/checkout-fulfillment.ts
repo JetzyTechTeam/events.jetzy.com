@@ -117,6 +117,8 @@ type MembershipLine = {
 	trialMonths?: number
 	/** What it renews at after those months — `amount` is 0 while they run. */
 	renewalAmount?: number
+	/** Upgrades this existing subscription (monthly → yearly). See `membership-upgrade.ts`. */
+	upgradeFrom?: { subscriptionId: string; customerId?: string; paidThrough?: string }
 }
 
 /**
@@ -145,6 +147,15 @@ const parseMembershipLines = (metadata: SessionMetadata): MembershipLine[] => {
 						interval: String(row.interval || "month"),
 						...(Number(row.trialMonths) > 0
 							? { trialMonths: Number(row.trialMonths), renewalAmount: Number(row.renewalAmount) || 0 }
+							: {}),
+						...(row.upgradeFrom?.subscriptionId
+							? {
+									upgradeFrom: {
+										subscriptionId: String(row.upgradeFrom.subscriptionId),
+										...(row.upgradeFrom.customerId ? { customerId: String(row.upgradeFrom.customerId) } : {}),
+										...(row.upgradeFrom.paidThrough ? { paidThrough: String(row.upgradeFrom.paidThrough) } : {}),
+									},
+							  }
 							: {}),
 					}))
 			}
@@ -477,6 +488,7 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 							// session, grants the same free months that were quoted — and states the
 							// price that follows them without re-reading Stripe.
 							...(line.trialMonths ? { trialMonths: line.trialMonths, renewalAmount: line.renewalAmount } : {}),
+							...(line.upgradeFrom ? { upgradeFrom: line.upgradeFrom } : {}),
 						})),
 					}
 					: {}),
@@ -649,6 +661,9 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 					name: `${metadata.firstName || ""} ${metadata.lastName || ""}`.trim() || undefined,
 					subscriberId: metadata.membershipUserId,
 					metadata: { bookingRef, eventId: String(metadata.eventId) },
+					// An upgrade (monthly → yearly): the new subscription starts paying when the old
+					// one's paid time ends, and the old one is stopped then.
+					...(line.upgradeFrom ? { replaces: { subscriptionId: line.upgradeFrom.subscriptionId } } : {}),
 				})
 
 				if (row) {
@@ -670,6 +685,9 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 						interval: line.interval,
 						...(line.trialMonths ? { trialMonths: line.trialMonths } : {}),
 						firstRenewalAt: result.firstRenewalAt,
+						...(result.replacedInterval && result.startsAt
+							? { replacesInterval: result.replacedInterval, startsAt: result.startsAt }
+							: {}),
 					})
 				}
 			} catch (membershipError: any) {

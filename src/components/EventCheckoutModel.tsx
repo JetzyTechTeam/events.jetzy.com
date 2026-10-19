@@ -127,6 +127,8 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 	const [heldByEmail, setHeldByEmail] = useState<MembershipKey[] | null>(null)
 	// For memberships held only because another includes them — `{ premium: "concierge" }`.
 	const [includedWithByEmail, setIncludedWithByEmail] = useState<Partial<Record<MembershipKey, MembershipKey>>>({})
+	// Memberships this address pays for MONTHLY that a yearly ticket moves onto yearly billing.
+	const [upgradesByEmail, setUpgradesByEmail] = useState<MembershipKey[]>([])
 	const [checkingPremiumEmail, setCheckingPremiumEmail] = useState(false)
 	const premiumEmailTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 	// Monotonic id so a slow reply for a previous address can't overwrite a newer verdict.
@@ -136,10 +138,17 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 	// hold — so a buyer with one of two still pays for the other.
 	// `splitBundleCharges` is the server's rule too — including "Concierge includes Premium", so a
 	// ticket selling both bills Concierge only.
-	const bundleSplit = heldByEmail === null ? null : splitBundleCharges(selectionKeys, heldByEmail)
+	// An upgrade applies only when the SELECTED ticket sells the membership yearly — the same
+	// ticket rule `api/checkout` prices by. `selectionMembershipInterval` is the ticket's setting;
+	// the server additionally confirms a yearly price exists.
+	const selectionIsYearly = selectionMembershipInterval(tickets as any) === "year"
+	const upgradeKeysForSelection = selectionIsYearly ? upgradesByEmail : []
+	const bundleSplit =
+		heldByEmail === null ? null : splitBundleCharges(selectionKeys, heldByEmail, upgradeKeysForSelection)
 	const chargedKeys = bundleSplit?.toCharge || []
 	const heldSelectionKeys = bundleSplit?.alreadyHeld || []
 	const includedKeys = bundleSplit?.included || []
+	const upgradeKeys = bundleSplit?.upgrades || []
 	// Held memberships split by WHY: their own subscription, or included with another (Concierge →
 	// Premium). A Concierge member is told Premium is included, not called a Premium subscriber.
 	const ownHeldKeys = heldSelectionKeys.filter((key) => !includedWithByEmail[key])
@@ -178,8 +187,9 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 	// A scoped code only gives its months through a covered ticket that sells this membership.
 	const referralCoversKey = (key: MembershipKey) =>
 		tickets.some((t) => ticketMemberships(t as any).includes(key) && referralCoversTicket(referralScope, (t as any).id))
+	// An upgrader pays the yearly price — free months are for NEW members (CEO, 2026-10-19).
 	const freeMonthsFor = (key: MembershipKey) =>
-		chargedKeys.includes(key)
+		chargedKeys.includes(key) && !upgradeKeys.includes(key)
 			? resolveFreeMonthsForKey(key, ticketFreeMonths, referralCoversKey(key) ? appliedReferralFreeMonths : 0)
 			: 0
 	// The largest offer on this order, for the sentences that speak about the order as a whole.
@@ -648,6 +658,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 			const result = await response.json()
 			if (requestId !== premiumCheckIdRef.current) return
 			setHeldByEmail(result?.status ? sanitizeMembershipKeys(result?.data?.held) : [])
+			setUpgradesByEmail(result?.status ? sanitizeMembershipKeys(result?.data?.upgrades) : [])
 			const includedWith = result?.status ? result?.data?.includedWith : null
 			setIncludedWithByEmail(
 				includedWith && typeof includedWith === "object"
@@ -676,6 +687,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 			// charge the server may still apply, which is the worse surprise. The server decides
 			// for real either way.
 			setHeldByEmail([])
+			setUpgradesByEmail([])
 			// Leave the allowance unknown rather than guessing — the server enforces it, and
 			// blocking a legitimate buyer on a failed lookup would be worse than a rejected
 			// checkout with a clear message.
@@ -1110,7 +1122,19 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 																				    an instant order charges today. Saying "charged today" over a free
 																				    trial, or hiding the price that follows one, are both misstatements at
 																				    the point of sale. */}
-																				{freeMonths > 0
+																				{upgradeKeys.includes(key)
+																					? /* Monthly member, yearly ticket: an upgrade. Exact dates are on the
+																					     receipt — this unauthenticated preview deliberately carries none. */
+																					  `You're on ${MEMBERSHIPS[key].label} billed monthly. This ticket moves you to yearly: ${
+																							price?.label || "the yearly price"
+																					  } ${
+																							selectionNeedsApproval ? "charged only if your registration is approved" : "charged today"
+																					  }, covering the 12 months after your current paid month ends. Your monthly plan won't renew after that.${
+																							MEMBERSHIPS[key].includes?.length
+																								? ` ${membershipLabelList(MEMBERSHIPS[key].includes!)} stays included.`
+																								: ""
+																					  }`
+																					: freeMonths > 0
 																					? `Free for ${freeMonths} ${freeMonths === 1 ? "month" : "months"}${
 																							price?.label ? `, then ${price.label}` : ""
 																					  } from ${trialChargesFrom}. Cancel any time before then and you won't be charged.`
