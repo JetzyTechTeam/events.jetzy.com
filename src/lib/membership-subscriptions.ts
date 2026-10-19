@@ -166,15 +166,31 @@ export async function startMembershipSubscription(args: StartMembershipArgs): Pr
 			? dayjs().add(args.trialMonths, "month").unix()
 			: dayjs().add(1, interval as dayjs.ManipulateType).unix()
 
+	// An upgrade is a PAID purchase, so it always renews on a card. The ticket card is the normal
+	// source; the customer's default card is the fallback. Never create one without a card: a
+	// cardless subscription is ended by Stripe at the trial end, and selectmember.jetzy.com's
+	// backend reads "trialing + long trial + no default card" as a GIFTED membership.
+	let cardId = paymentMethodId
+	if (replaced && !cardId) {
+		try {
+			const customer = await stripe.customers.retrieve(customerId)
+			const fallback = !(customer as any).deleted ? (customer as Stripe.Customer).invoice_settings?.default_payment_method : null
+			cardId = (typeof fallback === "string" ? fallback : fallback?.id) || undefined
+		} catch (error: any) {
+			console.error(`[membership] ${key}: couldn't read the customer's default card for an upgrade:`, customerId, error?.message || error)
+		}
+		if (!cardId) throw new Error("no card to bill the yearly membership on — the upgrade was not created")
+	}
+
 	const subscription = await stripe.subscriptions.create({
 		customer: customerId,
 		items: [{ price: priceId }],
 		trial_end: trialEnd,
-		...(paymentMethodId ? { default_payment_method: paymentMethodId } : {}),
+		...(cardId ? { default_payment_method: cardId } : {}),
 		// No card — a free RSVP collects none, so there is nothing to charge when the trial ends.
 		// Without this Stripe raises an invoice nobody can pay and the subscription sits
 		// `past_due` indefinitely; cancelling is the honest end to a gift.
-		...(paymentMethodId
+		...(cardId
 			? {}
 			: { trial_settings: { end_behavior: { missing_payment_method: "cancel" as const } } }),
 		// `membershipKey` is what lets every webhook branch know which product this is without
