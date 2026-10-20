@@ -643,7 +643,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				}
 
 				if (!wasCancelling && subscription.cancel_at_period_end && billedByJetzy(subscription, key)) {
-					const recipient = await findEmailRecipientByStripeCustomerId(customerId)
+					// A Premium subscription retired because Concierge now includes it may belong to a
+					// customer selectmember.jetzy.com created, with no account here to resolve. The "now
+					// included" note is the only word that member gets about it (SelectMember sends none),
+					// so it falls back to the Stripe customer's own address. Every other cancellation email
+					// keeps requiring an account here, so SelectMember's own members are never double-mailed.
+					const retiredAsIncluded = (subscription.metadata as any)?.cancelledReason === INCLUDED_MEMBERSHIP_CANCEL_REASON
+					let recipient = await findEmailRecipientByStripeCustomerId(customerId)
+					if (!recipient && retiredAsIncluded) {
+						try {
+							const customer = await stripe.customers.retrieve(customerId)
+							const address = !(customer as any).deleted ? (customer as Stripe.Customer).email : null
+							if (address) recipient = { email: address, firstName: ((customer as Stripe.Customer).name || "").split(" ")[0] || undefined }
+						} catch (customerError: any) {
+							console.error("[webhooks/stripe] Couldn't read the customer for the now-included email:", customerId, customerError?.message || customerError)
+						}
+					}
 					if (recipient) {
 						await sendMembershipCancelled({
 							...recipient,
