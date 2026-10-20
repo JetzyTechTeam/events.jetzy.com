@@ -15,7 +15,7 @@ import { DateTime } from "luxon"
 import { isCaptureFailed } from "@/lib/booking-status"
 import { describeDiscount } from "@/lib/booking-revenue"
 import { bookingMembershipTotal, bookingMemberships } from "@/lib/booking-memberships"
-import { MEMBERSHIPS, type MembershipKey } from "@/lib/memberships"
+import { includedRowsCents, membershipRowKind, membershipRowName, membershipRowSummary } from "@/lib/booking-membership-display"
 import { approvalCaptureCents, bookingTicketCount, partialApprovalRefusal, PARTIAL_REFUSAL_MESSAGE } from "@/lib/booking-approval"
 import { plannedTickets } from "@/lib/booking-request-edit"
 import type { BookingApprovalsController } from "./useBookingApprovals"
@@ -103,12 +103,17 @@ export function ApprovalDialogs({ controller, event }: { controller: BookingAppr
 							const reduced = approveQty < askedQty && askedQty > 0
 							const ratio = reduced ? approveQty / askedQty : 1
 							const membershipHeld = held !== undefined ? bookingMembershipTotal(approveTarget?.payment, approveMemberships) : 0
+							// A membership another one on this booking INCLUDES (Premium beside Concierge,
+							// on requests held before that rule) is released by `approve.ts` without fail —
+							// so it is left out of the figure here too, or the host is told a larger charge
+							// than the card will see.
+							const includedHeld = held !== undefined ? includedRowsCents(approveMemberships as any) / 100 : 0
 							const chargeNow =
-								held !== undefined && reduced
+								held !== undefined && (reduced || includedHeld > 0)
 									? approvalCaptureCents({
 										held: Number(held) || 0,
 										membershipHeld,
-										membershipKept: membershipHeld,
+										membershipKept: Math.max(0, membershipHeld - includedHeld),
 										approved: approveQty,
 										requested: askedQty,
 									}) / 100
@@ -179,24 +184,29 @@ export function ApprovalDialogs({ controller, event }: { controller: BookingAppr
 											    read "subtotal $100, discount −$100, charged $20" and look broken.
 											    `booking.total` is the TICKET; `payment.amount` is ticket +
 											    membership. */}
-											{approveMemberships.map((row) => (
-												<Flex key={row.key} justify="space-between" gap={3} fontSize="xs" color="#D6D6D6" py={0.5}>
-													{/* A membership a referral code gave away costs the guest nothing on
-													    approval, so "(first month) $0.00" would read as a broken sum. Say
-													    what it is instead, and what it renews at afterwards. */}
-													<Text>
-														{MEMBERSHIPS[row.key as MembershipKey]?.receiptLabel || row.key}{" "}
-														{(row as any).trialMonths
-															? `(${(row as any).trialMonths} ${(row as any).trialMonths === 1 ? "month" : "months"} free)`
-															: `(first ${row.interval || "month"})`}
-													</Text>
-													<Text>
-														{(row as any).trialMonths
-															? `then ${money(Number((row as any).renewalAmount) || 0)}/${row.interval || "month"}`
-															: money(Number(row.amount) || 0)}
-													</Text>
-												</Flex>
-											))}
+											{approveMemberships.map((row) => {
+												// One sentence per row from the shared helper: a yearly first period, a
+												// monthly → yearly upgrade, free months, or a membership another one on
+												// this booking includes (not charged).
+												const kind = membershipRowKind(row as any, approveMemberships as any)
+												return (
+													<Flex key={row.key} justify="space-between" gap={3} fontSize="xs" color="#D6D6D6" py={0.5}>
+														<Text>
+															{membershipRowName(row as any)}{" "}
+															<Text as="span" color="#9C9C9C">
+																({membershipRowSummary(row as any, approveMemberships as any)})
+															</Text>
+														</Text>
+														<Text flexShrink={0}>
+															{kind === "included" || kind === "held"
+																? "—"
+																: kind === "trial"
+																	? "$0.00"
+																	: money(Number(row.amount) || 0)}
+														</Text>
+													</Flex>
+												)
+											})}
 											<Flex justify="space-between" gap={3} fontSize="sm" fontWeight={700} pt={2} mt={1} borderTop="1px solid #343536">
 												{/* Free bookings have no `payment` at all — never imply a charge
 												    that will not happen. */}
@@ -208,7 +218,7 @@ export function ApprovalDialogs({ controller, event }: { controller: BookingAppr
 											{/* The other part of the hold. Released, not refunded — it was never
 											    taken — and worth a line of its own because the guest's bank shows
 											    the full hold until this approval goes through. */}
-											{held !== undefined && reduced && (
+											{held !== undefined && (reduced || includedHeld > 0) && (
 												<Flex justify="space-between" gap={3} fontSize="xs" color="#D6D6D6" pt={1}>
 													<Text>Released from the {money(held)} hold</Text>
 													<Text>{money((Number(held) || 0) - (Number(chargeNow) || 0))}</Text>

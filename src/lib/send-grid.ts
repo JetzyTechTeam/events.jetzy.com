@@ -6,6 +6,8 @@ import { buildTicketPricing, TicketPricing } from "@/lib/ticket-pricing"
 import { LOCATION_TBA, containsLocationLink, locationHtml, locationWasPicked, mapsLinkFor, resolveEntrance, resolveGuestLocation } from "@/lib/event-location"
 import { MoneyState } from "@/lib/booking-cancellation"
 import { getEventZone } from "@/utils/eventTime"
+import { membershipIncludesLine } from "@/lib/booking-membership-display"
+import { MEMBERSHIPS, MEMBERSHIP_KEYS } from "@/lib/memberships"
 import sgMail from "@sendgrid/mail"
 import dayjs from 'dayjs'
 import utc from 'dayjs/plugin/utc'
@@ -187,6 +189,11 @@ type BookingCancellationData = {
   moneyState?: MoneyState
   /** Who pulled the trigger; changes the opening line ("you cancelled" vs "the host cancelled"). */
   cancelledBy?: "guest" | "host" | "admin"
+  /**
+   * What cancelling means for a membership bought with the booking — it continues; part of the
+   * money above bought it (`cancellationMembershipNote`). Absent when the booking sold none.
+   */
+  membershipNote?: string | null
 }
 
 type HostCancellationNoticeData = {
@@ -201,6 +208,8 @@ type HostCancellationNoticeData = {
   moneyState: MoneyState
   cancelledBy: "guest" | "host" | "admin"
   organizerEmail?: string
+  /** Same as the guest's, written for the host (`cancellationMembershipNote(…, asManager)`). */
+  membershipNote?: string | null
 }
 
 type WaitingListEmailData = {
@@ -457,6 +466,8 @@ type ApprovalEmailData = {
      * has to be told about both.
      */
     memberships?: Array<{
+      /** Registry key — decides "includes Jetzy Premium". */
+      key?: string
       /** Product name on its own, e.g. "Jetzy Premium". */
       label: string
       /**
@@ -467,6 +478,11 @@ type ApprovalEmailData = {
       receiptLabel: string
       amount: number
       interval: string
+      /** Free months (nothing held for it). */
+      trialMonths?: number
+      renewalAmount?: number
+      /** A monthly → yearly upgrade: the date the monthly plan's paid period ends (ISO). */
+      upgradePaidThrough?: string
     }>
   }
 }
@@ -478,6 +494,35 @@ const formatHoldDeadline = (expiresAt?: Date | string | null) => {
   const d = new Date(expiresAt)
   if (isNaN(d.getTime())) return null
   return d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })
+}
+
+/**
+ * "Includes Jetzy Premium" for a membership named by its label or receipt label — the receipt's
+ * recurring lines carry the name, not the key. Null for one that includes nothing.
+ */
+const includesLineForLabel = (label?: string | null): string | null => {
+  const key = MEMBERSHIP_KEYS.find((k) => MEMBERSHIPS[k].receiptLabel === label || MEMBERSHIPS[k].label === label)
+  return key ? membershipIncludesLine(key) : null
+}
+
+/**
+ * The sentence an approval email says about ONE membership held with a request: a new first
+ * period, free months, or a monthly → yearly upgrade (the guest already has the membership, and
+ * the monthly plan simply continues if the request is declined). HTML, with <strong>.
+ */
+const approvalMembershipSentence = (membership: NonNullable<NonNullable<ApprovalEmailData["payment"]>["memberships"]>[number]): string => {
+  const period = membership.interval === "year" ? "year" : "month"
+  const includesLine = membership.key ? membershipIncludesLine(membership.key) : null
+  const includes = includesLine ? ` ${includesLine.replace(/^Includes/, "It includes")}.` : ""
+  if (membership.upgradePaidThrough) {
+    const date = formatHoldDeadline(membership.upgradePaidThrough)
+    return `That hold includes <strong>${formatMoney(membership.amount)}</strong> to move your ${membership.receiptLabel} from monthly to <strong>yearly</strong> billing. Nothing changes unless the host approves — if they do, your monthly plan ends${date ? ` on <strong>${date}</strong>` : " when its paid month ends"}, the year starts then, and it renews at ${formatMoney(membership.amount)} per year until you cancel.${includes}`
+  }
+  if (Number(membership.trialMonths) > 0) {
+    const months = Number(membership.trialMonths)
+    return `Your ${membership.receiptLabel} comes with <strong>${months} ${months === 1 ? "month" : "months"} free</strong> — nothing is held for it. It starts only if the host approves, then renews at ${formatMoney(Number(membership.renewalAmount) || 0)} per ${period} until you cancel.${includes}`
+  }
+  return `That hold includes <strong>${formatMoney(membership.amount)}</strong> for the first ${period} of your ${membership.receiptLabel}. It does <strong>not</strong> start unless the host approves — and if it does, it renews at ${formatMoney(membership.amount)} per ${period} until you cancel.${includes}`
 }
 
 // Sent to the attendee right after they check out on a Require-Approval event.
@@ -501,26 +546,29 @@ export const sendApprovalPending = async ({ event, firstName, email, tickets = [
               the hold is released automatically.
             </p>
             ${(payment.memberships || [])
-      .map(
-        (membership) => `<p style="color: #0d47a1; margin: 12px 0 0 0; line-height: 1.6;">
-              That hold includes <strong>${formatMoney(membership.amount)}</strong> for your first
-              ${membership.receiptLabel}. Your membership does <strong>not</strong> start
-              unless the host approves — and if it does, it renews at
-              ${formatMoney(membership.amount)} per ${membership.interval} until you cancel.
-            </p>`,
-      )
+      .map((membership) => `<p style="color: #0d47a1; margin: 12px 0 0 0; line-height: 1.6;">${approvalMembershipSentence(membership)}</p>`)
       .join("")}
             <p style="color: #666; margin: 12px 0 0 0; font-size: 13px;">
               Depending on your bank, a released hold can take 5&ndash;10 business days to disappear from your statement.
             </p>
           </div>`
     : ""
-  const heldMembershipNames = (payment?.memberships || []).map((m) => m.label).join(" and ")
+  const heldMemberships = payment?.memberships || []
+  const newNames = heldMemberships.filter((m) => !m.upgradePaidThrough).map((m) => m.receiptLabel).join(" and ")
+  const upgradeNames = heldMemberships.filter((m) => m.upgradePaidThrough).map((m) => m.receiptLabel).join(" and ")
+  // "your Full Concierge Membership begins" / "your Full Concierge Membership moves to yearly billing"
+  const onApproval = [newNames ? `your ${newNames} begins` : "", upgradeNames ? `your ${upgradeNames} moves to yearly billing` : ""]
+    .filter(Boolean)
+    .join(" and ")
+  const onDecline = [newNames ? "no membership is created" : "", upgradeNames ? "your monthly plan continues unchanged" : ""]
+    .filter(Boolean)
+    .join(" and ")
+  const membershipText = heldMemberships.map((m) => stripHtml(approvalMembershipSentence(m))).join(" ")
   const nextSteps = payment
     ? `
               <li>The host will review your request.</li>
-              <li>If approved, your card is charged ${formatMoney(payment.amount)}${heldMembershipNames ? ` and your ${heldMembershipNames} membership begins` : ""}, and you'll receive your ticket by email.</li>
-              <li>If declined, the hold is released${heldMembershipNames ? " and no membership is created" : ""} — you are not charged.</li>
+              <li>If approved, your card is charged ${formatMoney(payment.amount)}${onApproval ? `, ${onApproval}` : ""}, and you'll receive your ticket by email.</li>
+              <li>If declined, the hold is released${onDecline ? ` and ${onDecline}` : ""} — you are not charged.</li>
               <li>No further action is needed from you right now.</li>`
     : `
               <li>The host will review your request.</li>
@@ -549,7 +597,7 @@ export const sendApprovalPending = async ({ event, firstName, email, tickets = [
         </div>
       `),
       text: payment
-        ? `Request Received — Pending Approval\n\nHi ${firstName}, your registration for "${eventName}" requires host approval and is pending review.\n\nYou have NOT been charged. We've placed a temporary authorization hold of ${formatMoney(payment.amount)} on your card${holdDeadline ? `, valid until ${holdDeadline}` : ""}. If the host approves, the hold converts to a charge and your ticket is emailed. If declined or unreviewed, the hold is released automatically. A released hold can take 5-10 business days to clear your statement.`
+        ? `Request Received — Pending Approval\n\nHi ${firstName}, your registration for "${eventName}" requires host approval and is pending review.\n\nYou have NOT been charged. We've placed a temporary authorization hold of ${formatMoney(payment.amount)} on your card${holdDeadline ? `, valid until ${holdDeadline}` : ""}. If the host approves, the hold converts to a charge and your ticket is emailed. If declined or unreviewed, the hold is released automatically. A released hold can take 5-10 business days to clear your statement.${membershipText ? ` ${membershipText}` : ""}`
         : `Request Received — Pending Approval\n\nHi ${firstName}, your registration for "${eventName}" requires host approval and is pending review. You'll get a confirmation email if approved.`
     })
   } catch (error) {
@@ -566,8 +614,10 @@ export const sendApprovalPending = async ({ event, firstName, email, tickets = [
 //                host would otherwise silently lose a paying guest.
 export const sendAdminApprovalNotice = async ({
   event, firstName, lastName, email, tickets = [], eventId, kind, amountOnHold, holdExpiresAt, amountCharged,
-  audience = "admin", to,
+  audience = "admin", to, memberships = [],
 }: ApprovalEmailData & {
+  /** What the hold covers beyond the ticket — same rows the guest's email describes. */
+  memberships?: NonNullable<NonNullable<ApprovalEmailData["payment"]>["memberships"]>
   kind: "request" | "approved" | "expired"
   amountOnHold?: number
   holdExpiresAt?: Date | string | null
@@ -626,6 +676,26 @@ export const sendAdminApprovalNotice = async ({
         ? `<p style="margin: 5px 0;"><strong>Released (never charged):</strong> ${formatMoney(amountOnHold)}</p>`
         : ""
 
+  // The membership part of the hold, said plainly — a host deciding on a $650 hold should know
+  // $595 of it is a yearly Concierge membership (or a monthly member moving to yearly).
+  const membershipLines = isRequest
+    ? memberships.map((m) => {
+        const period = m.interval === "year" ? "year" : "month"
+        const what = m.upgradePaidThrough
+          ? `${m.receiptLabel} — switch from monthly to yearly`
+          : Number(m.trialMonths) > 0
+            ? `${m.receiptLabel} — ${m.trialMonths} free ${Number(m.trialMonths) === 1 ? "month" : "months"} (nothing held)`
+            : `${m.receiptLabel} — first ${period}`
+        return { what, amount: Number(m.trialMonths) > 0 ? 0 : Number(m.amount) || 0 }
+      })
+    : []
+  const membershipHtml = membershipLines
+    .map((line) => `<p style="margin: 5px 0 5px 12px; font-size: 14px;">includes ${line.what}${line.amount > 0 ? `: ${formatMoney(line.amount)}` : ""}</p>`)
+    .join("")
+  const membershipText = membershipLines
+    .map((line) => `\n  includes ${line.what}${line.amount > 0 ? `: ${formatMoney(line.amount)}` : ""}`)
+    .join("")
+
   const urgencyBanner = isRequest && amountOnHold && deadline
     ? `<div style="background-color: #fff3cd; padding: 12px 15px; border-radius: 8px; margin: 0 0 20px 0; border-left: 4px solid #ffc107;">
             <p style="color: #856404; margin: 0; font-size: 14px;">
@@ -657,6 +727,7 @@ export const sendAdminApprovalNotice = async ({
             <p style="margin: 5px 0;"><strong>Email:</strong> ${email}</p>
             ${totalTickets ? `<p style="margin: 5px 0;"><strong>Tickets:</strong> ${totalTickets}</p>` : ""}
             ${moneyLine}
+            ${membershipHtml}
           </div>
           ${isRequest ? `
           <div style="text-align: center; margin: 30px 0;">
@@ -670,7 +741,7 @@ export const sendAdminApprovalNotice = async ({
         </div>
       `),
       text: isRequest
-        ? `New approval request for "${eventName}"\nName: ${firstName} ${lastName}\nEmail: ${email}\nTickets: ${totalTickets}${amountOnHold ? `\nOn hold: ${formatMoney(amountOnHold)}${deadline ? ` (expires ${deadline})` : ""}` : ""}\nReview: ${manageUrl}`
+        ? `New approval request for "${eventName}"\nName: ${firstName} ${lastName}\nEmail: ${email}\nTickets: ${totalTickets}${amountOnHold ? `\nOn hold: ${formatMoney(amountOnHold)}${deadline ? ` (expires ${deadline})` : ""}` : ""}${membershipText}\nReview: ${manageUrl}`
         : isExpired
           ? `Card hold expired for "${eventName}"\nName: ${firstName} ${lastName}\nEmail: ${email}${amountOnHold ? `\nReleased (never charged): ${formatMoney(amountOnHold)}` : ""}\nThe guest was not charged and must book again.`
           : `Approved & confirmed for "${eventName}"\nName: ${firstName} ${lastName}\nEmail: ${email}\nTickets: ${totalTickets}${amountCharged ? `\nCharged: ${formatMoney(amountCharged)}` : ""}`
@@ -897,6 +968,17 @@ export const sendApprovalRejected = async ({ event, firstName, email, payment, r
     ? `Hi ${firstName}, your request to attend "${eventName}" wasn't reviewed in time.`
     : `Hi ${firstName}, thank you for your interest in "${eventName}". Unfortunately, your request to attend could not be approved this time. We hope to see you at a future Jetzy event.`
 
+  // A membership held with the request was never started — or, for a monthly → yearly upgrade,
+  // nothing changed and the monthly plan carries on. Said, so nobody wonders what they lost.
+  const rejectedNew = (payment?.memberships || []).filter((m) => !m.upgradePaidThrough).map((m) => m.receiptLabel)
+  const rejectedUpgrade = (payment?.memberships || []).filter((m) => m.upgradePaidThrough).map((m) => m.receiptLabel)
+  const rejectedMembershipNote = [
+    rejectedNew.length ? `Your ${rejectedNew.join(" and ")} was not started.` : "",
+    rejectedUpgrade.length ? `Your ${rejectedUpgrade.join(" and ")} stays on monthly billing, unchanged.` : "",
+  ]
+    .filter(Boolean)
+    .join(" ")
+
   const refundBlock = payment
     ? `
           <div style="background-color: #e8f4fd; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #2196f3;">
@@ -904,6 +986,7 @@ export const sendApprovalRejected = async ({ event, firstName, email, payment, r
             <p style="color: #333; margin: 0; line-height: 1.6;">
               The <strong>${formatMoney(payment.amount)}</strong> authorization hold on your card has been released.
             </p>
+            ${rejectedMembershipNote ? `<p style="color: #0d47a1; margin: 12px 0 0 0; line-height: 1.6;">${rejectedMembershipNote}</p>` : ""}
             <p style="color: #666; margin: 12px 0 0 0; font-size: 13px;">
               Depending on your bank, it may take 5&ndash;10 business days to clear from your statement.
             </p>
@@ -930,7 +1013,7 @@ export const sendApprovalRejected = async ({ event, firstName, email, payment, r
           <p style="margin-top: 30px; text-align: center; color: #666;">Thank you for using Jetzy.</p>
         </div>
       `),
-      text: `Update on Your Request\n\n${bodyText}${payment ? `\n\nYou have NOT been charged. The ${formatMoney(payment.amount)} hold on your card has been released. It may take 5-10 business days to clear from your statement.` : ""}${isExpired ? `\n\nIf you'd still like to attend, please book again: ${eventUrl}` : ""}`
+      text: `Update on Your Request\n\n${bodyText}${payment ? `\n\nYou have NOT been charged. The ${formatMoney(payment.amount)} hold on your card has been released. It may take 5-10 business days to clear from your statement.${rejectedMembershipNote ? ` ${rejectedMembershipNote}` : ""}` : ""}${isExpired ? `\n\nIf you'd still like to attend, please book again: ${eventUrl}` : ""}`
     })
   } catch (error) {
     console.error("Failed to send approval-rejected email:", error)
@@ -1692,7 +1775,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
             </p>
             ${partialApproval.membershipLabels?.length ? `
             <p style="color: #856404; margin: 10px 0 0 0; font-size: 14px;">
-              Your ${partialApproval.membershipLabels.join(" and ")} membership${partialApproval.membershipLabels.length > 1 ? "s are" : " is"} not affected &mdash; it comes with your order, not with each ticket.
+              Your ${partialApproval.membershipLabels.join(" and ")} ${partialApproval.membershipLabels.length > 1 ? "are" : "is"} not affected &mdash; ${partialApproval.membershipLabels.length > 1 ? "they come" : "it comes"} with your order, not with each ticket.
             </p>
             ` : ""}
           </div>
@@ -1785,10 +1868,14 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
                     : `, then renews at <strong>$${membership.amount.toFixed(2)} every ${membership.interval}</strong>`
                 } until you cancel. You can cancel any time from
                 <strong>Manage membership</strong> in your Jetzy account menu.
+              </p>
+              <p style="margin: 10px 0 0 0; color: #7a5c00; font-size: 13px; line-height: 1.5;">
+                If your billing page shows the new plan as a free trial until then, that's just how a period
+                you've already paid for is recorded.
               </p>`
                 : membership.trialMonths
                 ? `<p style="margin: 0; color: #7a5c00; font-size: 14px; line-height: 1.5;">
-                Your referral code included
+                Your order included
                 <strong>${membership.trialMonths} ${membership.trialMonths === 1 ? "month" : "months"} free</strong> — you have
                 not been charged for it. It then renews at
                 <strong>$${membership.amount.toFixed(2)} every ${membership.interval}</strong>${
@@ -1817,6 +1904,11 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
                 ${membership.interval} is recorded — you've already paid for it.
               </p>`
                 : ""}`}
+              ${includesLineForLabel(membership.label)
+                ? `<p style="margin: 10px 0 0 0; color: #7a5c00; font-size: 13px; line-height: 1.5;">
+                ${includesLineForLabel(membership.label)} at no extra charge — you get every benefit of both.
+              </p>`
+                : ""}
             </div>`,
               )
               .join("")}
@@ -1870,7 +1962,15 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
           </div>
         </div>
       `),
-      text: `Thank you for your purchase for ${event.name}!\n\nOrder Number: ${orderNumber}\nDate and Time: ${timestamp}\nVenue: ${location}${directionsLine}${entrance ? `\nEntrance: ${entrance}` : ""}\n\nEvent page: ${ticketEventUrl}\n\nThank you for choosing Jetzy Events!`,
+      text: `Thank you for your purchase for ${event.name}!\n\nOrder Number: ${orderNumber}\nDate and Time: ${timestamp}\nVenue: ${location}${directionsLine}${entrance ? `\nEntrance: ${entrance}` : ""}${recurringLines
+        .map((membership) =>
+          membership.replacesInterval && membership.startsAt
+            ? `\n\n${membership.label}: moved from ${membership.replacesInterval}ly to ${membership.interval}ly billing. Your ${membership.replacesInterval}ly plan is paid through ${dayjs(membership.startsAt).format("MMMM D, YYYY")} and won't renew; the ${membership.interval} you paid for starts then and renews at $${membership.amount.toFixed(2)} every ${membership.interval} until you cancel.`
+            : membership.trialMonths
+              ? `\n\n${membership.label}: ${membership.trialMonths} ${membership.trialMonths === 1 ? "month" : "months"} free, then $${membership.amount.toFixed(2)} every ${membership.interval} until you cancel.`
+              : `\n\n${membership.label}: first ${membership.interval} paid, then $${membership.amount.toFixed(2)} every ${membership.interval}${membership.firstRenewalAt ? ` from ${dayjs(membership.firstRenewalAt).format("MMMM D, YYYY")}` : ""} until you cancel.`,
+        )
+        .join("")}${recurringLines.map((membership) => (includesLineForLabel(membership.label) ? ` ${includesLineForLabel(membership.label)}.` : "")).join("")}\n\nEvent page: ${ticketEventUrl}\n\nThank you for choosing Jetzy Events!`,
     }
 
     console.log("[sendTicketConfirmation] Sending email with payload:", {
@@ -2021,7 +2121,7 @@ const cancellationMoneyBlock = (moneyState: MoneyState, amount: number): string 
   return ""
 }
 
-export const sendBookingCancellation = async ({ event, firstName, lastName, email, phone, tickets, orderNumber, totalAmount, moneyState = "free", cancelledBy = "guest" }: BookingCancellationData) => {
+export const sendBookingCancellation = async ({ event, firstName, lastName, email, phone, tickets, orderNumber, totalAmount, moneyState = "free", cancelledBy = "guest", membershipNote }: BookingCancellationData) => {
   const baseUrl = process.env.NEXT_PUBLIC_URL
   if (!baseUrl) {
     throw new Error("NEXT_PUBLIC_URL environment variable is required")
@@ -2119,6 +2219,7 @@ export const sendBookingCancellation = async ({ event, firstName, lastName, emai
           ` : ""}
 
           ${cancellationMoneyBlock(moneyState, totalAmount)}
+          ${membershipNote ? `<p style="color: #333; margin: 0 0 20px 0; font-size: 14px; line-height: 1.6;">${membershipNote}</p>` : ""}
 
           <div style="background-color: #e7f3ff; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #1877F2;">
             <h2 style="color: #1877F2; margin-bottom: 15px;">Important Information</h2>
@@ -2151,6 +2252,7 @@ export const sendBookingCancellation = async ({ event, firstName, lastName, emai
             : moneyState === "unknown"
               ? `If a payment of ${formatMoney(totalAmount)} was made for this booking, under our booking policy it is non-refundable and will not be returned.`
               : "",
+        membershipNote || "",
         "",
         "Thank you for choosing Jetzy Events!",
       ].filter(Boolean).join("\n"),
@@ -2195,6 +2297,7 @@ export const sendHostCancellationNotice = async ({
   moneyState,
   cancelledBy,
   organizerEmail,
+  membershipNote,
 }: HostCancellationNoticeData) => {
   const baseUrl = process.env.NEXT_PUBLIC_URL
   const senderEmail = (process.env.SENDGRID_EMAIL_SENDER as string)?.trim()
@@ -2252,6 +2355,7 @@ export const sendHostCancellationNotice = async ({
           <div style="background-color: #f8f8f8; padding: 20px; border-radius: 8px; margin: 20px 0;">
             <h2 style="color: #333; margin-bottom: 15px;">Payment</h2>
             <p style="margin: 0;">${moneyLine}</p>
+            ${membershipNote ? `<p style="margin: 8px 0 0 0;">${membershipNote}</p>` : ""}
           </div>
 
           <div style="text-align: center; margin: 30px 0;">
@@ -2270,7 +2374,7 @@ export const sendHostCancellationNotice = async ({
           </div>
         </div>
       `),
-      text: `Booking cancelled for ${event.name}.\n\nGuest: ${guestName} (${guestEmail})\nTickets: ${ticketCount}\nRef: ${orderNumber}\n${moneyLine.replace(/<[^>]+>/g, "")}\n\nManage: ${manageUrl}`,
+      text: `Booking cancelled for ${event.name}.\n\nGuest: ${guestName} (${guestEmail})\nTickets: ${ticketCount}\nRef: ${orderNumber}\n${moneyLine.replace(/<[^>]+>/g, "")}${membershipNote ? `\n${membershipNote}` : ""}\n\nManage: ${manageUrl}`,
     })
     console.log("[sendHostCancellationNotice] Sent to:", recipients.join(", "))
   } catch (error: any) {
@@ -3642,9 +3746,16 @@ export const sendMembershipStarted = async ({
 		? `<h1 style="color:#1F2937;font-size:22px;line-height:1.4;margin:0 0 15px 0;">Welcome to ${product}!</h1>`
 		: ""
 
+	// Non-Premium names: the receipt label, so "Full Concierge Membership" never reads "… Membership
+	// membership", plus "Includes Jetzy Premium" when the membership includes it.
+	const welcomeKey = MEMBERSHIP_KEYS.find((k) => MEMBERSHIPS[k].label === product)
+	const receiptName = welcomeKey ? MEMBERSHIPS[welcomeKey].receiptLabel : `${product} membership`
+	const includedLine = includesLineForLabel(product)
+	const plainActive = `Your ${receiptName} is active. Welcome aboard.${includedLine ? ` ${includedLine} — you get every benefit of both.` : ""}`
+
 	const marketing = isPremiumProduct
 		? [para(opening, "#1F2937", 16), para(benefits), para(launch), para(lockIn), riskFree ? para(riskFree) : ""].join("")
-		: para(`Your ${product} membership is active. Welcome aboard.`, "#1F2937", 16)
+		: para(plainActive, "#1F2937", 16)
 
 	const textLines = isPremiumProduct
 		? [
@@ -3662,7 +3773,7 @@ export const sendMembershipStarted = async ({
 		  ]
 		: [
 				`Hi ${name},`,
-				`Your ${product} membership is active. Welcome aboard.`,
+				plainActive,
 				stripHtml(terms),
 				`Browse events at ${baseUrl}`,
 				"— Team Jetzy",
@@ -3675,7 +3786,7 @@ export const sendMembershipStarted = async ({
 			subject: isPremiumProduct
 				? `Welcome to ${product}!`
 				: chargesOn
-					? `Your ${product} membership is active — free until ${chargesOn}`
+					? `Your ${receiptName} is active — free until ${chargesOn}`
 					: `Welcome to ${product}`,
 			html: membershipShell(`
         <p style="color:#1F2937;font-size:16px;line-height:1.6;margin:0;">Hi ${name},</p>

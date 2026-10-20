@@ -28,6 +28,8 @@ import { isAuthorizedHold, deadBookingKind, deadBookingLabel, DEAD_BOOKING_COLOR
 import { MoneyState } from "@/lib/booking-cancellation"
 import { BookingRow } from "./BookingCard"
 import { BookingStatus } from "@/models/events/types"
+import { bookingMemberships } from "@/lib/booking-memberships"
+import { membershipIncludesLine, membershipRowKind, membershipRowName, membershipRowSummary } from "@/lib/booking-membership-display"
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -98,6 +100,7 @@ export default function BookingDetailModal({ booking, isOpen, onClose, onCancel,
 
 	const moneyState = booking.moneyState as MoneyState
 	const answers = (booking as any).customAnswers || []
+	const membershipRows = bookingMemberships((booking as any).payment) as any[]
 	const questionMap = new Map<string, any>()
 	for (const q of event.questions || []) questionMap.set(String(q.id), q)
 
@@ -196,6 +199,36 @@ export default function BookingDetailModal({ booking, isOpen, onClose, onCancel,
 								<Text>Total</Text>
 								<Text>${pricing.total.toFixed(2)}</Text>
 							</Flex>
+						</Box>
+					)}
+
+					{/* Memberships bought with this booking. The Payment badge above shows what the CARD
+					    carried (ticket + membership), the Total above is the ticket alone — without these
+					    lines the two figures disagree with nothing to explain the difference. */}
+					{membershipRows.length > 0 && (
+						<Box bg="#2A2A2A" rounded="lg" px={4} py={3} mt={3}>
+							<Text fontSize="xs" color="#9C9C9C" mb={2}>Membership with this booking</Text>
+							{membershipRows.map((row: any) => {
+								const kind = membershipRowKind(row, membershipRows)
+								return (
+									<Box key={row.key} mb={1}>
+										<Flex justify="space-between" fontSize="sm" gap={3}>
+											<Text fontWeight="semibold">{membershipRowName(row)}</Text>
+											<Text flexShrink={0}>
+												{kind === "included" || kind === "held" || kind === "trial" ? "—" : `$${(Number(row.amount) || 0).toFixed(2)}`}
+											</Text>
+										</Flex>
+										<Text fontSize="xs" color="#9C9C9C">
+											{membershipRowSummary(row, membershipRows)}
+											{membershipIncludesLine(row.key) && kind !== "included" ? ` · ${membershipIncludesLine(row.key)}` : ""}
+										</Text>
+									</Box>
+								)
+							})}
+							<Text fontSize="xs" color="#9C9C9C" mt={2}>
+								A membership is separate from the ticket — it continues even if this booking is cancelled. Manage it from
+								Manage membership in your account menu.
+							</Text>
 						</Box>
 					)}
 

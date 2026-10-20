@@ -33,6 +33,7 @@ import { sendGAEvent } from "@next/third-parties/google";
 import { stripHtml } from "@/utils/text";
 import EventDescription from "@/components/events/EventDescription";
 import { usePremiumStatus } from "@/hooks/usePremiumStatus";
+import { useSession } from "next-auth/react";
 import { usePremiumSubscriptionReturn } from "@/hooks/usePremiumSubscriptionReturn";
 import { useRouter } from "next/router";
 import { useAnalytics } from "@/hooks/useAnalytics";
@@ -150,6 +151,33 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
   //
   // Only the TYPE is imported from `ticket-availability` (server-only); the runtime helpers
   // come from the pure `ticket-quantity`, or webpack would pull the models into this bundle.
+  // Is the logged-in viewer a MONTHLY member whom a yearly ticket here would move to yearly
+  // billing? Asked of the same endpoint checkout uses (keys only, by the session's email), and
+  // only when a yearly ticket on this event sells a membership the viewer already holds — so the
+  // line beside the total can name the upgrade before they open checkout.
+  const { data: viewerSession } = useSession();
+  const viewerEmail = viewerSession?.user?.email || "";
+  const eventSellsYearlyUpgrade = (event.tickets || []).some(
+    (t: any) =>
+      !t?.isDeleted &&
+      selectionMembershipInterval([{ ...t, isSelected: true }] as any) === "year" &&
+      ticketMemberships(t).some((key) => MEMBERSHIPS[key]?.upgradeOnTicket && viewerHeld.includes(key)),
+  );
+  const { data: viewerUpgrades = [] } = useQuery<MembershipKey[]>({
+    queryKey: ["viewer-membership-upgrades", event._id?.toString(), viewerEmail],
+    queryFn: async () => {
+      const response = await fetch("/api/premium/check-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: viewerEmail, eventId: event._id?.toString() }),
+      });
+      const result = await response.json();
+      return Array.isArray(result?.data?.upgrades) ? (result.data.upgrades as MembershipKey[]) : [];
+    },
+    enabled: !!viewerEmail && eventSellsYearlyUpgrade,
+    staleTime: 60_000,
+  });
+
   const { data: availability, refetch: refetchAvailability } = useQuery<EventAvailability>({
     queryKey: ["event-availability", eventId],
     queryFn: async () => {
@@ -374,13 +402,17 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
   // holds (`viewerHeld`, Concierge counting as Premium) is dropped, and `splitBundleCharges` drops
   // Premium when the ticket sells Concierge too. Our own records only — a Concierge member known
   // solely to SelectMember still sees the line here; checkout settles it from the typed email.
-  const selectionAddedKeys = splitBundleCharges(
-    selectionMemberships(tickets.filter((t) => t.isSelected) as any),
-    viewerHeld,
-  ).toCharge;
   // Priced at the SELECTED TICKET's interval, not the product default, so an annual bundle
   // reads "$200/year" beside the order total rather than the monthly figure.
   const selectionInterval = selectionMembershipInterval(tickets as any);
+  // A monthly member on a yearly ticket is charged for the switch to yearly (`membership-upgrade.ts`).
+  const selectionUpgradeKeys = selectionInterval === "year" ? viewerUpgrades : [];
+  const selectionSplit = splitBundleCharges(
+    selectionMemberships(tickets.filter((t) => t.isSelected) as any),
+    viewerHeld,
+    selectionUpgradeKeys,
+  );
+  const selectionAddedKeys = selectionSplit.toCharge;
   // Free months the host gave on the selected ticket. A referral code can beat this at
   // checkout, never reduce it, so the figure shown here is the floor of what the buyer gets.
   const selectionFreeMonths = selectionMembershipFreeMonths(tickets as any);
@@ -397,7 +429,8 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
         interval: price.interval,
         // A trialled line is excluded from `dueToday` by `recurringTotal` but still renders —
         // it is a charge the buyer is agreeing to, just not today's.
-        ...(selectionFreeMonths > 0 ? { trialMonths: selectionFreeMonths } : {}),
+        // An upgrader pays the yearly price — no free months on that line.
+        ...(selectionFreeMonths > 0 && !selectionSplit.upgrades.includes(plan.key) ? { trialMonths: selectionFreeMonths } : {}),
       })),
   });
 
@@ -651,12 +684,15 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
                 // Free months lead, because they are what changes the decision: "$20/month"
                 // and "free for a month, then $20/month" are different offers and the second
                 // one has to be legible before the buyer commits, not only in the modal.
-                const freeLead = selectionFreeMonths > 0 ? `first ${freeMonthsLabel(selectionFreeMonths)} free, then ` : "";
+                const isUpgrade = selectionSplit.upgrades.includes(key);
+                const freeLead = selectionFreeMonths > 0 && !isUpgrade ? `first ${freeMonthsLabel(selectionFreeMonths)} free, then ` : "";
                 return (
                   <p key={key} className="text-xs mt-0.5" style={{ color: "#F5C518" }}>
-                    {price?.label
-                      ? `+ ${plan?.name} — ${freeLead}${price.label}, confirmed at checkout`
-                      : `+ ${plan?.name || key} membership — confirmed at checkout`}
+                    {isUpgrade
+                      ? `+ ${plan?.name || MEMBERSHIPS[key].label} — switch from monthly to ${price?.label || "yearly"}, starting when your paid month ends; confirmed at checkout`
+                      : price?.label
+                        ? `+ ${plan?.name} — ${freeLead}${price.label}, confirmed at checkout`
+                        : `+ ${plan?.name || key} membership — confirmed at checkout`}
                   </p>
                 );
               })}

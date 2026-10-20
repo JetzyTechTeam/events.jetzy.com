@@ -552,10 +552,13 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 					...(membershipLines.length > 0
 						? {
 							memberships: membershipLines.map((line) => ({
+								key: line.key,
 								label: MEMBERSHIPS[line.key].label,
 								receiptLabel: MEMBERSHIPS[line.key].receiptLabel,
 								amount: line.amount,
 								interval: line.interval,
+								...(line.trialMonths ? { trialMonths: line.trialMonths, renewalAmount: line.renewalAmount } : {}),
+								...(line.upgradeFrom?.paidThrough ? { upgradePaidThrough: line.upgradeFrom.paidThrough } : {}),
 							})),
 						}
 						: {}),
@@ -574,8 +577,20 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 			lastName: metadata.lastName || "",
 			email: metadata.email || "",
 			tickets: ticketSummary,
-			amountOnHold: total,
+			// The REAL hold — ticket plus each membership's first period. It said `total` (the ticket
+			// alone), so a host approving a $595 yearly Concierge request was told a far smaller hold
+			// than the card carries. The approved and expired notices already quote the full amount.
+			amountOnHold: chargedAmount,
 			holdExpiresAt: booking.payment?.authExpiresAt,
+			memberships: membershipLines.map((line) => ({
+				key: line.key,
+				label: MEMBERSHIPS[line.key].label,
+				receiptLabel: MEMBERSHIPS[line.key].receiptLabel,
+				amount: line.amount,
+				interval: line.interval,
+				...(line.trialMonths ? { trialMonths: line.trialMonths, renewalAmount: line.renewalAmount } : {}),
+				...(line.upgradeFrom?.paidThrough ? { upgradePaidThrough: line.upgradeFrom.paidThrough } : {}),
+			})),
 		})
 		// Referral usage is intentionally NOT incremented here — it is deferred to approval
 		// so a declined request doesn't burn a limited-use code.

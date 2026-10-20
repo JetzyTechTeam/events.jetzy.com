@@ -20,6 +20,8 @@ import {
 } from "@/lib/send-grid"
 import { NextApiRequest, NextApiResponse } from "next"
 import Stripe from "stripe"
+import { membershipRowsForEmail } from "@/lib/booking-membership-display"
+import { bookingMemberships } from "@/lib/booking-memberships"
 
 /**
  * Did WE sell this subscription, or did selectmember.jetzy.com?
@@ -497,7 +499,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 								lastName,
 								email: booking.customerEmail,
 								reason: "expired",
-								payment: { amount },
+								payment: { amount, memberships: membershipRowsForEmail(bookingMemberships((booking as any).payment) as any) },
 							})
 							// The host is not looking at a screen when this fires — tell them, or
 							// they silently lose a paying guest.

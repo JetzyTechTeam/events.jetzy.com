@@ -1424,9 +1424,14 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 															    free months are named here as well as above: this is the sentence
 															    that says what happens AFTER them. */}
 															{selectionNeedsApproval
-																? `If the host approves, you're charged this amount and your ${pricing.recurring.length > 1 ? "memberships begin" : "membership begins"}, renewing at ${pricing.recurring
-																	.map((m) => renewalPhrase(m))
-																	.join(" and ")} until you cancel. If they decline, nothing is charged.`
+																? upgradeKeys.length > 0
+																	? /* An upgrade starts nothing new: it moves an existing member to yearly. */
+																	  `If the host approves, you're charged this amount and your ${membershipLabelList(upgradeKeys)} moves to yearly billing, renewing at ${pricing.recurring
+																			.map((m) => renewalPhrase(m))
+																			.join(" and ")} until you cancel. If they decline, nothing is charged and your monthly plan continues unchanged.`
+																	: `If the host approves, you're charged this amount and your ${pricing.recurring.length > 1 ? "memberships begin" : "membership begins"}, renewing at ${pricing.recurring
+																			.map((m) => renewalPhrase(m))
+																			.join(" and ")} until you cancel. If they decline, nothing is charged.`
 																: `Your ${pricing.recurring.length > 1 ? "memberships then renew" : "membership then renews"} at ${pricing.recurring
 																	.map((m) => renewalPhrase(m))
 																	.join(" and ")} until you cancel. You can cancel any time from your account.`}

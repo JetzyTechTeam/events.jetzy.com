@@ -58,6 +58,17 @@ export async function notifyApprovalRequest(args: {
 	tickets: TicketRow[]
 	amountOnHold?: number
 	holdExpiresAt?: Date | string | null
+	/** What the hold covers beyond the ticket, for the host's breakdown. */
+	memberships?: Array<{
+		key?: string
+		label: string
+		receiptLabel: string
+		amount: number
+		interval: string
+		trialMonths?: number
+		renewalAmount?: number
+		upgradePaidThrough?: string
+	}>
 }): Promise<void> {
 	try {
 		const audience = await resolveBookingAudience(args.event)
@@ -72,6 +83,7 @@ export async function notifyApprovalRequest(args: {
 			kind: "request",
 			amountOnHold: args.amountOnHold,
 			holdExpiresAt: args.holdExpiresAt,
+			...(args.memberships?.length ? { memberships: args.memberships } : {}),
 			...(audience.mode === "owner" ? { audience: "host" as const, to: audience.email } : {}),
 		})
 	} catch (error: any) {

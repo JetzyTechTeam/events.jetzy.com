@@ -45,7 +45,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				status: { $nin: [BookingStatus.CANCELLED, BookingStatus.REJECTED, BookingStatus.FAILED] },
 				$or: orClauses,
 			},
-			{ "payment.paymentIntentId": 0, "payment.checkoutSessionId": 0 },
+			{
+				"payment.paymentIntentId": 0,
+				"payment.checkoutSessionId": 0,
+				"payment.subscriptionId": 0,
+				"payment.paymentMethodId": 0,
+				"payment.memberships.subscriptionId": 0,
+				"payment.memberships.upgradeFrom.subscriptionId": 0,
+				"payment.memberships.upgradeFrom.customerId": 0,
+			},
 		).lean()
 
 		if (!booking) return sendResponse(res, null, "OK", true, ResCode.OK)

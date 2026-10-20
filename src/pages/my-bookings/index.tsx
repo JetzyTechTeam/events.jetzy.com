@@ -13,6 +13,7 @@ import BookingDetailModal from "@/components/bookings/BookingDetailModal"
 import CancelBookingDialog from "@/components/bookings/CancelBookingDialog"
 import { authorizedOnly } from "@/lib/authSession"
 import { MoneyState } from "@/lib/booking-cancellation"
+import { bookingMemberships } from "@/lib/booking-memberships"
 
 /**
  * A guest's own bookings. Distinct from /console/bookings, which is the host-side list of
@@ -171,6 +172,7 @@ export default function MyBookingsPage() {
 				eventName={cancelTarget?.event?.name}
 				moneyState={(cancelTarget?.moneyState || "free") as MoneyState}
 				amount={Number(cancelTarget?.moneyAmount || 0)}
+				memberships={bookingMemberships((cancelTarget as any)?.payment) as any}
 			/>
 		</>
 	)

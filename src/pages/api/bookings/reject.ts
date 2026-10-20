@@ -10,6 +10,8 @@ import { BookingStatus } from "@/models/events/types"
 import { sendApprovalRejected } from "@/lib/send-grid"
 import { getStripeClient } from "@/lib/premium"
 import zod from "zod"
+import { membershipRowsForEmail } from "@/lib/booking-membership-display"
+import { bookingMemberships } from "@/lib/booking-memberships"
 
 const schema = zod.object({
 	bookingRef: zod.string().nonempty(),
@@ -101,7 +103,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			lastName: "",
 			email: booking.customerEmail,
 			reason: "declined",
-			...(releasedAmount !== undefined ? { payment: { amount: releasedAmount } } : {}),
+			...(releasedAmount !== undefined
+				? { payment: { amount: releasedAmount, memberships: membershipRowsForEmail(bookingMemberships((booking as any).payment) as any) } }
+				: {}),
 		})
 	} catch (emailError) {
 		console.error("Failed to send approval-rejected email:", emailError)

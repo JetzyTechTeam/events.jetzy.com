@@ -5,6 +5,7 @@ import { ensureDbConnected } from "@/configs/database"
 import { sendResponse } from "@/lib/helpers"
 import { ResCode } from "@/lib/responseCodes"
 import { bookingMoneyAmount, bookingMoneyState, canGuestCancel } from "@/lib/booking-cancellation"
+import { bookingMemberships } from "@/lib/booking-memberships"
 
 /**
  * Minimal, unauthenticated summary of a booking, keyed by its reference.
@@ -46,6 +47,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				ticketCount: (booking.tickets || []).reduce((sum: number, t: any) => sum + (Number(t.quantity) || 0), 0),
 				moneyState: bookingMoneyState(booking),
 				moneyAmount: bookingMoneyAmount(booking),
+				// For the cancel page's membership sentence. Labels and amounts only — no ids.
+				memberships: bookingMemberships(booking.payment).map((row: any) => ({
+					key: row.key,
+					status: row.status,
+					amount: row.amount,
+					interval: row.interval,
+					trialMonths: row.trialMonths,
+					...(row.upgradeFrom?.paidThrough ? { upgradeFrom: { paidThrough: row.upgradeFrom.paidThrough } } : {}),
+				})),
 				canCancel: eligibility.allowed,
 				cancelBlockedReason: eligibility.reason,
 				event: event ? { name: event.name, slug: event.slug, startsOn: event.startsOn, timezone: event.timezone } : null,

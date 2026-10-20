@@ -155,6 +155,7 @@ import dayjs from "dayjs"
 import utc from "dayjs/plugin/utc"
 import timezone from "dayjs/plugin/timezone"
 import { getEventZone, normalizeTimezone } from "@/utils/eventTime"
+import { bookingMemberships } from "@/lib/booking-memberships"
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -4385,6 +4386,7 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 				asManager
 				moneyState={bookingMoneyState(cancelTarget || undefined) as MoneyState}
 				amount={bookingMoneyAmount(cancelTarget || undefined)}
+				memberships={bookingMemberships((cancelTarget as any)?.payment) as any}
 			/>
 
 			{/* Guest Detail Modal */}

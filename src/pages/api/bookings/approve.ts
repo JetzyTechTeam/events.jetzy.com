@@ -650,7 +650,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 						// Fewer tickets, same membership — said outright, or a guest who asked for two
 						// Premium tickets and got one reasonably wonders whether the membership went too.
 						...(pendingMemberships.length > 0
-							? { membershipLabels: pendingMemberships.map((row) => MEMBERSHIPS[row.key as keyof typeof MEMBERSHIPS]?.label || "membership") }
+							? {
+									// Receipt names ("Full Concierge Membership", never "… Membership membership"),
+									// and only what this approval actually sold — not a row it released.
+									membershipLabels: pendingMemberships
+										.filter((row) => !skipKeys.includes(row.key))
+										.map((row) => MEMBERSHIPS[row.key as keyof typeof MEMBERSHIPS]?.receiptLabel || "membership"),
+							  }
 							: {}),
 					},
 				}

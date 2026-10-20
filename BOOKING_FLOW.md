@@ -1431,3 +1431,9 @@ Since `TICKET_SCHEMA.md` Revision 5 (2026-09-24), which covered approvals and ed
   is set `cancel_at_period_end` with `metadata.cancelledReason = "upgraded_to_yearly"`,
   `replacedBy: <new id>`. At approval, re-check: already yearly → release; monthly gone → start
   fresh. A $0 ticket with an upgrade goes through Stripe. Web: `src/lib/membership-upgrade.ts`.
+- **Booking emails + screens describe memberships one way (2026-10-20).** The host's approval-
+  request notice now quotes the FULL hold (ticket + membership first period), not the ticket alone,
+  and itemises the memberships. Decline / expiry emails say the membership was not started (or, for
+  an upgrade, that the monthly plan continues). Cancellation emails and dialogs say cancelling a
+  booking does NOT cancel a membership bought with it. Browser-facing booking APIs no longer return
+  subscription / customer / payment-method ids. Wording lives in `src/lib/booking-membership-display.ts`.
