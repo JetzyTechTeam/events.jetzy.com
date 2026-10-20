@@ -156,7 +156,12 @@ async function ownMemberships(email: string, scope?: MembershipKey[]): Promise<M
 		const plan = typeof status?.plan === "string" ? status.plan : ""
 		if (active) {
 			remoteKeys.forEach((key) => {
-				const named = (status as any)?.includesPremium === true || (!!plan && selectMemberPlanNames(key).includes(plan))
+				// Their backend now answers `isConcierge` / `includesPremium` explicitly (2026-10-20);
+				// a known `plan` name counts too, for responses from before those fields.
+				const named =
+					(status as any)?.isConcierge === true ||
+					(status as any)?.includesPremium === true ||
+					(!!plan && selectMemberPlanNames(key).includes(plan))
 				if (named || (stripeFailed && !plan)) held.push(key)
 			})
 		}
