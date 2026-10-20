@@ -1235,8 +1235,11 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
       start = dayjs.utc(event.startsOn).tz(eventTimezone)
       end = dayjs.utc(event.endsOn).tz(eventTimezone)
       const startTimestamp = `${start.format('ddd MMM DD YYYY')}${event.hasStartTime !== false ? ` ${start.format('hh:mm A')}` : ''}`
-      const endTimestamp = `${end.format('ddd MMM DD YYYY')}${event.hasEndTime !== false ? ` ${end.format('hh:mm A')}` : ''}`
-      timestamp = `From: ${startTimestamp} To: ${endTimestamp}`
+      // No end date → no "To:" at all. `dayjs.utc(undefined)` formats as "Invalid Date", which the
+      // confirmation printed verbatim for every event without an end time.
+      const hasEnd = !!event.endsOn && end.isValid()
+      const endTimestamp = hasEnd ? `${end.format('ddd MMM DD YYYY')}${event.hasEndTime !== false ? ` ${end.format('hh:mm A')}` : ''}` : ""
+      timestamp = endTimestamp ? `From: ${startTimestamp} To: ${endTimestamp}` : startTimestamp
     }
     // Always use the real location in emails — `locationDisclosedAfterBooking` only masks the
     // PUBLIC event page, and someone holding a ticket is entitled to the address.
