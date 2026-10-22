@@ -4,7 +4,7 @@ import type { NextApiRequest, NextApiResponse } from "next"
 import { Types } from "mongoose"
 import { membershipHoldings } from "@/lib/premium-eligibility"
 import { eventHasAnyPremiumTicket, selectionMemberships, ticketMembershipInterval, ticketMemberships } from "@/lib/premium-bundle"
-import { findOrderUpgrades } from "@/lib/membership-upgrade"
+import { findOrderReactivations, findOrderUpgrades } from "@/lib/membership-upgrade"
 import { getMembershipTicketAllowances } from "@/lib/premium-ticket-limit"
 import { MEMBERSHIPS, MEMBERSHIP_KEYS, type MembershipKey } from "@/lib/memberships"
 
@@ -123,6 +123,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			upgradeCandidates.length > 0
 				? (await findOrderUpgrades(String(email), upgradeCandidates, "year")).map((upgrade) => upgrade.key)
 				: []
+		// Memberships this address has CANCELLED (still running to the end of the paid period) that a
+		// ticket here would switch back on. Disclosed before purchase — it restarts recurring billing.
+		// Key + billing period only; no dates or ids from this unauthenticated endpoint.
+		const reactivations = (await findOrderReactivations(String(email), eventKeys.filter((key) => own.includes(key)))).map(
+			(r) => ({ key: r.key, interval: r.interval }),
+		)
 
 		return sendResponse(
 			res,
@@ -134,6 +140,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				// for a Concierge member — so the modal can say where it comes from.
 				includedWith,
 				upgrades,
+				reactivations,
 				sellsPremium: true,
 				// How many tickets of each membership this address may still buy FOR THIS EVENT.
 				allowances: MEMBERSHIP_KEYS.reduce((acc, key) => {

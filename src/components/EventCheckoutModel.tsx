@@ -129,6 +129,8 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 	const [includedWithByEmail, setIncludedWithByEmail] = useState<Partial<Record<MembershipKey, MembershipKey>>>({})
 	// Memberships this address pays for MONTHLY that a yearly ticket moves onto yearly billing.
 	const [upgradesByEmail, setUpgradesByEmail] = useState<MembershipKey[]>([])
+	// Memberships this address has CANCELLED that this purchase switches back on (renewing again).
+	const [reactivationsByEmail, setReactivationsByEmail] = useState<Array<{ key: MembershipKey; interval: string }>>([])
 	const [checkingPremiumEmail, setCheckingPremiumEmail] = useState(false)
 	const premiumEmailTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 	// Monotonic id so a slow reply for a previous address can't overwrite a newer verdict.
@@ -659,6 +661,11 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 			if (requestId !== premiumCheckIdRef.current) return
 			setHeldByEmail(result?.status ? sanitizeMembershipKeys(result?.data?.held) : [])
 			setUpgradesByEmail(result?.status ? sanitizeMembershipKeys(result?.data?.upgrades) : [])
+			setReactivationsByEmail(
+				result?.status && Array.isArray(result?.data?.reactivations)
+					? result.data.reactivations.filter((r: any) => isMembershipKey(r?.key)).map((r: any) => ({ key: r.key, interval: String(r.interval || "month") }))
+					: [],
+			)
 			const includedWith = result?.status ? result?.data?.includedWith : null
 			setIncludedWithByEmail(
 				includedWith && typeof includedWith === "object"
@@ -688,6 +695,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 			// for real either way.
 			setHeldByEmail([])
 			setUpgradesByEmail([])
+			setReactivationsByEmail([])
 			// Leave the allowance unknown rather than guessing — the server enforces it, and
 			// blocking a legitimate buyer on a failed lookup would be worse than a rejected
 			// checkout with a clear message.
@@ -1066,6 +1074,22 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 																	You won&apos;t be charged for it.
 																</p>
 															))}
+																{/* They had CANCELLED it; this purchase switches the cancellation back off.
+																    Recurring billing restarts, so it is said before they pay. */}
+																{reactivationsByEmail
+																	.filter((r) => heldSelectionKeys.includes(r.key))
+																	.map((r) => {
+																		const plan = membershipPlans.find((p) => p.key === r.key)
+																		const rate = plan ? planPriceForInterval(plan, r.interval).label : null
+																		const period = r.interval === "year" ? "year" : "month"
+																		return (
+																			<p key={`re-${r.key}`} className="text-xs mt-1" style={{ color: "#F5C518" }}>
+																				🔄 Your {MEMBERSHIPS[r.key].label} was set to end when your paid {period} runs out. Booking this ticket
+																				keeps it: it will renew{rate ? ` at ${rate}` : ` every ${period}`} until you cancel. Nothing extra is
+																				charged today.
+																			</p>
+																		)
+																	})}
 															<a
 																href={ROUTES.manageMembership}
 																target="_blank"

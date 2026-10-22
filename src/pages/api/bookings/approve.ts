@@ -23,6 +23,8 @@ import { startMembershipSubscription } from "@/lib/membership-subscriptions"
 import { addEventMember } from "@/utils/eventMembership"
 import Stripe from "stripe"
 import zod from "zod"
+import { reactivateHeldMemberships } from "@/lib/membership-upgrade"
+import { selectionMemberships } from "@/lib/premium-bundle"
 
 const schema = zod.object({
 	bookingRef: zod.string().nonempty(),
@@ -566,6 +568,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	booking.status = BookingStatus.CONFIRMED
 	await booking.save()
 	await booking.updateEventTracker()
+
+	// A membership this ticket sells that the guest had CANCELLED is switched back on — unless this
+	// approval just charged for it (a new sale or an upgrade, started above).
+	await reactivateHeldMemberships({
+		email: booking.customerEmail,
+		keys: selectionMemberships(
+			(booking.tickets || [])
+				.map((bt: any) => ((event as any)?.tickets || []).find((et: any) => String(et._id) === String(bt.ticketId || bt.id)))
+				.filter(Boolean)
+				.map((t: any) => ({ ...(t.toObject ? t.toObject() : t), isSelected: true })),
+		),
+		chargedKeys: pendingMemberships.filter((row) => !skipKeys.includes(row.key)).map((row) => row.key as MembershipKey),
+		bookingRef,
+	})
 
 	// Add the buyer as an event member — `checkoutUserId` covers guests too (their Users
 	// account is created at checkout), `bookerUserId` is the fallback for older sessions.

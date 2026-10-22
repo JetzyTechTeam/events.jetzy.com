@@ -13,6 +13,8 @@ import { Events } from "@/models/events"
 import { Bookings } from "@/models/events/bookings"
 import { BookingStatus, IBookings, IEvent } from "@/models/events/types"
 import { addEventMember } from "@/utils/eventMembership"
+import { reactivateHeldMemberships } from "@/lib/membership-upgrade"
+import { selectionMemberships } from "@/lib/premium-bundle"
 
 /**
  * Turns a completed Stripe Checkout Session into a Booking.
@@ -611,6 +613,21 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 			console.error("[checkout-fulfillment] Failed to add event participant:", error)
 		}
 	}
+
+	// ---- A membership this order sells that the buyer had CANCELLED ----
+	// Their plan is switched back on: nothing extra is charged (the current period is paid), it
+	// simply keeps renewing. Charged lines (new sales, upgrades) are started below instead.
+	await reactivateHeldMemberships({
+		email: metadata.email || "",
+		keys: selectionMemberships(
+			tickets
+				.map((t) => ((event as any)?.tickets || []).find((et: any) => String(et._id) === String(t.id)))
+				.filter(Boolean)
+				.map((t: any) => ({ ...(t.toObject ? t.toObject() : t), isSelected: true })),
+		),
+		chargedKeys: membershipLines.map((line) => line.key),
+		bookingRef,
+	})
 
 	// ---- Start the memberships this charge paid for ----
 	//

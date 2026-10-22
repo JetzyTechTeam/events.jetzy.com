@@ -33,6 +33,8 @@ export type LiveMembershipSubscription = {
 	interval: string
 	status: Stripe.Subscription.Status
 	cancelAtPeriodEnd: boolean
+	/** `metadata.cancelledReason` — set when WE ended it (included with Concierge, upgraded). */
+	cancelledReason?: string
 	/** What the member has already paid for runs until here — the trial end while trialing. */
 	paidThrough: Date
 }
@@ -89,6 +91,9 @@ export async function liveMembershipSubscriptionsByEmail(email: string): Promise
 						interval: item.price?.recurring?.interval || "month",
 						status: subscription.status,
 						cancelAtPeriodEnd: !!subscription.cancel_at_period_end,
+						...((subscription.metadata as any)?.cancelledReason
+							? { cancelledReason: String((subscription.metadata as any).cancelledReason) }
+							: {}),
 						paidThrough: subscriptionPaidThrough(subscription),
 					})
 					break
@@ -133,7 +138,13 @@ export async function findMembershipUpgrade(
 	if (!live) return null
 	const ofKey = live.filter((sub) => sub.key === key)
 	if (ofKey.some((sub) => sub.interval === "year")) return null
-	const monthly = ofKey.find((sub) => sub.interval === "month" && !sub.cancelAtPeriodEnd)
+	// A monthly plan the member has CANCELLED (still running to the end of its paid month) counts
+	// too (decided 2026-10-22): buying a yearly-Concierge ticket is a clear choice to keep Concierge,
+	// and treating them as "already a member" charged the ticket alone and let Concierge end on the
+	// date they had cancelled it for. A live, non-cancelling plan is preferred when both exist.
+	const monthly =
+		ofKey.find((sub) => sub.interval === "month" && !sub.cancelAtPeriodEnd) ||
+		ofKey.find((sub) => sub.interval === "month" && sub.cancelAtPeriodEnd)
 	if (!monthly) return null
 	return {
 		key,
@@ -165,4 +176,99 @@ export async function findOrderUpgrades(
 		if (upgrade) upgrades.push(upgrade)
 	}
 	return upgrades
+}
+
+/** `metadata.reactivatedBy` on a cancelled subscription a ticket purchase switched back on. */
+export const REACTIVATED_METADATA_KEY = "reactivatedBy"
+
+export type MembershipReactivation = {
+	key: MembershipKey
+	subscriptionId: string
+	interval: string
+	/** ISO — the date it WOULD have ended. */
+	endsAt: string
+}
+
+/**
+ * The member has CANCELLED this membership (still active until its paid period ends) and is buying
+ * a ticket that sells it — and it is not an upgrade. Then the purchase SWITCHES THE CANCELLATION
+ * BACK OFF (decided 2026-10-22): they keep the plan they have, it renews as before, and nothing
+ * extra is charged today because the current period is already paid. Without this they paid for a
+ * ticket that sells Concierge and still lost Concierge on the date they had cancelled it for.
+ *
+ * Only when EVERY live subscription to the membership is cancelling — a live, renewing one means
+ * there is nothing to undo. Returns the one that runs longest.
+ */
+export async function findMembershipReactivation(
+	email: string,
+	key: MembershipKey,
+	known?: LiveMembershipSubscription[] | null,
+): Promise<MembershipReactivation | null> {
+	const live = known === undefined ? await liveMembershipSubscriptionsByEmail(email) : known
+	if (!live) return null
+	const ofKey = live.filter((sub) => sub.key === key)
+	if (ofKey.length === 0 || ofKey.some((sub) => !sub.cancelAtPeriodEnd)) return null
+	// Never switch back on a subscription WE ended: a Premium retired because Concierge now includes
+	// it (switching it on would bill Premium twice), or a monthly plan replaced by a yearly upgrade.
+	// Only a cancellation the MEMBER made is undone.
+	const ownCancellations = ofKey.filter(
+		(sub) => sub.cancelledReason !== "included_with_concierge" && sub.cancelledReason !== UPGRADED_CANCEL_REASON,
+	)
+	if (ownCancellations.length === 0) return null
+	const longest = [...ownCancellations].sort((a, b) => b.paidThrough.getTime() - a.paidThrough.getTime())[0]
+	return { key, subscriptionId: longest.subscriptionId, interval: longest.interval, endsAt: longest.paidThrough.toISOString() }
+}
+
+/** Reactivations for an order: keys it sells that are not being charged (upgrades excluded). */
+export async function findOrderReactivations(email: string, keys: MembershipKey[]): Promise<MembershipReactivation[]> {
+	if (keys.length === 0) return []
+	const live = await liveMembershipSubscriptionsByEmail(email)
+	const found: MembershipReactivation[] = []
+	for (const key of keys) {
+		const reactivation = await findMembershipReactivation(email, key, live)
+		if (reactivation) found.push(reactivation)
+	}
+	return found
+}
+
+/**
+ * Switch the cancellation back off for every membership this order sells but did NOT charge (a
+ * charged line is a new sale or an upgrade, handled where it is started). Called once the booking
+ * is CONFIRMED — paid fulfilment, the free path, and approval — never for a pending request.
+ * Best-effort: logs, never throws; a ticket that was paid for must never fail over this.
+ */
+export async function reactivateHeldMemberships(args: {
+	email: string
+	/** Memberships the order sells (`selectionMemberships` of the stored tickets). */
+	keys: MembershipKey[]
+	/** Memberships charged on this order — never reactivated here. */
+	chargedKeys?: MembershipKey[]
+	bookingRef?: string
+}): Promise<MembershipReactivation[]> {
+	try {
+		const keys = args.keys.filter((key) => !(args.chargedKeys || []).includes(key))
+		const reactivations = await findOrderReactivations(args.email, keys)
+		if (reactivations.length === 0) return []
+		const { getStripeClient } = await import("@/lib/premium")
+		const stripe = getStripeClient()
+		const done: MembershipReactivation[] = []
+		for (const reactivation of reactivations) {
+			try {
+				const current = await stripe.subscriptions.retrieve(reactivation.subscriptionId)
+				if (!current.cancel_at_period_end) continue
+				await stripe.subscriptions.update(reactivation.subscriptionId, {
+					cancel_at_period_end: false,
+					metadata: { ...(current.metadata || {}), [REACTIVATED_METADATA_KEY]: args.bookingRef || "ticket" },
+				})
+				done.push(reactivation)
+				console.log(`[membership-upgrade] ${reactivation.key} cancellation undone by ticket purchase:`, reactivation.subscriptionId, args.bookingRef)
+			} catch (error: any) {
+				console.error(`[membership-upgrade] Couldn't undo the ${reactivation.key} cancellation:`, reactivation.subscriptionId, error?.message || error)
+			}
+		}
+		return done
+	} catch (error: any) {
+		console.error("[membership-upgrade] reactivateHeldMemberships failed:", error?.message || error)
+		return []
+	}
 }

@@ -22,6 +22,7 @@ import { NextApiRequest, NextApiResponse } from "next"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 import { addEventMember } from "@/utils/eventMembership"
+import { reactivateHeldMemberships } from "@/lib/membership-upgrade"
 
 type BodyParams = {
 	tickets: Array<{
@@ -393,6 +394,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// here any more, so a discount that actually reduced something is the only thing left
 		// that counts as the code having been used.
 		if (discountsDidWork) await incrementReferralUsage(referralCodeData?.code, String(eventId))
+
+		// A membership this free ticket sells that the guest had CANCELLED is switched back on —
+		// they keep it, renewing as before, at no charge today (`membership-upgrade.ts`).
+		await reactivateHeldMemberships({ email: user.email, keys: sellsKeys, bookingRef })
 
 		// Add the attendee as an event member — `checkoutUserId` covers guests too (their
 		// Users account is created above), `bookerUserId` is the fallback for older sessions.

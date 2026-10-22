@@ -1437,3 +1437,9 @@ Since `TICKET_SCHEMA.md` Revision 5 (2026-09-24), which covered approvals and ed
   an upgrade, that the monthly plan continues). Cancellation emails and dialogs say cancelling a
   booking does NOT cancel a membership bought with it. Browser-facing booking APIs no longer return
   subscription / customer / payment-method ids. Wording lives in `src/lib/booking-membership-display.ts`.
+- **Cancelled members buying a membership ticket (2026-10-22).** A member who cancelled (still in
+  the paid period) and buys a ticket selling that membership: yearly ticket + cancelled monthly →
+  upgrade (as above); otherwise the cancellation is undone (`cancel_at_period_end: false`,
+  `metadata.reactivatedBy = bookingRef`) once the booking is CONFIRMED, at no charge today. A
+  subscription we ended ourselves (`cancelledReason` `included_with_concierge` / `upgraded_to_yearly`)
+  is never switched back on. Must be disclosed at checkout before purchase.
