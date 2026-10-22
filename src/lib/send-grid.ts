@@ -611,7 +611,8 @@ export const sendApprovalPending = async ({ event, firstName, email, tickets = [
   }
 }
 
-// Sent to the admin inbox (SENDGRID_EMAIL_SENDER = contact@jetzyapp.com). kind:
+// Sent to the admin inbox — ADMIN_NOTIFICATION_EMAIL, the same team inbox every other admin
+// notice uses, falling back to SENDGRID_EMAIL_SENDER only when that is unset. kind:
 //   "request"  → a new attendee is awaiting approval
 //   "approved" → a request was approved & confirmed (copy for records)
 //   "expired"  → a PAID request's card hold lapsed before anyone acted. This is the only
@@ -646,13 +647,18 @@ export const sendAdminApprovalNotice = async ({
     return { success: true, message: "Email skipped in localhost mode" }
   }
   const isHost = audience === "host"
+  // The SENDER stays the verified sending address. The admin RECIPIENT is the team inbox: it used
+  // to be the sender address itself, which was a real inbox when that was contact@jetzyapp.com but
+  // became reservations@jetzy.com — mail sent to itself, and SendGrid DROPPED it (2026-10-22), so
+  // admins were never told about approval requests on their events.
   const adminEmail = (process.env.SENDGRID_EMAIL_SENDER as string)?.trim()
-  const recipient = isHost ? to?.trim() : adminEmail
+  const adminInbox = (process.env.ADMIN_NOTIFICATION_EMAIL as string)?.trim() || adminEmail
+  const recipient = isHost ? to?.trim() : adminInbox
   if (!recipient) {
     console.error(
       isHost
         ? "[sendAdminApprovalNotice] No host recipient resolved — skipping"
-        : "SENDGRID_EMAIL_SENDER not set — cannot send admin approval notice",
+        : "ADMIN_NOTIFICATION_EMAIL / SENDGRID_EMAIL_SENDER not set — cannot send admin approval notice",
     )
     return
   }
