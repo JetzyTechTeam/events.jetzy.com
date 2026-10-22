@@ -607,12 +607,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				// cancel or their card may fail before anything is — they are told on the first
 				// renewal that actually charges the new price (see `invoice.paid`), never before.
 				const isOurReprice = !!previousPriceId && (subscription.metadata as any)?.repricedFrom === previousPriceId
+				// selectmember.jetzy.com may switch a Concierge WE sold from monthly to yearly in place
+				// (agreed 2026-10-23) and sends its own confirmation; it stamps `planChangedBy` so the
+				// member isn't told twice. Everything else about the change (record, mirror) still runs.
+				const changedBySelectMember = (subscription.metadata as any)?.planChangedBy === "selectmember"
 				if (
 					previousPriceId &&
 					newPrice?.id &&
 					previousPriceId !== newPrice.id &&
 					newPrice.unit_amount != null &&
 					!isOurReprice &&
+					!changedBySelectMember &&
 					billedByJetzy(subscription, key)
 				) {
 					const recipient = await findEmailRecipientByStripeCustomerId(customerId)
