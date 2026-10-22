@@ -500,6 +500,11 @@ const formatHoldDeadline = (expiresAt?: Date | string | null) => {
  * "Includes Jetzy Premium" for a membership named by its label or receipt label — the receipt's
  * recurring lines carry the name, not the key. Null for one that includes nothing.
  */
+const includedMembershipsForLabel = (label?: string | null): Array<{ label: string; receiptLabel: string }> => {
+  const key = MEMBERSHIP_KEYS.find((k) => MEMBERSHIPS[k].receiptLabel === label || MEMBERSHIPS[k].label === label)
+  return key ? (MEMBERSHIPS[key].includes || []).map((k) => ({ label: MEMBERSHIPS[k].label, receiptLabel: MEMBERSHIPS[k].receiptLabel })) : []
+}
+
 const includesLineForLabel = (label?: string | null): string | null => {
   const key = MEMBERSHIP_KEYS.find((k) => MEMBERSHIPS[k].receiptLabel === label || MEMBERSHIPS[k].label === label)
   return key ? membershipIncludesLine(key) : null
@@ -1840,7 +1845,15 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
                       ? `Free for ${membership.trialMonths} ${membership.trialMonths === 1 ? "month" : "months"}, then $${membership.amount.toFixed(2)}/${membership.interval}`
                       : `$${membership.amount.toFixed(2)}/${membership.interval}`
                   }</td>
+                </tr>${includedMembershipsForLabel(membership.label)
+                  .map(
+                    (included) => `
+                <tr>
+                  <td style="padding: 6px 15px; color: #333;">${included.receiptLabel} <span style="color: #6b7280;">(included with ${membership.label})</span></td>
+                  <td style="padding: 6px 15px; color: #16a34a; font-weight: bold; text-align: right;">Included</td>
                 </tr>`,
+                  )
+                  .join("")}`,
                   )
                   .join("")}
                 ${recurringLines.length > 0
@@ -1857,7 +1870,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
               .map(
                 (membership) => `
             <div style="background-color: #fff8e1; border: 1px solid #f0d78c; border-radius: 8px; padding: 15px; margin-top: 15px;">
-              <p style="margin: 0 0 6px 0; color: #7a5c00; font-weight: bold;">Your ${membership.label}</p>
+              <p style="margin: 0 0 6px 0; color: #7a5c00; font-weight: bold;">Your ${[membership.label, ...includedMembershipsForLabel(membership.label).map((i) => i.label)].join(" + ")}</p>
               ${membership.replacesInterval && membership.startsAt
                 ? `<p style="margin: 0; color: #7a5c00; font-size: 14px; line-height: 1.5;">
                 This ticket moved your ${membership.label} from ${membership.replacesInterval}ly to

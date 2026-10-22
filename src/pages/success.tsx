@@ -385,14 +385,26 @@ const CheckoutSuccessPage: React.FC = () => {
 							{!!pricing.recurring?.length && (
 								<>
 									{pricing.recurring.map((membership) => (
-										<div key={membership.label} className="flex justify-between" style={{ color: "#B7860B" }}>
-											<span>{membership.label}</span>
-											<span>
-												{membership.trialMonths
-													? `Free for ${membership.trialMonths} ${membership.trialMonths === 1 ? "month" : "months"}, then $${membership.amount.toFixed(2)}/${membership.interval}`
-													: `$${membership.amount.toFixed(2)}/${membership.interval}`}
-											</span>
-										</div>
+										<React.Fragment key={membership.label}>
+											<div className="flex justify-between" style={{ color: "#B7860B" }}>
+												<span>{membership.label}</span>
+												<span>
+													{membership.trialMonths
+														? `Free for ${membership.trialMonths} ${membership.trialMonths === 1 ? "month" : "months"}, then $${membership.amount.toFixed(2)}/${membership.interval}`
+														: `$${membership.amount.toFixed(2)}/${membership.interval}`}
+												</span>
+											</div>
+											{/* Concierge includes Premium — named as its own line, not left implied. */}
+											{(membership as any).includesLine && (
+												<div className="flex justify-between text-sm">
+													<span className="text-gray-600">
+														{String((membership as any).includesLine).replace(/^Includes /, "")} membership{" "}
+														<span className="text-gray-400">(included with {membership.label})</span>
+													</span>
+													<span className="font-semibold text-green-600">Included</span>
+												</div>
+											)}
+										</React.Fragment>
 									))}
 									<div className="flex justify-between border-t pt-3">
 										<span className="text-gray-800 font-bold">{pendingApproval ? "Held today" : "Charged today"}</span>
