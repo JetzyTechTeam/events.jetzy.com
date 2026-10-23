@@ -25,6 +25,7 @@ import Stripe from "stripe"
 import zod from "zod"
 import { reactivateHeldMemberships } from "@/lib/membership-upgrade"
 import { selectionMemberships } from "@/lib/premium-bundle"
+import { sendTicketMembershipWelcome } from "@/lib/membership-subscriptions"
 
 const schema = zod.object({
 	bookingRef: zod.string().nonempty(),
@@ -547,6 +548,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 							? { replacesInterval: result.replacedInterval, startsAt: result.startsAt }
 							: {}),
 					})
+					// A NEW membership gets its own welcome email, separate from the confirmation.
+					// An upgrade is not a new membership — the confirmation explains the switch.
+					if (!result.replacedInterval) {
+						await sendTicketMembershipWelcome({
+							key: pending.key as MembershipKey,
+							email: booking.customerEmail,
+							name: booking.customerName || undefined,
+							amount: Number(pending.amount) || 0,
+							interval: pending.interval,
+							trialMonths: pending.trialMonths,
+							renewalAmount: pending.renewalAmount,
+							firstRenewalAt: result.firstRenewalAt,
+							hasCard: !!paymentMethodId,
+						})
+					}
 				}
 			} catch (subscriptionError: any) {
 				// Money is already taken and the ticket is real — confirm the booking anyway

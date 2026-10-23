@@ -15,6 +15,7 @@ import { BookingStatus, IBookings, IEvent } from "@/models/events/types"
 import { addEventMember } from "@/utils/eventMembership"
 import { reactivateHeldMemberships } from "@/lib/membership-upgrade"
 import { selectionMemberships } from "@/lib/premium-bundle"
+import { sendTicketMembershipWelcome } from "@/lib/membership-subscriptions"
 
 /**
  * Turns a completed Stripe Checkout Session into a Booking.
@@ -677,6 +678,18 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 					...(line.trialMonths ? { trialMonths: line.trialMonths } : {}),
 					...(trialEndsFromSession ? { firstRenewalAt: trialEndsFromSession } : {}),
 				})
+				// Its own welcome email, separate from the ticket receipt.
+				await sendTicketMembershipWelcome({
+					key: line.key,
+					email: metadata.email,
+					name: `${metadata.firstName || ""} ${metadata.lastName || ""}`,
+					amount: line.amount,
+					interval: line.interval,
+					trialMonths: line.trialMonths,
+					renewalAmount: line.renewalAmount,
+					firstRenewalAt: trialEndsFromSession,
+					hasCard: !!paymentMethodId,
+				})
 				continue
 			}
 
@@ -721,6 +734,21 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 							? { replacesInterval: result.replacedInterval, startsAt: result.startsAt }
 							: {}),
 					})
+					// A NEW membership gets its own welcome email, separate from the ticket receipt.
+					// An upgrade is not a new membership — the receipt explains the switch.
+					if (!result.replacedInterval) {
+						await sendTicketMembershipWelcome({
+							key: line.key,
+							email: metadata.email,
+							name: `${metadata.firstName || ""} ${metadata.lastName || ""}`,
+							amount: line.amount,
+							interval: line.interval,
+							trialMonths: line.trialMonths,
+							renewalAmount: line.renewalAmount,
+							firstRenewalAt: result.firstRenewalAt,
+							hasCard: !!paymentMethodId,
+						})
+					}
 				}
 			} catch (membershipError: any) {
 				console.error(

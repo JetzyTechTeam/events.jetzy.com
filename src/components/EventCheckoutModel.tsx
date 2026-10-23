@@ -9,6 +9,7 @@ import { buildTicketPricing } from "@/lib/ticket-pricing"
 import { membershipQuantityInSelection, premiumAllowanceMessage, resolveFreeMonthsForKey, selectionMemberships, splitBundleCharges, selectionMembershipFreeMonths, selectionMembershipInterval, ticketMemberships } from "@/lib/premium-bundle"
 import { REFERRAL_NOT_FOR_SELECTION_MESSAGE, referralAppliesToAllTickets, referralCoversTicket, referralEligibleSubtotal } from "@/lib/referral-ticket-scope"
 import { MEMBERSHIPS, isMembershipKey, membershipLabelList, sanitizeMembershipKeys, type MembershipKey } from "@/lib/memberships"
+import { membershipIncludesLine } from "@/lib/booking-membership-display"
 import { ROUTES } from "@/configs/routes"
 import { planPriceForInterval, useMembershipPlans } from "@/hooks/usePremiumPlan"
 import { usePremiumStatus } from "@/hooks/usePremiumStatus"
@@ -149,7 +150,6 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 		heldByEmail === null ? null : splitBundleCharges(selectionKeys, heldByEmail, upgradeKeysForSelection)
 	const chargedKeys = bundleSplit?.toCharge || []
 	const heldSelectionKeys = bundleSplit?.alreadyHeld || []
-	const includedKeys = bundleSplit?.included || []
 	const upgradeKeys = bundleSplit?.upgrades || []
 	// Held memberships split by WHY: their own subscription, or included with another (Concierge →
 	// Premium). A Concierge member is told Premium is included, not called a Premium subscriber.
@@ -1166,18 +1166,15 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 																						? `Charged only if your registration is approved and renews ${renewalAdverb(interval)} until canceled.`
 																						: `Charged with your ticket today and renews ${renewalAdverb(interval)} until canceled.`}
 																			</p>
+																			{/* Concierge includes Premium — said under every Concierge charge, not only when the ticket
+																			    happens to sell both, so the buyer knows Premium comes with it at no extra cost. */}
+																			{membershipIncludesLine(key) && (
+																				<p className="text-xs mt-1 font-semibold">✨ {membershipIncludesLine(key)} at no extra charge.</p>
+																			)}
 																		</div>
 																	</div>
 																)
 															})}
-
-															{/* Concierge includes Premium: named so the buyer sees they get it, and
-															    that it is not a second charge. */}
-															{includedKeys.length > 0 && (
-																<p className="text-xs" style={{ color: "#F5C518" }}>
-																	✨ Includes {membershipLabelList(includedKeys)} at no extra charge.
-																</p>
-															)}
 
 															<p className="text-xs" style={{ color: "#F5C518" }}>
 																Cancel anytime:{" "}

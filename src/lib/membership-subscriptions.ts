@@ -303,3 +303,49 @@ export async function startMembershipSubscription(args: StartMembershipArgs): Pr
 			: {}),
 	}
 }
+
+/**
+ * The membership WELCOME email for a membership bought with an event ticket — sent on its own,
+ * separate from the ticket receipt (decided 2026-10-23, reversing "one email per purchase").
+ *
+ * Only for a membership the purchase actually CREATED: never an upgrade (the receipt explains the
+ * switch), a reactivated cancellation, or one the buyer already held. selectmember.jetzy.com is
+ * asked not to send its own Concierge welcome for subscriptions events sold (they carry
+ * `metadata.membershipKey`), so the member gets exactly one.
+ *
+ * Reuses `sendMembershipStarted`, which already says the right thing for a paid first period,
+ * free months, and a cardless trial. Best-effort: never fails a booking or an approval.
+ */
+export async function sendTicketMembershipWelcome(args: {
+	key: MembershipKey
+	email?: string
+	name?: string
+	/** What was charged for the first period — 0 on free months. */
+	amount: number
+	interval?: string
+	/** Free months: the line was not charged; `renewalAmount` is what it renews at. */
+	trialMonths?: number
+	renewalAmount?: number
+	/** When the first real charge lands (the subscription's trial end). */
+	firstRenewalAt?: Date
+	/** A card is on file — decides whether free months convert or simply end. */
+	hasCard: boolean
+}): Promise<void> {
+	if (!args.email) return
+	try {
+		const { sendMembershipStarted } = await import("@/lib/send-grid")
+		const onFreeMonths = Number(args.trialMonths) > 0
+		await sendMembershipStarted({
+			email: args.email,
+			firstName: (args.name || "").trim().split(/\s+/)[0] || undefined,
+			amount: onFreeMonths ? Number(args.renewalAmount) || 0 : Number(args.amount) || 0,
+			interval: args.interval || "month",
+			label: MEMBERSHIPS[args.key].label,
+			...(onFreeMonths
+				? { trialEndsOn: args.firstRenewalAt, endsWithoutCard: !args.hasCard }
+				: { nextBillingDate: args.firstRenewalAt }),
+		})
+	} catch (error: any) {
+		console.error(`[membership] Couldn't send the ${args.key} welcome for a ticket purchase:`, error?.message || error)
+	}
+}

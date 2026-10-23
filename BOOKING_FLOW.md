@@ -1443,3 +1443,7 @@ Since `TICKET_SCHEMA.md` Revision 5 (2026-09-24), which covered approvals and ed
   `metadata.reactivatedBy = bookingRef`) once the booking is CONFIRMED, at no charge today. A
   subscription we ended ourselves (`cancelledReason` `included_with_concierge` / `upgraded_to_yearly`)
   is never switched back on. Must be disclosed at checkout before purchase.
+- **Separate membership welcome email (2026-10-23).** A membership CREATED by a ticket purchase
+  (paid or free months; not an upgrade, reactivation or already-held one) now also gets its own
+  welcome email, sent when the subscription is started (instant purchase or approval). The ticket
+  receipt is unchanged. SelectMember does not send a Concierge welcome for subscriptions we sold.

@@ -34,6 +34,7 @@ import { stripHtml } from "@/utils/text";
 import EventDescription from "@/components/events/EventDescription";
 import { usePremiumStatus } from "@/hooks/usePremiumStatus";
 import { useSession } from "next-auth/react";
+import { membershipIncludesLine } from "@/lib/booking-membership-display";
 import { usePremiumSubscriptionReturn } from "@/hooks/usePremiumSubscriptionReturn";
 import { useRouter } from "next/router";
 import { useAnalytics } from "@/hooks/useAnalytics";
@@ -691,7 +692,7 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
                     {isUpgrade
                       ? `+ ${plan?.name || MEMBERSHIPS[key].label} — switch from monthly to ${price?.label || "yearly"}, starting when your paid month ends; confirmed at checkout`
                       : price?.label
-                        ? `+ ${plan?.name} — ${freeLead}${price.label}, confirmed at checkout`
+                        ? `+ ${plan?.name}${membershipIncludesLine(key) ? ` (${membershipIncludesLine(key)!.replace(/^Includes/, "includes")})` : ""} — ${freeLead}${price.label}, confirmed at checkout`
                         : `+ ${plan?.name || key} membership — confirmed at checkout`}
                   </p>
                 );
