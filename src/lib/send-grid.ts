@@ -500,6 +500,16 @@ const formatHoldDeadline = (expiresAt?: Date | string | null) => {
  * "Includes Jetzy Premium" for a membership named by its label or receipt label — the receipt's
  * recurring lines carry the name, not the key. Null for one that includes nothing.
  */
+/**
+ * "Jetzy Premium membership" / "Full Concierge Membership" for a membership email's product label.
+ * Every lifecycle email wrote `${product} membership`, which read "Full Concierge Membership
+ * membership" for Concierge (QA, 2026-10-23). The registry's receipt label is the right name.
+ */
+const membershipName = (product: string): string => {
+  const key = MEMBERSHIP_KEYS.find((k) => MEMBERSHIPS[k].label === product || MEMBERSHIPS[k].receiptLabel === product)
+  return key ? MEMBERSHIPS[key].receiptLabel : `${product} membership`
+}
+
 const includedMembershipsForLabel = (label?: string | null): Array<{ label: string; receiptLabel: string }> => {
   const key = MEMBERSHIP_KEYS.find((k) => MEMBERSHIPS[k].receiptLabel === label || MEMBERSHIPS[k].label === label)
   return key ? (MEMBERSHIPS[key].includes || []).map((k) => ({ label: MEMBERSHIPS[k].label, receiptLabel: MEMBERSHIPS[k].receiptLabel })) : []
@@ -3663,11 +3673,11 @@ export const sendMembershipRenewed = async ({
 		await sgMail.send({
 			to: email,
 			from: mailFrom(),
-			subject: `Your ${product} membership renewed — ${money(amount)}`,
+			subject: `Your ${membershipName(product)} renewed — ${money(amount)}`,
 			html: membershipShell(`
         <p style="color:#1F2937;font-size:16px;line-height:1.6;margin:0;">Hi ${name},</p>
         <p style="color:#1F2937;font-size:16px;line-height:1.6;margin:15px 0;">
-          Your ${product} membership has renewed. We've charged <strong>${money(amount)}</strong> for another ${interval}.
+          Your ${membershipName(product)} has renewed. We've charged <strong>${money(amount)}</strong> for another ${interval}.
         </p>
         ${
 					repriceLine
@@ -3676,7 +3686,7 @@ export const sendMembershipRenewed = async ({
 				}
         ${nextLine ? `<p style="color:#4B5563;font-size:15px;line-height:1.6;margin:15px 0;">${nextLine}</p>` : ""}
       `, "#F5C518"),
-			text: `Hi ${name},\n\nYour ${product} membership has renewed. We've charged ${money(amount)} for another ${interval}.\n${repriceLine ? `\n${repriceLine}\n` : ""}${nextLine}\n\nManage or cancel any time from Manage membership in your account menu.\n\n— Team Jetzy`,
+			text: `Hi ${name},\n\nYour ${membershipName(product)} has renewed. We've charged ${money(amount)} for another ${interval}.\n${repriceLine ? `\n${repriceLine}\n` : ""}${nextLine}\n\nManage or cancel any time from Manage membership in your account menu.\n\n— Team Jetzy`,
 		})
 		console.log(`✅ Membership renewal email sent to: ${email}`)
 	} catch (error) {
@@ -3742,7 +3752,7 @@ export const sendMembershipStarted = async ({
 
 	const opening = chargesOn
 		? `Your ${product} free trial is now active.`
-		: `Your ${product} membership is now active.`
+		: `Your ${membershipName(product)} is now active.`
 
 	const benefits =
 		"You now have access to <strong>Premium benefits, exclusive events, curated networking, customized matches, ability to host events with other members and special travel &amp; lifestyle offers</strong> available to Jetzy Premium members."
@@ -4024,7 +4034,7 @@ export const sendMembershipPlanChanged = async ({
 			html: membershipShell(`
         <p style="color:#1F2937;font-size:16px;line-height:1.6;margin:0;">Hi ${name},</p>
         <p style="color:#1F2937;font-size:16px;line-height:1.6;margin:15px 0;">
-          Your ${product} membership has moved to <strong>${money(amount)} every ${interval}</strong>.
+          Your ${membershipName(product)} has moved to <strong>${money(amount)} every ${interval}</strong>.
           ${from}
         </p>
         <p style="color:#4B5563;font-size:15px;line-height:1.6;margin:15px 0;">
@@ -4033,7 +4043,7 @@ export const sendMembershipPlanChanged = async ({
           exact figures.
         </p>
       `, "#F5C518"),
-			text: `Hi ${name},\n\nYour ${product} membership has moved to ${money(amount)} every ${interval}. ${stripHtml(from)}\n\n${renewsOn ? `Your next payment is due on ${renewsOn}. ` : ""}Stripe has applied any credit or charge for the part of your old plan you had already paid for.\n\n— Team Jetzy`,
+			text: `Hi ${name},\n\nYour ${membershipName(product)} has moved to ${money(amount)} every ${interval}. ${stripHtml(from)}\n\n${renewsOn ? `Your next payment is due on ${renewsOn}. ` : ""}Stripe has applied any credit or charge for the part of your old plan you had already paid for.\n\n— Team Jetzy`,
 		})
 		console.log(`✅ Membership plan-change email sent to: ${email}`)
 	} catch (error) {
@@ -4058,7 +4068,7 @@ export const sendMembershipPaymentFailed = async ({ email, firstName, amount, in
 			html: membershipShell(`
         <p style="color:#1F2937;font-size:16px;line-height:1.6;margin:0;">Hi ${name},</p>
         <p style="color:#1F2937;font-size:16px;line-height:1.6;margin:15px 0;">
-          We couldn't take the <strong>${money(amount)}</strong> payment for your ${product} membership.
+          We couldn't take the <strong>${money(amount)}</strong> payment for your ${membershipName(product)}.
           This usually means the card on file has expired or was declined.
         </p>
         <div style="background-color:#FEF2F2;border:1px solid #FCA5A5;border-radius:8px;padding:15px;margin:20px 0;">
@@ -4076,7 +4086,7 @@ export const sendMembershipPaymentFailed = async ({ email, firstName, amount, in
           Sign in and choose <strong>Manage membership</strong> from your account menu to update your payment details.
         </p>
       `, "#DC2626"),
-			text: `Hi ${name},\n\nWe couldn't take the ${money(amount)} payment for your ${product} membership. The card on file may have expired or been declined.\n\nWe'll retry over the next few days. If the payment still doesn't go through, your membership will end.\n\nSign in at ${baseUrl} and choose "Manage membership" to update your card.\n\n— Team Jetzy`,
+			text: `Hi ${name},\n\nWe couldn't take the ${money(amount)} payment for your ${membershipName(product)}. The card on file may have expired or been declined.\n\nWe'll retry over the next few days. If the payment still doesn't go through, your membership will end.\n\nSign in at ${baseUrl} and choose "Manage membership" to update your card.\n\n— Team Jetzy`,
 		})
 		console.log(`✅ Membership payment-failed email sent to: ${email}`)
 	} catch (error) {
@@ -4182,10 +4192,10 @@ export const sendMembershipCancelled = async ({
 
 	if (!useWinBack) {
 		const headline = alreadyEnded
-			? `Your ${product} membership has ended.`
+			? `Your ${membershipName(product)} has ended.`
 			: endsOnLabel
-				? `Your ${product} membership is set to end on <strong>${endsOnLabel}</strong>.`
-				: `Your ${product} membership is set to end at the close of your current billing period.`
+				? `Your ${membershipName(product)} is set to end on <strong>${endsOnLabel}</strong>.`
+				: `Your ${membershipName(product)} is set to end at the close of your current billing period.`
 
 		const body = alreadyEnded
 			? "You won't be charged again. Any tickets you've already bought are unaffected and remain valid."
@@ -4195,7 +4205,7 @@ export const sendMembershipCancelled = async ({
 			await sgMail.send({
 				to: email,
 				from: mailFrom(),
-				subject: alreadyEnded ? `Your ${product} membership has ended` : `Your ${product} membership is scheduled to end`,
+				subject: alreadyEnded ? `Your ${membershipName(product)} has ended` : `Your ${membershipName(product)} is scheduled to end`,
 				html: membershipShell(`
         <p style="color:#1F2937;font-size:16px;line-height:1.6;margin:0;">Hi ${name},</p>
         <p style="color:#1F2937;font-size:16px;line-height:1.6;margin:15px 0;">${headline}</p>
@@ -4218,7 +4228,7 @@ export const sendMembershipCancelled = async ({
 	const period = onTrial ? "free trial" : "current billing period"
 	const ends = onTrial ? "your trial ends" : "your membership ends"
 
-	const headline = `Your ${product} membership has been canceled.`
+	const headline = `Your ${membershipName(product)} has been canceled.`
 
 	const throughLine = alreadyEnded
 		? null
@@ -4242,7 +4252,7 @@ export const sendMembershipCancelled = async ({
 		await sgMail.send({
 			to: email,
 			from: mailFrom(),
-			subject: `Your ${product} membership has been canceled`,
+			subject: `Your ${membershipName(product)} has been canceled`,
 			html: membershipShell(`
         <p style="color:#1F2937;font-size:16px;line-height:1.6;margin:0;">Hi ${name},</p>
         <p style="color:#1F2937;font-size:16px;line-height:1.6;margin:15px 0;">${headline}</p>
