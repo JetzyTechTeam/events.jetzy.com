@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
 import axios from 'axios'
+import { cancellationMembershipNote } from '@/lib/booking-membership-display'
 
 export default function CancelBookingPage() {
 	const router = useRouter()
@@ -150,6 +151,9 @@ export default function CancelBookingPage() {
 							<p className="text-red-700 text-sm">
 								${Number(preview.moneyAmount || 0).toFixed(2)} was paid for this booking and will NOT be returned to you.
 							</p>
+							{cancellationMembershipNote(preview.memberships || [], 'captured') && (
+								<p className="text-red-700 text-sm mt-2">{cancellationMembershipNote(preview.memberships || [], 'captured')}</p>
+							)}
 						</div>
 					)}
 					{preview?.moneyState === 'unknown' && (
@@ -159,6 +163,9 @@ export default function CancelBookingPage() {
 								If a payment of ${Number(preview.moneyAmount || 0).toFixed(2)} was made for this booking, it will NOT be
 								returned to you.
 							</p>
+							{cancellationMembershipNote(preview.memberships || [], 'unknown') && (
+								<p className="text-red-700 text-sm mt-2">{cancellationMembershipNote(preview.memberships || [], 'unknown')}</p>
+							)}
 						</div>
 					)}
 					{preview?.moneyState === 'hold' && (
@@ -167,6 +174,9 @@ export default function CancelBookingPage() {
 								You have not been charged. The ${Number(preview.moneyAmount || 0).toFixed(2)} hold on your card will be
 								released immediately.
 							</p>
+							{cancellationMembershipNote(preview.memberships || [], 'hold') && (
+								<p className="text-blue-700 text-sm mt-2">{cancellationMembershipNote(preview.memberships || [], 'hold')}</p>
+							)}
 						</div>
 					)}
 

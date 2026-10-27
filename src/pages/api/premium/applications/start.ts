@@ -9,6 +9,8 @@ import { findMembershipRecord } from "@/lib/premium"
 import { getApplicationSettings, missingRequiredAnswers } from "@/lib/premium-application"
 import { validateApplicationAnswers } from "@/lib/profile-links"
 import zod from "zod"
+import { PREMIUM_INCLUDED_MESSAGE, isMembershipEntitled } from "@/lib/memberships"
+import { heldMemberships } from "@/lib/premium-eligibility"
 
 const schema = zod.object({
 	interval: zod.enum(["month", "year"]).default("month"),
@@ -40,6 +42,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	const record = await findMembershipRecord(userId, email)
 	if (record?.doc?.premiumSubscription?.active) {
 		return sendResponse(res, { alreadySubscribed: true }, "You already have an active Jetzy Premium subscription.", false, ResCode.BAD_REQUEST)
+	}
+	// Full Concierge includes Premium — nothing to apply for.
+	if (isMembershipEntitled(record?.doc, "premium") || (await heldMemberships(email, ["premium"])).includes("premium")) {
+		return sendResponse(res, { alreadySubscribed: true, includedWith: "concierge" }, PREMIUM_INCLUDED_MESSAGE, false, ResCode.BAD_REQUEST)
 	}
 
 	const parsed = schema.safeParse(req.body)

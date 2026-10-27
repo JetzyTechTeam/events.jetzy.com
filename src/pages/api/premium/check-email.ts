@@ -2,10 +2,11 @@ import { sendResponse } from "@Jetzy/lib/helpers"
 import { ResCode } from "@Jetzy/lib/responseCodes"
 import type { NextApiRequest, NextApiResponse } from "next"
 import { Types } from "mongoose"
-import { heldMemberships } from "@/lib/premium-eligibility"
-import { eventHasAnyPremiumTicket, selectionMemberships } from "@/lib/premium-bundle"
+import { membershipHoldings } from "@/lib/premium-eligibility"
+import { eventHasAnyPremiumTicket, selectionMemberships, ticketMembershipInterval, ticketMemberships } from "@/lib/premium-bundle"
+import { findOrderReactivations, findOrderUpgrades } from "@/lib/membership-upgrade"
 import { getMembershipTicketAllowances } from "@/lib/premium-ticket-limit"
-import { MEMBERSHIP_KEYS } from "@/lib/memberships"
+import { MEMBERSHIPS, MEMBERSHIP_KEYS, type MembershipKey } from "@/lib/memberships"
 
 /**
  * "Does this email already have Jetzy Premium?"
@@ -83,7 +84,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		const { Events } = await import("@/models/events")
 		const event = await Events.findOne({ _id: new Types.ObjectId(eventId), isDeleted: false })
-			.select("tickets.includesPremium tickets.memberships")
+			.select("tickets.includesPremium tickets.memberships tickets.membershipInterval tickets.isDeleted")
 			.lean()
 
 		if (!event) {
@@ -101,10 +102,33 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// Scoped to what this event actually sells, so an event with no Concierge ticket never
 		// sends a request to SelectMember's API from this unauthenticated endpoint.
 		const eventKeys = selectionMemberships(((event as any).tickets || []).map((t: any) => ({ ...t, isSelected: true })))
-		const [held, allowances] = await Promise.all([
-			heldMemberships(String(email), eventKeys),
+		const [{ held, own, includedWith }, allowances] = await Promise.all([
+			membershipHoldings(String(email), eventKeys),
 			getMembershipTicketAllowances(String(eventId), String(email)),
 		])
+
+		// Memberships this address pays for MONTHLY that a YEARLY ticket on this event would move
+		// onto yearly billing (`membership-upgrade.ts`). The modal applies it only when the SELECTED
+		// ticket is yearly. Keys only — no dates or ids leave this unauthenticated endpoint; the
+		// receipt states the exact dates once the purchase is made.
+		const yearlyKeys = Array.from(
+			new Set(
+				((event as any).tickets || [])
+					.filter((t: any) => !t?.isDeleted && ticketMembershipInterval(t) === "year")
+					.flatMap((t: any) => ticketMemberships(t)),
+			),
+		) as MembershipKey[]
+		const upgradeCandidates = yearlyKeys.filter((key) => own.includes(key) && MEMBERSHIPS[key].upgradeOnTicket)
+		const upgrades =
+			upgradeCandidates.length > 0
+				? (await findOrderUpgrades(String(email), upgradeCandidates, "year")).map((upgrade) => upgrade.key)
+				: []
+		// Memberships this address has CANCELLED (still running to the end of the paid period) that a
+		// ticket here would switch back on. Disclosed before purchase — it restarts recurring billing.
+		// Key + billing period only; no dates or ids from this unauthenticated endpoint.
+		const reactivations = (await findOrderReactivations(String(email), eventKeys.filter((key) => own.includes(key)))).map(
+			(r) => ({ key: r.key, interval: r.interval }),
+		)
 
 		return sendResponse(
 			res,
@@ -112,6 +136,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				// Which memberships this address already has. The modal subtracts these from
 				// what the ticket sells to decide what it will actually be charged for.
 				held,
+				// For a membership held only because another includes it — `{ premium: "concierge" }`
+				// for a Concierge member — so the modal can say where it comes from.
+				includedWith,
+				upgrades,
+				reactivations,
 				sellsPremium: true,
 				// How many tickets of each membership this address may still buy FOR THIS EVENT.
 				allowances: MEMBERSHIP_KEYS.reduce((acc, key) => {

@@ -7,6 +7,7 @@ import { NextApiRequest, NextApiResponse } from "next"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 import { heldMemberships } from "@/lib/premium-eligibility"
+import { findOrderUpgrades, type MembershipUpgrade } from "@/lib/membership-upgrade"
 import { eventUrl as buildEventUrl } from "@/lib/event-slug"
 import {
 	premiumAllowanceMessage,
@@ -23,7 +24,7 @@ import {
 } from "@/lib/premium-bundle"
 import { getMembershipTicketAllowances } from "@/lib/premium-ticket-limit"
 import { findMembershipPriceForInterval, getMembershipPrice, hasActiveMembershipSubscription, resolveStripeCustomerForUser } from "@/lib/premium"
-import { MEMBERSHIPS, membershipLabelList, type MembershipKey } from "@/lib/memberships"
+import { MEMBERSHIPS, membershipLabelList, membershipsIncluding, type MembershipKey } from "@/lib/memberships"
 import { validateReferralCodeForEvent, type ReferralCodeData } from "@/lib/referral-validation"
 import { REFERRAL_NOT_FOR_SELECTION_MESSAGE, referralCoversTicket, referralEligibleSubtotal } from "@/lib/referral-ticket-scope"
 import Stripe from "stripe"
@@ -288,7 +289,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		//   mode "bundle"         → at least one membership still to sell. `plan.toCharge`
 		//                           names exactly which, so holding one of two still pays for
 		//                           the other.
-		let bundlePlan: BundlePlan = { selected: [], toCharge: [], alreadyHeld: [], mode: "none" }
+		let bundlePlan: BundlePlan = { selected: [], toCharge: [], alreadyHeld: [], included: [], upgrades: [], mode: "none" }
+		// Held memberships this ticket moves onto a LONGER billing period (monthly Concierge →
+		// yearly) — charged like a new sale, replacing the old subscription. `membership-upgrade.ts`.
+		let orderUpgrades: MembershipUpgrade[] = []
 
 		// Resolve the flags from the EVENT record, not the request body — a crafted body could
 		// otherwise drop the membership and buy a bundled ticket at the plain ticket price.
@@ -298,9 +302,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			const storedSelection = tickets.map((t) => storedTicketFor(t.id) as any).filter(Boolean)
 			// Scope the membership lookup to what this order actually sells, so an ordinary
 			// ticket never reaches out to SelectMember's API.
+			const sellsKeys = selectionMemberships(storedSelection)
+			const heldKeys = await heldMemberships(user.email, sellsKeys)
+			// Only a membership the buyer already holds can be an upgrade; asked of Stripe, by email,
+			// across every customer — a monthly subscription sold by selectmember.jetzy.com counts.
+			const upgradeCandidates = sellsKeys.filter((key) => heldKeys.includes(key) && MEMBERSHIPS[key].upgradeOnTicket)
+			if (upgradeCandidates.length > 0) {
+				const bundling = storedSelection.find((t: any) => ticketIncludesMembership(t))
+				orderUpgrades = await findOrderUpgrades(user.email, upgradeCandidates, ticketMembershipInterval(bundling as any))
+			}
 			bundlePlan = resolveBundlePlan(
 				storedSelection,
-				await heldMemberships(user.email, selectionMemberships(storedSelection)),
+				heldKeys,
+				orderUpgrades.map((upgrade) => upgrade.key),
 			)
 			console.log("[checkout/index] Bundle plan:", bundlePlan)
 
@@ -629,6 +643,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			trialMonths?: number
 			/** What it renews at once the free months run out — `amount` is 0 on those. */
 			renewalAmount?: number
+			/**
+			 * This line UPGRADES an existing monthly subscription to yearly. The new subscription
+			 * starts paying when `paidThrough` ends; the old one is stopped then. Never with free months.
+			 */
+			upgradeFrom?: { subscriptionId: string; customerId: string; paidThrough: string }
 		}
 		let membershipLines: MembershipLine[] = []
 		let membershipExtras: Partial<Stripe.Checkout.SessionCreateParams> = {}
@@ -672,8 +691,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				// is a cache that can lag.
 				const stillOwed: MembershipKey[] = []
 				for (const key of bundlePlan.toCharge) {
-					if (await hasActiveMembershipSubscription(customerId, key)) {
-						console.warn(`[checkout/index] Customer already subscribed to ${key}; not charging for it:`, customerId)
+					// An upgrade is charged precisely BECAUSE the buyer holds this membership (monthly).
+					// It was checked against Stripe a moment ago, across every customer with this email,
+					// including that no yearly subscription exists — the per-customer check below would
+					// only see the monthly one and refuse it.
+					if (bundlePlan.upgrades.includes(key)) {
+						stillOwed.push(key)
+						continue
+					}
+					// A membership that includes this one counts as holding it — an active Concierge
+					// subscription means Premium is already theirs (`MEMBERSHIPS.concierge.includes`).
+					let subscribedVia: MembershipKey | null = null
+					for (const candidate of [key, ...membershipsIncluding(key)]) {
+						if (await hasActiveMembershipSubscription(customerId, candidate)) {
+							subscribedVia = candidate
+							break
+						}
+					}
+					if (subscribedVia) {
+						console.warn(`[checkout/index] Customer already holds ${key} (via ${subscribedVia}); not charging for it:`, customerId)
 					} else {
 						stillOwed.push(key)
 					}
@@ -681,7 +717,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				bundlePlan = {
 					...bundlePlan,
 					toCharge: stillOwed,
-					alreadyHeld: bundlePlan.selected.filter((key) => !stillOwed.includes(key)),
+					alreadyHeld: bundlePlan.selected.filter((key) => !stillOwed.includes(key) && !bundlePlan.included.includes(key)),
+					upgrades: bundlePlan.upgrades.filter((key) => stillOwed.includes(key)),
 					mode: stillOwed.length > 0 ? "bundle" : "already-member",
 				}
 
@@ -704,8 +741,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					// metadata so the subscription created later uses the exact rate quoted here.
 					//
 					// Falls back to the product default when this membership isn't sold at the
-					// ticket's interval — Full Concierge has no annual price, and a host who set a
-					// ticket to annual meant Premium. Unlike direct checkout, where a missing
+					// ticket's interval (both Premium and Concierge sell annually now, Concierge
+					// through its separate Annual product). Unlike direct checkout, where a missing
 					// interval is an error because the BUYER chose it, here the host did, and the
 					// line carries whatever price was actually resolved so the recurring
 					// disclosure and the eventual subscription both stay truthful.
@@ -732,11 +769,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 						const stored = storedTicketFor(t.id)
 						return !!stored && ticketMemberships(stored as any).includes(key) && referralCoversTicket(referralCodeData, chargeRows[index]?.id)
 					})
-					const freeMonths = resolveFreeMonthsForKey(
-						key,
-						ticketFreeMonths,
-						referralCoversKey ? referralCodeData?.freeMembershipMonths || 0 : 0,
-					)
+					// An upgrader pays the yearly price — free months are a welcome offer for NEW
+					// members, never for someone already paying (CEO, 2026-10-19).
+					const upgrade = orderUpgrades.find((u) => u.key === key)
+					const freeMonths = upgrade
+						? 0
+						: resolveFreeMonthsForKey(key, ticketFreeMonths, referralCoversKey ? referralCodeData?.freeMembershipMonths || 0 : 0)
 
 					membershipLines.push({
 						key,
@@ -745,6 +783,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 						priceId: price.id,
 						interval: price.recurring?.interval || "month",
 						...(freeMonths > 0 ? { trialMonths: freeMonths, renewalAmount: price.unit_amount / 100 } : {}),
+						...(upgrade
+							? { upgradeFrom: { subscriptionId: upgrade.subscriptionId, customerId: upgrade.customerId, paidThrough: upgrade.paidThrough } }
+							: {}),
 					})
 				}
 
@@ -764,7 +805,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 									currency: line.currency,
 									unit_amount: Math.round(line.amount * 100),
 									product_data: {
-										name: `${MEMBERSHIPS[line.key].label} — first ${line.interval}`,
+										name: line.upgradeFrom
+											? `${MEMBERSHIPS[line.key].label} — first ${line.interval} (replaces your monthly plan)`
+											: `${MEMBERSHIPS[line.key].label} — first ${line.interval}`,
 										description: requiresApproval
 											? "Starts only if the host approves your request."
 											: "Renews automatically. Cancel any time.",

@@ -15,6 +15,8 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 import { NextApiRequest, NextApiResponse } from "next"
 import Stripe from "stripe"
+import { PREMIUM_INCLUDED_MESSAGE, isMembershipEntitled } from "@/lib/memberships"
+import { heldMemberships } from "@/lib/premium-eligibility"
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
 	if (req.method !== "POST") {
@@ -43,6 +45,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		if (doc.premiumSubscription?.active) {
 			return sendResponse(res, { alreadySubscribed: true }, "You already have an active Jetzy Premium subscription.", false, ResCode.BAD_REQUEST)
+		}
+		// Full Concierge includes Premium — never sell it on top. `heldMemberships` also asks
+		// selectmember.jetzy.com, where most Concierge members live with no record here.
+		if (isMembershipEntitled(doc, "premium") || (email && (await heldMemberships(email, ["premium"])).includes("premium"))) {
+			return sendResponse(res, { alreadySubscribed: true, includedWith: "concierge" }, PREMIUM_INCLUDED_MESSAGE, false, ResCode.BAD_REQUEST)
 		}
 
 		const stripe = getStripeClient()

@@ -6,6 +6,7 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 import { NextApiRequest, NextApiResponse } from "next"
 import Stripe from "stripe"
+import { membershipEntitlementSource } from "@/lib/memberships"
 
 /**
  * What is this member actually paying, and when does it renew?
@@ -41,6 +42,32 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const userId = (session.user as any)?._id || (session.user as any)?.id
 		const record = await findMembershipRecord(userId, (session.user as any)?.email)
 		const stored = record?.doc?.premiumSubscription
+
+		// Premium INCLUDED with another membership (Full Concierge) — there is no Premium price to
+		// describe and nothing to switch. The card says what it comes with instead.
+		const premiumVia = membershipEntitlementSource(record?.doc, "premium")
+		if (premiumVia && premiumVia !== "premium") {
+			return sendResponse(
+				res,
+				{
+					active: true,
+					includedWith: premiumVia,
+					interval: null,
+					unitAmount: null,
+					currency: null,
+					priceId: null,
+					renewsAt: null,
+					cancelAtPeriodEnd: false,
+					status: null,
+					trialEnd: null,
+					hasPaymentMethod: false,
+					canSwitch: false,
+				},
+				"Subscription plan fetched.",
+				true,
+				ResCode.OK,
+			)
+		}
 
 		// Not a member, or a legacy record with no subscription id — the honest answer is that we
 		// can't name a plan. The card falls back to "Manage in Stripe" alone.

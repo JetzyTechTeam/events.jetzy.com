@@ -13,6 +13,7 @@ import { useBookingEdit } from "@/components/console/approvals/useBookingEdit"
 import { bookingMoneyAmount, bookingMoneyState, MoneyState } from "@/lib/booking-cancellation"
 import { bookingTicketCount } from "@/lib/booking-approval"
 import { isRequestAdjusted, plannedTickets } from "@/lib/booking-request-edit"
+import { bookingMemberships } from "@/lib/booking-memberships"
 
 type Props = {
 	rows: Booking[]
@@ -391,6 +392,7 @@ const BookingTableComponent: React.FC<Props> = ({ rows, exportable, checkInMap, 
 				isLoading={!!cancellingRef}
 				moneyState={(cancelTarget ? bookingMoneyState(cancelTarget as any) : "free") as MoneyState}
 				amount={cancelTarget ? bookingMoneyAmount(cancelTarget as any) : 0}
+				memberships={bookingMemberships((cancelTarget as any)?.payment) as any}
 				asManager
 				guestName={cancelTarget?.customerName}
 			/>

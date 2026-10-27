@@ -60,7 +60,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			{ isDeleted: false, $or: orClauses },
 			// Stripe identifiers are never exposed to a browser — same hardening as
 			// get-bookings.ts and event-bookings.ts.
-			{ "payment.paymentIntentId": 0, "payment.checkoutSessionId": 0 },
+			{
+				"payment.paymentIntentId": 0,
+				"payment.checkoutSessionId": 0,
+				"payment.subscriptionId": 0,
+				"payment.paymentMethodId": 0,
+				"payment.memberships.subscriptionId": 0,
+				"payment.memberships.upgradeFrom.subscriptionId": 0,
+				"payment.memberships.upgradeFrom.customerId": 0,
+			},
 		)
 			.sort({ createdAt: -1 })
 			.limit(MAX_BOOKINGS)

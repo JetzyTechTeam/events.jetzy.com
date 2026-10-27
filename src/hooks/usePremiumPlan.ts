@@ -206,6 +206,11 @@ export type CurrentMembershipPlan = {
 	hasPaymentMethod: boolean
 	/** Whether to offer the switch. Server-decided: monthly members only. */
 	canSwitch: boolean
+	/**
+	 * Set when Premium comes INCLUDED with another membership ("concierge") rather than from a
+	 * Premium subscription of its own — there is no Premium price or renewal to show.
+	 */
+	includedWith: string | null
 }
 
 export const currentMembershipPlanQueryKey = ["membership-plan", "premium", "current"]
@@ -234,6 +239,7 @@ export function useCurrentMembershipPlan(enabled = true) {
 				trialEnd: string | null
 				hasPaymentMethod: boolean
 				canSwitch: boolean
+				includedWith?: string | null
 			}
 		},
 		enabled,
@@ -254,6 +260,7 @@ export function useCurrentMembershipPlan(enabled = true) {
 		trialEnd: data?.trialEnd || null,
 		hasPaymentMethod: !!data?.hasPaymentMethod,
 		canSwitch: !!data?.canSwitch,
+		includedWith: data?.includedWith || null,
 	}
 
 	return { currentPlan: plan, isLoading: enabled && query.isLoading }

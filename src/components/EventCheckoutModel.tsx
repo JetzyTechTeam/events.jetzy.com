@@ -6,9 +6,10 @@ import Spinner from "./misc/Spinner"
 import { sendGAEvent } from "@next/third-parties/google"
 import { AUTH_HOLD_DAYS, selectionRequiresApproval } from "@/lib/ticket-approval"
 import { buildTicketPricing } from "@/lib/ticket-pricing"
-import { membershipQuantityInSelection, premiumAllowanceMessage, resolveFreeMonthsForKey, selectionMemberships, selectionMembershipFreeMonths, selectionMembershipInterval, ticketMemberships } from "@/lib/premium-bundle"
+import { membershipQuantityInSelection, premiumAllowanceMessage, resolveFreeMonthsForKey, selectionMemberships, splitBundleCharges, selectionMembershipFreeMonths, selectionMembershipInterval, ticketMemberships } from "@/lib/premium-bundle"
 import { REFERRAL_NOT_FOR_SELECTION_MESSAGE, referralAppliesToAllTickets, referralCoversTicket, referralEligibleSubtotal } from "@/lib/referral-ticket-scope"
-import { MEMBERSHIPS, membershipLabelList, sanitizeMembershipKeys, type MembershipKey } from "@/lib/memberships"
+import { MEMBERSHIPS, isMembershipKey, membershipLabelList, sanitizeMembershipKeys, type MembershipKey } from "@/lib/memberships"
+import { membershipIncludesLine } from "@/lib/booking-membership-display"
 import { ROUTES } from "@/configs/routes"
 import { planPriceForInterval, useMembershipPlans } from "@/hooks/usePremiumPlan"
 import { usePremiumStatus } from "@/hooks/usePremiumStatus"
@@ -125,6 +126,12 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 	const selectionSellsPremium = selectionKeys.length > 0
 	// null = not checked yet (or the address just changed) — distinct from a checked "none".
 	const [heldByEmail, setHeldByEmail] = useState<MembershipKey[] | null>(null)
+	// For memberships held only because another includes them — `{ premium: "concierge" }`.
+	const [includedWithByEmail, setIncludedWithByEmail] = useState<Partial<Record<MembershipKey, MembershipKey>>>({})
+	// Memberships this address pays for MONTHLY that a yearly ticket moves onto yearly billing.
+	const [upgradesByEmail, setUpgradesByEmail] = useState<MembershipKey[]>([])
+	// Memberships this address has CANCELLED that this purchase switches back on (renewing again).
+	const [reactivationsByEmail, setReactivationsByEmail] = useState<Array<{ key: MembershipKey; interval: string }>>([])
 	const [checkingPremiumEmail, setCheckingPremiumEmail] = useState(false)
 	const premiumEmailTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 	// Monotonic id so a slow reply for a previous address can't overwrite a newer verdict.
@@ -132,8 +139,22 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 	const { plans: membershipPlans } = useMembershipPlans(selectionKeys)
 	// Charged only for the memberships this ticket sells that this address doesn't already
 	// hold — so a buyer with one of two still pays for the other.
-	const chargedKeys = heldByEmail === null ? [] : selectionKeys.filter((key) => !heldByEmail.includes(key))
-	const heldSelectionKeys = heldByEmail === null ? [] : selectionKeys.filter((key) => heldByEmail.includes(key))
+	// `splitBundleCharges` is the server's rule too — including "Concierge includes Premium", so a
+	// ticket selling both bills Concierge only.
+	// An upgrade applies only when the SELECTED ticket sells the membership yearly — the same
+	// ticket rule `api/checkout` prices by. `selectionMembershipInterval` is the ticket's setting;
+	// the server additionally confirms a yearly price exists.
+	const selectionIsYearly = selectionMembershipInterval(tickets as any) === "year"
+	const upgradeKeysForSelection = selectionIsYearly ? upgradesByEmail : []
+	const bundleSplit =
+		heldByEmail === null ? null : splitBundleCharges(selectionKeys, heldByEmail, upgradeKeysForSelection)
+	const chargedKeys = bundleSplit?.toCharge || []
+	const heldSelectionKeys = bundleSplit?.alreadyHeld || []
+	const upgradeKeys = bundleSplit?.upgrades || []
+	// Held memberships split by WHY: their own subscription, or included with another (Concierge →
+	// Premium). A Concierge member is told Premium is included, not called a Premium subscriber.
+	const ownHeldKeys = heldSelectionKeys.filter((key) => !includedWithByEmail[key])
+	const viaHeldKeys = heldSelectionKeys.filter((key) => !!includedWithByEmail[key])
 	// How many more membership tickets this address may buy for THIS event, per product.
 	// null = not checked.
 	const [allowanceRemaining, setAllowanceRemaining] = useState<Record<string, number> | null>(null)
@@ -168,8 +189,9 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 	// A scoped code only gives its months through a covered ticket that sells this membership.
 	const referralCoversKey = (key: MembershipKey) =>
 		tickets.some((t) => ticketMemberships(t as any).includes(key) && referralCoversTicket(referralScope, (t as any).id))
+	// An upgrader pays the yearly price — free months are for NEW members (CEO, 2026-10-19).
 	const freeMonthsFor = (key: MembershipKey) =>
-		chargedKeys.includes(key)
+		chargedKeys.includes(key) && !upgradeKeys.includes(key)
 			? resolveFreeMonthsForKey(key, ticketFreeMonths, referralCoversKey(key) ? appliedReferralFreeMonths : 0)
 			: 0
 	// The largest offer on this order, for the sentences that speak about the order as a whole.
@@ -638,6 +660,20 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 			const result = await response.json()
 			if (requestId !== premiumCheckIdRef.current) return
 			setHeldByEmail(result?.status ? sanitizeMembershipKeys(result?.data?.held) : [])
+			setUpgradesByEmail(result?.status ? sanitizeMembershipKeys(result?.data?.upgrades) : [])
+			setReactivationsByEmail(
+				result?.status && Array.isArray(result?.data?.reactivations)
+					? result.data.reactivations.filter((r: any) => isMembershipKey(r?.key)).map((r: any) => ({ key: r.key, interval: String(r.interval || "month") }))
+					: [],
+			)
+			const includedWith = result?.status ? result?.data?.includedWith : null
+			setIncludedWithByEmail(
+				includedWith && typeof includedWith === "object"
+					? Object.fromEntries(
+							Object.entries(includedWith).filter(([k, v]) => isMembershipKey(k) && isMembershipKey(v)),
+					  )
+					: {},
+			)
 			// Membership status and remaining allowance come back together — one request,
 			// one debounce, one rate-limit bucket.
 			const allowances = result?.data?.allowances
@@ -658,6 +694,8 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 			// charge the server may still apply, which is the worse surprise. The server decides
 			// for real either way.
 			setHeldByEmail([])
+			setUpgradesByEmail([])
+			setReactivationsByEmail([])
 			// Leave the allowance unknown rather than guessing — the server enforces it, and
 			// blocking a legitimate buyer on a failed lookup would be worse than a rejected
 			// checkout with a clear message.
@@ -1018,13 +1056,40 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 													    someone else. */}
 													{heldSelectionKeys.length > 0 && (
 														<div className="mt-1.5 rounded-lg p-2.5" style={{ background: "rgba(34,197,94,0.12)", border: "1px solid rgba(34,197,94,0.4)" }}>
-															<p className="text-xs text-green-400">
-																🎟️ {membershipLabelList(heldSelectionKeys)} Active Member:{" "}
-																{sessionEmail && sessionEmail.trim().toLowerCase() === formData.email.trim().toLowerCase()
-																	? `Logged in as ${sessionEmail}.`
-																	: `${formData.email.trim()}.`}{" "}
-																Your existing membership applies to this ticket
-															</p>
+															{ownHeldKeys.length > 0 && (
+																<p className="text-xs text-green-400">
+																	🎟️ {membershipLabelList(ownHeldKeys)} Active Member:{" "}
+																	{sessionEmail && sessionEmail.trim().toLowerCase() === formData.email.trim().toLowerCase()
+																		? `Logged in as ${sessionEmail}.`
+																		: `${formData.email.trim()}.`}{" "}
+																	Your existing membership applies to this ticket
+																</p>
+															)}
+															{viaHeldKeys.map((key) => (
+																<p key={key} className={`text-xs text-green-400${ownHeldKeys.length > 0 ? " mt-1" : ""}`}>
+																	🎟️ <strong>{MEMBERSHIPS[key].label} — included with your {MEMBERSHIPS[includedWithByEmail[key]!].label}.</strong>{" "}
+																	{sessionEmail && sessionEmail.trim().toLowerCase() === formData.email.trim().toLowerCase()
+																		? `Logged in as ${sessionEmail}.`
+																		: `${formData.email.trim()}.`}{" "}
+																	You won&apos;t be charged for it.
+																</p>
+															))}
+																{/* They had CANCELLED it; this purchase switches the cancellation back off.
+																    Recurring billing restarts, so it is said before they pay. */}
+																{reactivationsByEmail
+																	.filter((r) => heldSelectionKeys.includes(r.key))
+																	.map((r) => {
+																		const plan = membershipPlans.find((p) => p.key === r.key)
+																		const rate = plan ? planPriceForInterval(plan, r.interval).label : null
+																		const period = r.interval === "year" ? "year" : "month"
+																		return (
+																			<p key={`re-${r.key}`} className="text-xs mt-1" style={{ color: "#F5C518" }}>
+																				🔄 Your {MEMBERSHIPS[r.key].label} was set to end when your paid {period} runs out. Booking this ticket
+																				keeps it: it will renew{rate ? ` at ${rate}` : ` every ${period}`} until you cancel. Nothing extra is
+																				charged today.
+																			</p>
+																		)
+																	})}
 															<a
 																href={ROUTES.manageMembership}
 																target="_blank"
@@ -1081,7 +1146,19 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 																				    an instant order charges today. Saying "charged today" over a free
 																				    trial, or hiding the price that follows one, are both misstatements at
 																				    the point of sale. */}
-																				{freeMonths > 0
+																				{upgradeKeys.includes(key)
+																					? /* Monthly member, yearly ticket: an upgrade. Exact dates are on the
+																					     receipt — this unauthenticated preview deliberately carries none. */
+																					  `You're on ${MEMBERSHIPS[key].label} billed monthly. This ticket moves you to yearly: ${
+																							price?.label || "the yearly price"
+																					  } ${
+																							selectionNeedsApproval ? "charged only if your registration is approved" : "charged today"
+																					  }, covering the 12 months after your current paid month ends. Your monthly plan won't renew after that.${
+																							MEMBERSHIPS[key].includes?.length
+																								? ` ${membershipLabelList(MEMBERSHIPS[key].includes!)} stays included.`
+																								: ""
+																					  }`
+																					: freeMonths > 0
 																					? `Free for ${freeMonths} ${freeMonths === 1 ? "month" : "months"}${
 																							price?.label ? `, then ${price.label}` : ""
 																					  } from ${trialChargesFrom}. Cancel any time before then and you won't be charged.`
@@ -1089,6 +1166,11 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 																						? `Charged only if your registration is approved and renews ${renewalAdverb(interval)} until canceled.`
 																						: `Charged with your ticket today and renews ${renewalAdverb(interval)} until canceled.`}
 																			</p>
+																			{/* Concierge includes Premium — said under every Concierge charge, not only when the ticket
+																			    happens to sell both, so the buyer knows Premium comes with it at no extra cost. */}
+																			{membershipIncludesLine(key) && (
+																				<p className="text-xs mt-1 font-semibold">✨ {membershipIncludesLine(key)} at no extra charge.</p>
+																			)}
 																		</div>
 																	</div>
 																)
@@ -1363,9 +1445,14 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 															    free months are named here as well as above: this is the sentence
 															    that says what happens AFTER them. */}
 															{selectionNeedsApproval
-																? `If the host approves, you're charged this amount and your ${pricing.recurring.length > 1 ? "memberships begin" : "membership begins"}, renewing at ${pricing.recurring
-																	.map((m) => renewalPhrase(m))
-																	.join(" and ")} until you cancel. If they decline, nothing is charged.`
+																? upgradeKeys.length > 0
+																	? /* An upgrade starts nothing new: it moves an existing member to yearly. */
+																	  `If the host approves, you're charged this amount and your ${membershipLabelList(upgradeKeys)} moves to yearly billing, renewing at ${pricing.recurring
+																			.map((m) => renewalPhrase(m))
+																			.join(" and ")} until you cancel. If they decline, nothing is charged and your monthly plan continues unchanged.`
+																	: `If the host approves, you're charged this amount and your ${pricing.recurring.length > 1 ? "memberships begin" : "membership begins"}, renewing at ${pricing.recurring
+																			.map((m) => renewalPhrase(m))
+																			.join(" and ")} until you cancel. If they decline, nothing is charged.`
 																: `Your ${pricing.recurring.length > 1 ? "memberships then renew" : "membership then renews"} at ${pricing.recurring
 																	.map((m) => renewalPhrase(m))
 																	.join(" and ")} until you cancel. You can cancel any time from your account.`}

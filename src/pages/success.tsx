@@ -5,6 +5,7 @@ import { eventPath } from "@/lib/event-slug"
 import LinkedText from "@Jetzy/components/misc/LinkedText"
 import { buildTicketPricing } from "@/lib/ticket-pricing"
 import { MEMBERSHIPS, type MembershipKey } from "@/lib/memberships"
+import { formatMembershipDate, membershipIncludesLine } from "@/lib/booking-membership-display"
 import ReturnToAppButton from "@Jetzy/components/misc/ReturnToAppButton"
 import axios from "axios"
 import { useRouter } from "next/router"
@@ -196,7 +197,17 @@ const CheckoutSuccessPage: React.FC = () => {
 	// One entry per product — a ticket can sell both Jetzy Premium and Full Concierge, and a
 	// buyer charged for two has to see two. `premiumAmount` is the pre-Concierge shape, still
 	// read so a session created just before the deploy renders correctly.
-	const metaMemberships: Array<{ label: string; amount: number; interval: string; trialMonths?: number }> = (() => {
+	const metaMemberships: Array<{
+		label: string
+		amount: number
+		interval: string
+		trialMonths?: number
+		/** Present on a monthly → yearly upgrade: the plan replaced, and when the new year begins. */
+		replacesInterval?: string
+		startsAt?: string
+		/** "Includes Jetzy Premium" for a membership that includes others. */
+		includesLine?: string | null
+	}> = (() => {
 		try {
 			const raw = JSON.parse(sessionData?.metadata?.memberships ?? "[]")
 			if (Array.isArray(raw)) {
@@ -211,6 +222,10 @@ const CheckoutSuccessPage: React.FC = () => {
 						amount: Number(row?.trialMonths) > 0 ? Number(row.renewalAmount) || 0 : Number(row.amount),
 						interval: String(row.interval || "month"),
 						...(Number(row?.trialMonths) > 0 ? { trialMonths: Number(row.trialMonths) } : {}),
+						...(row?.upgradeFrom?.paidThrough
+							? { replacesInterval: "month", startsAt: String(row.upgradeFrom.paidThrough) }
+							: {}),
+						includesLine: membershipIncludesLine(String(row?.key || "")),
 					}))
 			}
 		} catch {
@@ -370,26 +385,55 @@ const CheckoutSuccessPage: React.FC = () => {
 							{!!pricing.recurring?.length && (
 								<>
 									{pricing.recurring.map((membership) => (
-										<div key={membership.label} className="flex justify-between" style={{ color: "#B7860B" }}>
-											<span>{membership.label}</span>
-											<span>
-												{membership.trialMonths
-													? `Free for ${membership.trialMonths} ${membership.trialMonths === 1 ? "month" : "months"}, then $${membership.amount.toFixed(2)}/${membership.interval}`
-													: `$${membership.amount.toFixed(2)}/${membership.interval}`}
-											</span>
-										</div>
+										<React.Fragment key={membership.label}>
+											<div className="flex justify-between" style={{ color: "#B7860B" }}>
+												<span>{membership.label}</span>
+												<span>
+													{membership.trialMonths
+														? `Free for ${membership.trialMonths} ${membership.trialMonths === 1 ? "month" : "months"}, then $${membership.amount.toFixed(2)}/${membership.interval}`
+														: `$${membership.amount.toFixed(2)}/${membership.interval}`}
+												</span>
+											</div>
+											{/* Concierge includes Premium — named as its own line, not left implied. */}
+											{(membership as any).includesLine && (
+												<div className="flex justify-between text-sm">
+													<span className="text-gray-600">
+														{String((membership as any).includesLine).replace(/^Includes /, "")} membership{" "}
+														<span className="text-gray-400">(included with {membership.label})</span>
+													</span>
+													<span className="font-semibold text-green-600">Included</span>
+												</div>
+											)}
+										</React.Fragment>
 									))}
 									<div className="flex justify-between border-t pt-3">
-										<span className="text-gray-800 font-bold">Charged today</span>
+										<span className="text-gray-800 font-bold">{pendingApproval ? "Held today" : "Charged today"}</span>
 										<span className="font-bold text-gray-800">${(pricing.dueToday ?? finalTotal).toFixed(2)}</span>
 									</div>
 									{pricing.recurring.map((membership) => (
 										<div key={membership.label} className="mt-3 rounded-lg p-3" style={{ background: "rgba(245,197,24,0.12)", border: "1px solid rgba(245,197,24,0.4)" }}>
-											<p className="text-sm font-semibold" style={{ color: "#8A6D0B" }}>Your {membership.label} is active</p>
+											{/* A request awaiting the host has started nothing yet; an upgrade moves an
+											    existing member rather than starting a new membership. Each says so. */}
+											<p className="text-sm font-semibold" style={{ color: "#8A6D0B" }}>
+												{pendingApproval
+													? (membership as any).replacesInterval
+														? `Your ${membership.label} moves to yearly billing if the host approves`
+														: `Your ${membership.label} starts if the host approves`
+													: (membership as any).replacesInterval
+														? `Your ${membership.label} moves to yearly billing`
+														: `Your ${membership.label} is active`}
+											</p>
 											<p className="text-xs text-gray-600 mt-1">
-												{membership.trialMonths
-													? `Free for ${membership.trialMonths} ${membership.trialMonths === 1 ? "month" : "months"} — you weren't charged for it. It then renews at $${membership.amount.toFixed(2)} every ${membership.interval} until you cancel. `
-													: `It renews at $${membership.amount.toFixed(2)} every ${membership.interval} until you cancel. `}
+												{(membership as any).replacesInterval
+													? `Your current ${(membership as any).replacesInterval}ly plan is already paid through ${
+															formatMembershipDate((membership as any).startsAt) || "the end of this month"
+													  }${pendingApproval ? " and continues unchanged until the host decides" : " and won't renew after that"}. The ${
+															membership.interval
+													  } ${pendingApproval ? "you're buying" : "you just paid for"} runs from that date, then renews at $${membership.amount.toFixed(2)} every ${membership.interval} until you cancel. `
+													: membership.trialMonths
+														? `Free for ${membership.trialMonths} ${membership.trialMonths === 1 ? "month" : "months"} — you weren't charged for it. It then renews at $${membership.amount.toFixed(2)} every ${membership.interval} until you cancel. `
+														: `It renews at $${membership.amount.toFixed(2)} every ${membership.interval} until you cancel. `}
+												{(membership as any).includesLine ? `${(membership as any).includesLine}. ` : ""}
 												You can cancel any time from <strong>Manage membership</strong> in your account menu.
 											</p>
 										</div>

@@ -197,6 +197,12 @@ export interface IBookingMembership {
 	 * never shown.
 	 */
 	renewalAmount?: number
+	/**
+	 * This row UPGRADES an existing subscription to a longer billing period (monthly Concierge →
+	 * yearly). The subscription created for it starts paying when `paidThrough` (ISO) ends, and the
+	 * old one is stopped then. Absent on every ordinary sale. See `src/lib/membership-upgrade.ts`.
+	 */
+	upgradeFrom?: { subscriptionId: string; customerId?: string; paidThrough?: string }
 	subscriptionId?: string
 	lastError?: string
 }

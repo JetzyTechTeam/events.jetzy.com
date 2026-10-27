@@ -7,6 +7,7 @@ import bcrypt from "bcrypt"
 import { AuthorizeSSOApi, SignupSSOApi } from "@Jetzy/services/auth/authapis"
 import { verifyMagicToken } from "@/lib/magicLink"
 import { flushPendingProfile } from "@/lib/jetzy-profile-server"
+import { isMembershipEntitled } from "@/lib/memberships"
 
 export const authOptions: NextAuthOptions = {
   session: {
@@ -271,7 +272,7 @@ export const authOptions: NextAuthOptions = {
             isBlocked: !!(user as any).isBlocked,
             emailBounced: !!(user as any).emailBounced,
             requiresVerification: !!(user as any).requiresVerification,
-            isPremiumSubscriber: !!(user as any).premiumSubscription?.active,
+            isPremiumSubscriber: isMembershipEntitled(user, "premium"),
             ...(finalImage ? { image: finalImage } : {}),
           };
 
@@ -459,7 +460,7 @@ export const authOptions: NextAuthOptions = {
             email: user.email,
             role: user.role,
             accessToken: accessToken, // Now using Jetzy SSO token
-            isPremiumSubscriber: !!(user as any).premiumSubscription?.active,
+            isPremiumSubscriber: isMembershipEntitled(user, "premium"),
             ...(sessionImage ? { image: sessionImage } : {}),
           };
         } catch (error: any) {

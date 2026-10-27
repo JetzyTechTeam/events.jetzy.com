@@ -25,6 +25,8 @@ export function usePremiumStatus() {
 		queryFn: async () => {
 			const { data } = await axios.get("/api/subscriptions/me")
 			return data?.data as {
+				isPremium?: boolean
+				premiumVia?: "premium" | "concierge" | null
 				premiumSubscription?: PremiumSubscription
 				memberships?: Record<string, PremiumSubscription>
 				hasBillingAccount?: boolean
@@ -37,7 +39,13 @@ export function usePremiumStatus() {
 	const memberships = query.data?.memberships || {}
 
 	return {
-		isPremium: !!query.data?.premiumSubscription?.active,
+		/**
+		 * Premium ENTITLEMENT — true for a Concierge member too, since Concierge includes Premium.
+		 * Falls back to the subscription flag for a response from before the field existed.
+		 */
+		isPremium: query.data?.isPremium ?? !!query.data?.premiumSubscription?.active,
+		/** How Premium is held: own subscription, included with Concierge, or not at all. */
+		premiumVia: query.data?.premiumVia ?? (query.data?.premiumSubscription?.active ? "premium" : null),
 		/** Any membership at all — what "you have something to manage" should be gated on. */
 		hasAnyMembership: Object.values(memberships).some((m) => !!m?.active),
 		/**

@@ -1,5 +1,5 @@
 import Stripe from "stripe"
-import { MEMBERSHIPS, MEMBERSHIP_KEYS, isMembershipKey, membershipKeyForProductId, type MembershipKey } from "@/lib/memberships"
+import { MEMBERSHIPS, MEMBERSHIP_KEYS, isMembershipKey, isMembershipProduct, membershipKeyForProductId, membershipProductIds, type MembershipKey } from "@/lib/memberships"
 
 /**
  * Stripe + Mongo plumbing for MEMBERSHIPS — plural.
@@ -358,8 +358,8 @@ export function subscriptionMembershipKey(subscription: Stripe.Subscription): Me
  */
 export async function hasActiveMembershipSubscription(customerId: string, key: MembershipKey): Promise<boolean> {
 	if (!customerId) return false
-	const productId = MEMBERSHIPS[key]?.productId
-	if (!productId) return false
+	// Every product that IS this membership (Concierge monthly AND annual), not just the one we sell.
+	if (membershipProductIds(key).length === 0) return false
 	try {
 		const stripe = getStripeClient()
 		const subscriptions = await stripe.subscriptions.list({ customer: customerId, status: "all", limit: 100 })
@@ -368,7 +368,7 @@ export async function hasActiveMembershipSubscription(customerId: string, key: M
 				(subscription.status === "active" || subscription.status === "trialing") &&
 				subscription.items.data.some((item) => {
 					const product = item.price?.product
-					return (typeof product === "string" ? product : product?.id) === productId
+					return isMembershipProduct(key, typeof product === "string" ? product : product?.id)
 				}),
 		)
 	} catch (error) {
@@ -391,15 +391,15 @@ export async function hasActiveMembershipSubscription(customerId: string, key: M
  */
 export async function hasEverHadMembership(customerId: string, key: MembershipKey): Promise<boolean> {
 	if (!customerId) return false
-	const productId = MEMBERSHIPS[key]?.productId
-	if (!productId) return false
+	// Every product that IS this membership (Concierge monthly AND annual), not just the one we sell.
+	if (membershipProductIds(key).length === 0) return false
 	try {
 		const stripe = getStripeClient()
 		const subscriptions = await stripe.subscriptions.list({ customer: customerId, status: "all", limit: 100 })
 		return subscriptions.data.some((subscription) =>
 			subscription.items.data.some((item) => {
 				const product = item.price?.product
-				return (typeof product === "string" ? product : product?.id) === productId
+				return isMembershipProduct(key, typeof product === "string" ? product : product?.id)
 			}),
 		)
 	} catch (error) {
@@ -424,8 +424,8 @@ const ACTIVE_SUBSCRIPTION_STATUSES: Stripe.Subscription.Status[] = ["active", "t
 
 export async function findActiveSubscriptionForProduct(customerId: string, key: MembershipKey): Promise<Stripe.Subscription | null> {
 	if (!customerId) return null
-	const productId = MEMBERSHIPS[key]?.productId
-	if (!productId) return null
+	// Every product that IS this membership (Concierge monthly AND annual), not just the one we sell.
+	if (membershipProductIds(key).length === 0) return null
 	try {
 		const stripe = getStripeClient()
 		const subscriptions = await stripe.subscriptions.list({ customer: customerId, status: "all", limit: 100 })
@@ -441,7 +441,7 @@ export async function findActiveSubscriptionForProduct(customerId: string, key: 
 					ACTIVE_SUBSCRIPTION_STATUSES.includes(subscription.status) &&
 					subscription.items.data.some((item) => {
 						const product = item.price?.product
-						return (typeof product === "string" ? product : product?.id) === productId
+						return isMembershipProduct(key, typeof product === "string" ? product : product?.id)
 					}),
 			) || null
 		)
@@ -449,6 +449,45 @@ export async function findActiveSubscriptionForProduct(customerId: string, key: 
 		console.error(`[membership] findActiveSubscriptionForProduct(${key}) failed:`, error)
 		return null
 	}
+}
+
+/** `metadata.cancelledReason` on a Premium subscription we stopped because Concierge includes it. */
+export const INCLUDED_MEMBERSHIP_CANCEL_REASON = "included_with_concierge"
+
+/**
+ * A membership that INCLUDES others has just started on this customer — stop the separate
+ * subscriptions it makes redundant.
+ *
+ * Full Concierge includes Jetzy Premium (CEO, 2026-10-19), so a member who was already paying
+ * for Premium would otherwise pay for it twice. The Premium subscription is set to
+ * `cancel_at_period_end`: they keep the period they already paid for (no refunds — by decision),
+ * and Concierge covers Premium from then on. Stamped with `metadata.cancelledReason` so the
+ * webhook sends the "now included" note instead of the win-back cancellation email.
+ *
+ * Idempotent (an already-cancelling subscription is left alone), so it is safe from both the
+ * webhook and `startMembershipSubscription`, and alongside selectmember.jetzy.com doing the same.
+ * Best-effort: never throws — a failure here must not fail a webhook or a booking.
+ */
+export async function retireIncludedSubscriptions(customerId: string, key: MembershipKey): Promise<string[]> {
+	const retired: string[] = []
+	const included = MEMBERSHIPS[key]?.includes || []
+	if (!customerId || included.length === 0) return retired
+	for (const includedKey of included) {
+		try {
+			const subscription = await findActiveSubscriptionForProduct(customerId, includedKey)
+			if (!subscription || subscription.cancel_at_period_end) continue
+			if (!["active", "trialing", "past_due"].includes(subscription.status)) continue
+			await getStripeClient().subscriptions.update(subscription.id, {
+				cancel_at_period_end: true,
+				metadata: { ...(subscription.metadata || {}), cancelledReason: INCLUDED_MEMBERSHIP_CANCEL_REASON, includedWith: key },
+			})
+			retired.push(subscription.id)
+			console.log(`[membership] ${includedKey} subscription ${subscription.id} set to end — now included with ${key}:`, customerId)
+		} catch (error: any) {
+			console.error(`[membership] Couldn't retire the ${includedKey} subscription included with ${key}:`, customerId, error?.message || error)
+		}
+	}
+	return retired
 }
 
 /**
@@ -541,32 +580,77 @@ export async function getMembershipPrice(key: MembershipKey): Promise<Stripe.Pri
  *
  *   - direct checkout — a buyer who chose Annual must NOT be silently charged monthly, so a
  *     null is an error the buyer sees.
- *   - a bundled ticket — a host who set the ticket to annual meant Premium; Full Concierge has
- *     no annual price, so falling back to its default is right. The line carries whatever price
- *     was actually resolved, so the recurring disclosure stays truthful either way.
+ *   - a bundled ticket — a membership not sold at the ticket's interval falls back to its
+ *     default. The line carries whatever price was actually resolved, so the recurring
+ *     disclosure stays truthful either way.
+ *
+ * Searches every product that IS the membership (`listMembershipPrices`): Concierge Annual is a
+ * separate Stripe product from Concierge monthly, and that is where its yearly price lives.
  */
 export async function findMembershipPriceForInterval(key: MembershipKey, interval: string): Promise<Stripe.Price | null> {
 	const definition = MEMBERSHIPS[key]
 	if (!definition || !interval) return null
 
 	try {
-		const stripe = getStripeClient()
-		const product = await stripe.products.retrieve(definition.productId, { expand: ["default_price"] })
-		const defaultPriceId = (product.default_price as Stripe.Price | null)?.id
-
-		const prices = await stripe.prices.list({ product: definition.productId, active: true, limit: 100 })
-		const matches = prices.data.filter((price) => price.recurring?.interval === interval && price.unit_amount != null)
+		const catalog = await listMembershipPrices(key)
+		const matches = catalog.prices.filter((price) => price.recurring?.interval === interval && price.unit_amount != null)
 		if (matches.length === 0) return null
 
 		// The product's DEFAULT wins its own interval. Premium still has a legacy $10/month price
 		// active alongside the current $20 one, so "the first monthly price" is not a safe answer
 		// to "what does monthly cost" — it could charge half. Stripe lists newest first, so among
 		// non-defaults the first is the most recent, which is the right guess for the current rate.
-		return matches.find((price) => price.id === defaultPriceId) || matches[0]
+		// The MAIN product's default outranks another product's (Concierge Annual is its own product).
+		return (
+			matches.find((price) => price.id === catalog.mainDefaultId) ||
+			matches.find((price) => catalog.defaultIds.has(price.id)) ||
+			matches[0]
+		)
 	} catch (error: any) {
 		console.error(`[membership] Could not resolve the ${interval} price for ${key}:`, error?.message || error)
 		return null
 	}
+}
+
+/**
+ * Every active recurring price a membership is sold at, across EVERY product that is that
+ * membership — Concierge monthly and Concierge Annual are separate Stripe products.
+ *
+ * `alsoProductIds` mixes test and live ids, so a product missing in the current Stripe mode is
+ * skipped, never an error. The MAIN product (`productId`) must exist — that one failing still
+ * throws, exactly as before.
+ */
+export async function listMembershipPrices(key: MembershipKey): Promise<{
+	mainDefault: Stripe.Price | null
+	mainDefaultId: string | undefined
+	defaultIds: Set<string>
+	prices: Stripe.Price[]
+}> {
+	const definition = MEMBERSHIPS[key]
+	const stripe = getStripeClient()
+	const defaultIds = new Set<string>()
+	const prices: Stripe.Price[] = []
+	let mainDefault: Stripe.Price | null = null
+
+	for (const productId of membershipProductIds(key)) {
+		const isMain = productId === definition.productId
+		let product: Stripe.Product
+		try {
+			product = await stripe.products.retrieve(productId, { expand: ["default_price"] })
+		} catch (error: any) {
+			if (!isMain && error?.code === "resource_missing") continue
+			throw error
+		}
+		// An archived product sells nothing, whatever prices it still carries.
+		if (!isMain && !product.active) continue
+		const defaultPrice = product.default_price as Stripe.Price | null
+		if (defaultPrice?.id) defaultIds.add(defaultPrice.id)
+		if (isMain) mainDefault = defaultPrice
+		const list = await stripe.prices.list({ product: productId, active: true, limit: 100 })
+		prices.push(...list.data.filter((price) => !!price.recurring && price.unit_amount != null))
+	}
+
+	return { mainDefault, mainDefaultId: mainDefault?.id, defaultIds, prices }
 }
 
 /**

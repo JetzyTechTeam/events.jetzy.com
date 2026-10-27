@@ -155,6 +155,7 @@ import dayjs from "dayjs"
 import utc from "dayjs/plugin/utc"
 import timezone from "dayjs/plugin/timezone"
 import { getEventZone, normalizeTimezone } from "@/utils/eventTime"
+import { bookingMemberships } from "@/lib/booking-memberships"
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -4385,6 +4386,7 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 				asManager
 				moneyState={bookingMoneyState(cancelTarget || undefined) as MoneyState}
 				amount={bookingMoneyAmount(cancelTarget || undefined)}
+				memberships={bookingMemberships((cancelTarget as any)?.payment) as any}
 			/>
 
 			{/* Guest Detail Modal */}
@@ -4795,7 +4797,7 @@ function InviteGuestsModal({ inviteGuestsModal, setInviteGuestsModal, event }: {
 										<Text fontWeight="bold" mb={2}>Hi, Jetzy Events invites you to join {event.name}.</Text>
 										<Textarea rows={3} placeholder="Enter a custom message here..." value={message} onChange={(e) => setMessage(e.target.value)} mb={2} />
 										<Text fontWeight="bold" mb={1}>RSVP: {process.env.NEXT_PUBLIC_URL}/{event.slug}</Text>
-										<Text fontSize="sm">We will send guests an invitation link to register for the event.</Text>
+										<Text fontSize="sm">Guests get a link to accept the invitation and book their ticket.</Text>
 									</Box>
 								</Flex>
 								<Flex mt={4} mb={4} justify="space-between">

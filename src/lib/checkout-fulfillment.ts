@@ -13,6 +13,9 @@ import { Events } from "@/models/events"
 import { Bookings } from "@/models/events/bookings"
 import { BookingStatus, IBookings, IEvent } from "@/models/events/types"
 import { addEventMember } from "@/utils/eventMembership"
+import { reactivateHeldMemberships } from "@/lib/membership-upgrade"
+import { selectionMemberships } from "@/lib/premium-bundle"
+import { sendTicketMembershipWelcome } from "@/lib/membership-subscriptions"
 
 /**
  * Turns a completed Stripe Checkout Session into a Booking.
@@ -117,6 +120,8 @@ type MembershipLine = {
 	trialMonths?: number
 	/** What it renews at after those months — `amount` is 0 while they run. */
 	renewalAmount?: number
+	/** Upgrades this existing subscription (monthly → yearly). See `membership-upgrade.ts`. */
+	upgradeFrom?: { subscriptionId: string; customerId?: string; paidThrough?: string }
 }
 
 /**
@@ -145,6 +150,15 @@ const parseMembershipLines = (metadata: SessionMetadata): MembershipLine[] => {
 						interval: String(row.interval || "month"),
 						...(Number(row.trialMonths) > 0
 							? { trialMonths: Number(row.trialMonths), renewalAmount: Number(row.renewalAmount) || 0 }
+							: {}),
+						...(row.upgradeFrom?.subscriptionId
+							? {
+									upgradeFrom: {
+										subscriptionId: String(row.upgradeFrom.subscriptionId),
+										...(row.upgradeFrom.customerId ? { customerId: String(row.upgradeFrom.customerId) } : {}),
+										...(row.upgradeFrom.paidThrough ? { paidThrough: String(row.upgradeFrom.paidThrough) } : {}),
+									},
+							  }
 							: {}),
 					}))
 			}
@@ -477,6 +491,7 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 							// session, grants the same free months that were quoted — and states the
 							// price that follows them without re-reading Stripe.
 							...(line.trialMonths ? { trialMonths: line.trialMonths, renewalAmount: line.renewalAmount } : {}),
+							...(line.upgradeFrom ? { upgradeFrom: line.upgradeFrom } : {}),
 						})),
 					}
 					: {}),
@@ -540,10 +555,13 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 					...(membershipLines.length > 0
 						? {
 							memberships: membershipLines.map((line) => ({
+								key: line.key,
 								label: MEMBERSHIPS[line.key].label,
 								receiptLabel: MEMBERSHIPS[line.key].receiptLabel,
 								amount: line.amount,
 								interval: line.interval,
+								...(line.trialMonths ? { trialMonths: line.trialMonths, renewalAmount: line.renewalAmount } : {}),
+								...(line.upgradeFrom?.paidThrough ? { upgradePaidThrough: line.upgradeFrom.paidThrough } : {}),
 							})),
 						}
 						: {}),
@@ -562,8 +580,20 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 			lastName: metadata.lastName || "",
 			email: metadata.email || "",
 			tickets: ticketSummary,
-			amountOnHold: total,
+			// The REAL hold — ticket plus each membership's first period. It said `total` (the ticket
+			// alone), so a host approving a $595 yearly Concierge request was told a far smaller hold
+			// than the card carries. The approved and expired notices already quote the full amount.
+			amountOnHold: chargedAmount,
 			holdExpiresAt: booking.payment?.authExpiresAt,
+			memberships: membershipLines.map((line) => ({
+				key: line.key,
+				label: MEMBERSHIPS[line.key].label,
+				receiptLabel: MEMBERSHIPS[line.key].receiptLabel,
+				amount: line.amount,
+				interval: line.interval,
+				...(line.trialMonths ? { trialMonths: line.trialMonths, renewalAmount: line.renewalAmount } : {}),
+				...(line.upgradeFrom?.paidThrough ? { upgradePaidThrough: line.upgradeFrom.paidThrough } : {}),
+			})),
 		})
 		// Referral usage is intentionally NOT incremented here — it is deferred to approval
 		// so a declined request doesn't burn a limited-use code.
@@ -584,6 +614,21 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 			console.error("[checkout-fulfillment] Failed to add event participant:", error)
 		}
 	}
+
+	// ---- A membership this order sells that the buyer had CANCELLED ----
+	// Their plan is switched back on: nothing extra is charged (the current period is paid), it
+	// simply keeps renewing. Charged lines (new sales, upgrades) are started below instead.
+	await reactivateHeldMemberships({
+		email: metadata.email || "",
+		keys: selectionMemberships(
+			tickets
+				.map((t) => ((event as any)?.tickets || []).find((et: any) => String(et._id) === String(t.id)))
+				.filter(Boolean)
+				.map((t: any) => ({ ...(t.toObject ? t.toObject() : t), isSelected: true })),
+		),
+		chargedKeys: membershipLines.map((line) => line.key),
+		bookingRef,
+	})
 
 	// ---- Start the memberships this charge paid for ----
 	//
@@ -633,6 +678,18 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 					...(line.trialMonths ? { trialMonths: line.trialMonths } : {}),
 					...(trialEndsFromSession ? { firstRenewalAt: trialEndsFromSession } : {}),
 				})
+				// Its own welcome email, separate from the ticket receipt.
+				await sendTicketMembershipWelcome({
+					key: line.key,
+					email: metadata.email,
+					name: `${metadata.firstName || ""} ${metadata.lastName || ""}`,
+					amount: line.amount,
+					interval: line.interval,
+					trialMonths: line.trialMonths,
+					renewalAmount: line.renewalAmount,
+					firstRenewalAt: trialEndsFromSession,
+					hasCard: !!paymentMethodId,
+				})
 				continue
 			}
 
@@ -649,6 +706,9 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 					name: `${metadata.firstName || ""} ${metadata.lastName || ""}`.trim() || undefined,
 					subscriberId: metadata.membershipUserId,
 					metadata: { bookingRef, eventId: String(metadata.eventId) },
+					// An upgrade (monthly → yearly): the new subscription starts paying when the old
+					// one's paid time ends, and the old one is stopped then.
+					...(line.upgradeFrom ? { replaces: { subscriptionId: line.upgradeFrom.subscriptionId } } : {}),
 				})
 
 				if (row) {
@@ -670,7 +730,25 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 						interval: line.interval,
 						...(line.trialMonths ? { trialMonths: line.trialMonths } : {}),
 						firstRenewalAt: result.firstRenewalAt,
+						...(result.replacedInterval && result.startsAt
+							? { replacesInterval: result.replacedInterval, startsAt: result.startsAt }
+							: {}),
 					})
+					// A NEW membership gets its own welcome email, separate from the ticket receipt.
+					// An upgrade is not a new membership — the receipt explains the switch.
+					if (!result.replacedInterval) {
+						await sendTicketMembershipWelcome({
+							key: line.key,
+							email: metadata.email,
+							name: `${metadata.firstName || ""} ${metadata.lastName || ""}`,
+							amount: line.amount,
+							interval: line.interval,
+							trialMonths: line.trialMonths,
+							renewalAmount: line.renewalAmount,
+							firstRenewalAt: result.firstRenewalAt,
+							hasCard: !!paymentMethodId,
+						})
+					}
 				}
 			} catch (membershipError: any) {
 				console.error(

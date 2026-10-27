@@ -1408,3 +1408,42 @@ Since `TICKET_SCHEMA.md` Revision 5 (2026-09-24), which covered approvals and ed
   `customerNameEditHistory`.
 - **Approval email** names a host's reduction ("the organizer has confirmed N") and says the
   membership is not affected.
+- **Concierge includes Jetzy Premium (2026-10-19).** Premium = `premiumSubscription.active` OR
+  `conciergeSubscription.active`. A Concierge member is never charged for Premium on a bundled
+  ticket; a ticket selling BOTH charges Concierge only (Premium gets no line item, no subscription,
+  no `payment.memberships` row); at approval a pending Premium row is released when the buyer holds
+  Concierge or a Concierge row on the same order is being started. When Concierge starts, a separate
+  Premium subscription on the same customer is set `cancel_at_period_end` with
+  `metadata.cancelledReason = "included_with_concierge"` (no refund). Web: `splitBundleCharges`,
+  `expandEntitlements`, `retireIncludedSubscriptions`.
+- **Concierge sells annually (2026-10-19).** Concierge Annual is a SEPARATE Stripe product
+  (test `prod_UlPxrsQgIknFRQ`, live `prod_UlQT3lIpJo2PK6`, $595/yr; SelectMember plan name
+  `select_yearly`). Price an annual Concierge ticket from the ANNUAL product. Detect a membership by ANY of its products
+  (`membershipProductIds`); resolve a ticket's annual price across them (`listMembershipPrices`).
+  A ticket's `membershipInterval: "year"` now sells Concierge annually. When one subscription to a
+  membership ends while another to the same membership is live (monthly → annual), the record
+  stays on the live one.
+- **A yearly ticket UPGRADES a monthly member (2026-10-19).** Concierge only (`upgradeOnTicket`).
+  A buyer with a live MONTHLY Concierge subscription (on any Stripe customer with their email) and
+  no yearly one is charged the yearly price (no free months) instead of "already held". New
+  membership-row field **`upgradeFrom: { subscriptionId, customerId?, paidThrough? }`**. The new
+  subscription's `trial_end` = the old one's paid-through + 1 year; after it is created the old one
+  is set `cancel_at_period_end` with `metadata.cancelledReason = "upgraded_to_yearly"`,
+  `replacedBy: <new id>`. At approval, re-check: already yearly → release; monthly gone → start
+  fresh. A $0 ticket with an upgrade goes through Stripe. Web: `src/lib/membership-upgrade.ts`.
+- **Booking emails + screens describe memberships one way (2026-10-20).** The host's approval-
+  request notice now quotes the FULL hold (ticket + membership first period), not the ticket alone,
+  and itemises the memberships. Decline / expiry emails say the membership was not started (or, for
+  an upgrade, that the monthly plan continues). Cancellation emails and dialogs say cancelling a
+  booking does NOT cancel a membership bought with it. Browser-facing booking APIs no longer return
+  subscription / customer / payment-method ids. Wording lives in `src/lib/booking-membership-display.ts`.
+- **Cancelled members buying a membership ticket (2026-10-22).** A member who cancelled (still in
+  the paid period) and buys a ticket selling that membership: yearly ticket + cancelled monthly →
+  upgrade (as above); otherwise the cancellation is undone (`cancel_at_period_end: false`,
+  `metadata.reactivatedBy = bookingRef`) once the booking is CONFIRMED, at no charge today. A
+  subscription we ended ourselves (`cancelledReason` `included_with_concierge` / `upgraded_to_yearly`)
+  is never switched back on. Must be disclosed at checkout before purchase.
+- **Separate membership welcome email (2026-10-23).** A membership CREATED by a ticket purchase
+  (paid or free months; not an upgrade, reactivation or already-held one) now also gets its own
+  welcome email, sent when the subscription is started (instant purchase or approval). The ticket
+  receipt is unchanged. SelectMember does not send a Concierge welcome for subscriptions we sold.

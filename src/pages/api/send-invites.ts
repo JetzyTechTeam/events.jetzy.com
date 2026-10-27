@@ -139,12 +139,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
               <p style="font-size:16px;color:#4a5568;text-align:center;">
                 You have been invited to join a special event.
               </p>
+              <p style="font-size:15px;color:#4a5568;text-align:center;">
+                Accept the invitation and book your ticket to secure your spot.
+              </p>
               <hr style="margin:24px 0;border:none;border-top:1px solid #e2e8f0;"/>
               ${safeMessage ? `<p style="font-size:15px;color:#4a5568;font-style:italic;text-align:center;">"${safeMessage}"</p>` : ""}
               <div style="text-align:center;margin:28px 0;">
                 <a href="${safeLink}" target="_blank"
                    style="display:inline-block;background:#F79432;color:#fff;padding:14px 32px;border-radius:6px;text-decoration:none;font-size:18px;font-weight:bold;">
-                  View Event &amp; RSVP
+                  Accept Invite &amp; Book Ticket
                 </a>
               </div>
               <p style="font-size:13px;color:#a0aec0;text-align:center;">

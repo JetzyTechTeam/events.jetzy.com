@@ -268,6 +268,11 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (ctx) => {
     // part shrinks, so the editor's "will be charged" figure needs to know how much is which.
     "payment.memberships.amount": 1,
     "payment.memberships.trialMonths": 1,
+    // So the shared Edit dialog can describe a yearly first period, free months and a monthly →
+    // yearly upgrade. The upgrade's DATE only — never its subscription or customer id.
+    "payment.memberships.interval": 1,
+    "payment.memberships.renewalAmount": 1,
+    "payment.memberships.upgradeFrom.paidThrough": 1,
     "payment.premiumStatus": 1,
     "payment.premiumAmount": 1,
     adjustedTickets: 1,

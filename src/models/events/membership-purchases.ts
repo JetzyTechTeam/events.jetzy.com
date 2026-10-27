@@ -32,6 +32,8 @@ export type MembershipPurchaseSource =
 	| "mobile_referral"
 	/** A subscription on this Stripe account that this app didn't sell (selectmember.jetzy.com). */
 	| "external"
+	/** Sold with a ticket to someone ALREADY a member, moving them monthly → yearly (`membership-upgrade.ts`). */
+	| "upgrade"
 
 const membershipPurchaseSchema = new Schema(
 	{

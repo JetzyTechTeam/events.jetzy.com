@@ -2,7 +2,7 @@ import { sendResponse } from "@/lib/helpers"
 import { ResCode } from "@/lib/responseCodes"
 import { ensureDbConnected } from "@/configs/database"
 import { findMembershipRecord, getUserStripeCustomerId } from "@/lib/premium"
-import { MEMBERSHIPS, MEMBERSHIP_KEYS } from "@/lib/memberships"
+import { MEMBERSHIPS, MEMBERSHIP_KEYS, membershipEntitlementSource } from "@/lib/memberships"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 import { NextApiRequest, NextApiResponse } from "next"
@@ -37,9 +37,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return acc
 		}, {} as Record<string, any>)
 
+		// ENTITLEMENT, not subscription: Full Concierge includes Jetzy Premium, so a Concierge
+		// member is Premium with no `premiumSubscription` behind it. `premiumVia` says which —
+		// the plan card describes a Premium price only when it is "premium".
+		const premiumVia = membershipEntitlementSource(record?.doc, "premium")
+
 		return sendResponse(
 			res,
 			{
+				isPremium: !!premiumVia,
+				premiumVia,
 				premiumSubscription,
 				memberships,
 				hasBillingAccount: !!getUserStripeCustomerId(record?.doc),

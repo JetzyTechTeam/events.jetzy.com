@@ -11,6 +11,7 @@ import {
 	Text,
 } from "@chakra-ui/react"
 import { MoneyState } from "@/lib/booking-cancellation"
+import { cancellationMembershipNote, type DisplayMembershipRow } from "@/lib/booking-membership-display"
 
 /**
  * Confirm dialog for cancelling a booking.
@@ -33,7 +34,10 @@ type Props = {
 	/** Host/admin view: they're cancelling someone else's booking, not their own. */
 	asManager?: boolean
 	guestName?: string
+	/** The booking's membership rows (`bookingMemberships(booking.payment)`), when it sold any. */
+	memberships?: DisplayMembershipRow[]
 }
+
 
 const money = (n?: number) => `$${Number(n || 0).toFixed(2)}`
 
@@ -47,7 +51,10 @@ export default function CancelBookingDialog({
 	amount = 0,
 	asManager = false,
 	guestName,
+	memberships = [],
 }: Props) {
+	// Cancelling a booking never cancels a membership bought with it — said once, under the money.
+	const membershipNote = cancellationMembershipNote(memberships, moneyState, asManager)
 	const leastDestructiveRef = useRef<HTMLButtonElement>(null)
 	const isCaptured = moneyState === "captured"
 	// No payment record but a non-zero total — we can't claim it was charged or that it was
@@ -78,6 +85,7 @@ export default function CancelBookingDialog({
 									{asManager ? "The guest has" : "You have"} not been charged. The {money(amount)} hold on the card will be
 									released immediately.
 								</Text>
+								{membershipNote && <Text fontSize="sm" color="#9BC4FF" mt={2}>{membershipNote}</Text>}
 							</Box>
 						)}
 
@@ -89,6 +97,7 @@ export default function CancelBookingDialog({
 								<Text fontSize="sm" color="#FCA5A5">
 									{money(amount)} {asManager ? "was paid and will NOT be returned to the guest." : "was paid for this booking and will NOT be returned to you."}
 								</Text>
+								{membershipNote && <Text fontSize="sm" color="#FCA5A5" mt={2}>{membershipNote}</Text>}
 							</Box>
 						)}
 
@@ -102,6 +111,7 @@ export default function CancelBookingDialog({
 										? `The booking total is ${money(amount)} but there is no payment record against it. Nothing will be refunded either way — check Stripe if you need to confirm.`
 										: `If a payment of ${money(amount)} was made for this booking, it will NOT be returned to you.`}
 								</Text>
+								{membershipNote && <Text fontSize="sm" color="#FCA5A5" mt={2}>{membershipNote}</Text>}
 							</Box>
 						)}
 					</AlertDialogBody>

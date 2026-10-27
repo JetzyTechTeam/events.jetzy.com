@@ -3,11 +3,13 @@ import {
 	findEmailRecipientByStripeCustomerId,
 	findUserByStripeCustomerId,
 	getStripeClient,
+	INCLUDED_MEMBERSHIP_CANCEL_REASON,
+	retireIncludedSubscriptions,
 	setMembershipStatusByStripeCustomerId,
 	setUserMembershipStatus,
 	subscriptionMembershipKey,
 } from "@/lib/premium"
-import { MEMBERSHIPS, isMembershipKey, type MembershipKey } from "@/lib/memberships"
+import { MEMBERSHIPS, activeMembershipsOnDoc, isMembershipKey, isMembershipProduct, membershipLabel, type MembershipKey } from "@/lib/memberships"
 import { syncSelectMembership } from "@/lib/select-member"
 import {
 	sendMembershipCancelled,
@@ -18,6 +20,8 @@ import {
 } from "@/lib/send-grid"
 import { NextApiRequest, NextApiResponse } from "next"
 import Stripe from "stripe"
+import { membershipRowsForEmail } from "@/lib/booking-membership-display"
+import { bookingMemberships } from "@/lib/booking-memberships"
 
 /**
  * Did WE sell this subscription, or did selectmember.jetzy.com?
@@ -76,10 +80,96 @@ const mirrorToSelectMember = async (
 		key,
 		status,
 		externalSubscriptionId: subscription?.id,
+		interval: subscription?.items?.data?.[0]?.price?.recurring?.interval,
 		...(subscription?.start_date ? { startedAt: new Date(subscription.start_date * 1000) } : {}),
 		...(subscription?.current_period_end ? { expiresAt: new Date(subscription.current_period_end * 1000) } : {}),
 	})
 }
+
+/**
+ * The extra a cancellation email needs because of included memberships (Concierge → Premium):
+ *
+ *   - a Premium subscription WE stopped because Concierge now includes it → `includedWith`
+ *     (the member loses nothing; no win-back);
+ *   - a Concierge membership ending while the member has no separate Premium → `alsoEnds`
+ *     (their Premium benefits end with it, and they should hear that).
+ */
+const includedMembershipCancelExtras = async (
+	subscription: Stripe.Subscription,
+	key: MembershipKey,
+	customerId: string,
+): Promise<{ includedWith?: string; alsoEnds?: string[] }> => {
+	const metadata = (subscription.metadata || {}) as Record<string, string | undefined>
+	if (metadata.cancelledReason === INCLUDED_MEMBERSHIP_CANCEL_REASON) {
+		const including = isMembershipKey(metadata.includedWith) ? metadata.includedWith : "concierge"
+		return { includedWith: membershipLabel(including) }
+	}
+	const record = await findUserByStripeCustomerId(customerId)
+	const ownActive = activeMembershipsOnDoc(record?.doc)
+	// The member cancelled Premium themselves while holding Concierge — they keep every Premium
+	// benefit, so the win-back ("you'll lose Premium") would be false.
+	const stillIncludedBy = ownActive.find((other) => other !== key && (MEMBERSHIPS[other].includes || []).includes(key))
+	if (stillIncludedBy) return { includedWith: membershipLabel(stillIncludedBy) }
+	const included = MEMBERSHIPS[key].includes || []
+	if (included.length === 0) return {}
+	const alsoEnds = included.filter((k) => !ownActive.includes(k)).map(membershipLabel)
+	return alsoEnds.length > 0 ? { alsoEnds } : {}
+}
+
+/**
+ * ANOTHER live subscription to the same membership on this customer, if any.
+ *
+ * One membership can be several Stripe products (Concierge monthly and annual), so a member who
+ * moves from one to the other briefly holds both, and the old one's update / deletion arrives
+ * after the new one is live. Writing that old state would mark a paying member inactive. When
+ * this returns a subscription, the record follows IT and the old one's ending is not announced.
+ */
+const otherLiveMembershipSubscription = async (
+	customerId: string,
+	key: MembershipKey,
+	excludeId: string,
+	ending?: Stripe.Subscription,
+): Promise<Stripe.Subscription | null> => {
+	// A ticket upgrade (monthly → yearly) names its replacement on the old subscription. Followed
+	// FIRST, because the replacement may sit on another Stripe customer — a monthly plan sold by
+	// selectmember.jetzy.com lives on their customer, the yearly one we create on ours — where the
+	// same-customer search below would never find it.
+	const replacedBy = (ending?.metadata as any)?.replacedBy
+	if (replacedBy && replacedBy !== excludeId) {
+		try {
+			const replacement = await getStripeClient().subscriptions.retrieve(String(replacedBy))
+			if (replacement.status === "active" || replacement.status === "trialing") return replacement
+		} catch (error: any) {
+			console.error("[webhooks/stripe] Couldn't read the replacement subscription:", replacedBy, error?.message || error)
+		}
+	}
+	try {
+		const list = await getStripeClient().subscriptions.list({ customer: customerId, status: "all", limit: 100 })
+		return (
+			list.data.find(
+				(other) =>
+					other.id !== excludeId &&
+					(other.status === "active" || other.status === "trialing") &&
+					!other.cancel_at_period_end &&
+					other.items.data.some((item) => {
+						const product = item.price?.product
+						return isMembershipProduct(key, typeof product === "string" ? product : product?.id)
+					}),
+			) || null
+		)
+	} catch (error: any) {
+		console.error("[webhooks/stripe] Couldn't list subscriptions to check for a replacement:", error?.message || error)
+		return null
+	}
+}
+
+const membershipStateOf = (subscription: Stripe.Subscription) => ({
+	active: subscription.status === "active" || subscription.status === "trialing",
+	stripeSubscriptionId: subscription.id,
+	status: subscription.status,
+	currentPeriodEnd: new Date(subscription.current_period_end * 1000),
+	cancelAtPeriodEnd: subscription.cancel_at_period_end,
+})
 
 // Stripe needs the raw, unparsed request body to verify the webhook signature.
 export const config = {
@@ -208,6 +298,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 							cancelAtPeriodEnd: subscription.cancel_at_period_end,
 						})
 						await mirrorToSelectMember(key, customerId, "active", subscription)
+
+						// Concierge includes Premium: a separate Premium subscription stops at the end of
+						// its paid period. Runs for SelectMember's Concierge sales too — the member is
+						// the same person on the same customer either way. Idempotent, never throws.
+						if (subscription.status === "active" || subscription.status === "trialing") {
+							await retireIncludedSubscriptions(customerId, key)
+						}
 
 						// Welcome the buyer — but only for a signup WE sold.
 						//
@@ -402,7 +499,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 								lastName,
 								email: booking.customerEmail,
 								reason: "expired",
-								payment: { amount },
+								payment: { amount, memberships: membershipRowsForEmail(bookingMemberships((booking as any).payment) as any) },
 							})
 							// The host is not looking at a screen when this fires — tell them, or
 							// they silently lose a paying guest.
@@ -452,6 +549,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				// doesn't arrive until the period actually ends, up to a month later.
 				const previous = await findUserByStripeCustomerId(customerId)
 				const wasCancelling = !!previous?.doc?.[MEMBERSHIPS[key].userField]?.cancelAtPeriodEnd
+				const wasActive = !!previous?.doc?.[MEMBERSHIPS[key].userField]?.active
+
+				// This one is ending, but the member holds the same membership on another live
+				// subscription (Concierge monthly → annual) — keep the record on that one, and say
+				// nothing about an ending that changes nothing for them.
+				const thisEnding =
+					subscription.cancel_at_period_end || !(subscription.status === "active" || subscription.status === "trialing")
+				if (thisEnding) {
+					const replacement = await otherLiveMembershipSubscription(customerId, key, subscription.id, subscription)
+					if (replacement) {
+						await setMembershipStatusByStripeCustomerId(customerId, key, membershipStateOf(replacement))
+						console.log("[webhooks/stripe] Ending subscription replaced by a live one; record kept on it:", subscription.id, "->", replacement.id)
+						break
+					}
+				}
 
 				await setMembershipStatusByStripeCustomerId(customerId, key, {
 					active: subscription.status === "active" || subscription.status === "trialing",
@@ -460,6 +572,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					currentPeriodEnd: new Date(subscription.current_period_end * 1000),
 					cancelAtPeriodEnd: subscription.cancel_at_period_end,
 				})
+
+				// Concierge just BECAME active (a SelectMember sale, a recovered payment) → retire a
+				// separate Premium subscription. Only on the transition: a member who later chooses
+				// to renew Premium themselves must not have it re-cancelled on every Concierge update.
+				if (!wasActive && (subscription.status === "active" || subscription.status === "trialing")) {
+					await retireIncludedSubscriptions(customerId, key)
+				}
 
 				// Their site has to learn about a portal cancellation too — it never passes
 				// through our checkout code. Still "active" until the period actually ends.
@@ -488,12 +607,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				// cancel or their card may fail before anything is — they are told on the first
 				// renewal that actually charges the new price (see `invoice.paid`), never before.
 				const isOurReprice = !!previousPriceId && (subscription.metadata as any)?.repricedFrom === previousPriceId
+				// selectmember.jetzy.com may switch a Concierge WE sold from monthly to yearly in place
+				// (agreed 2026-10-23) and sends its own confirmation; it stamps `planChangedBy` so the
+				// member isn't told twice. Everything else about the change (record, mirror) still runs.
+				const changedBySelectMember = (subscription.metadata as any)?.planChangedBy === "selectmember"
 				if (
 					previousPriceId &&
 					newPrice?.id &&
 					previousPriceId !== newPrice.id &&
 					newPrice.unit_amount != null &&
 					!isOurReprice &&
+					!changedBySelectMember &&
 					billedByJetzy(subscription, key)
 				) {
 					const recipient = await findEmailRecipientByStripeCustomerId(customerId)
@@ -524,7 +648,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				}
 
 				if (!wasCancelling && subscription.cancel_at_period_end && billedByJetzy(subscription, key)) {
-					const recipient = await findEmailRecipientByStripeCustomerId(customerId)
+					// A Premium subscription retired because Concierge now includes it may belong to a
+					// customer selectmember.jetzy.com created, with no account here to resolve. The "now
+					// included" note is the only word that member gets about it (SelectMember sends none),
+					// so it falls back to the Stripe customer's own address. Every other cancellation email
+					// keeps requiring an account here, so SelectMember's own members are never double-mailed.
+					const retiredAsIncluded = (subscription.metadata as any)?.cancelledReason === INCLUDED_MEMBERSHIP_CANCEL_REASON
+					let recipient = await findEmailRecipientByStripeCustomerId(customerId)
+					if (!recipient && retiredAsIncluded) {
+						try {
+							const customer = await stripe.customers.retrieve(customerId)
+							const address = !(customer as any).deleted ? (customer as Stripe.Customer).email : null
+							if (address) recipient = { email: address, firstName: ((customer as Stripe.Customer).name || "").split(" ")[0] || undefined }
+						} catch (customerError: any) {
+							console.error("[webhooks/stripe] Couldn't read the customer for the now-included email:", customerId, customerError?.message || customerError)
+						}
+					}
 					if (recipient) {
 						await sendMembershipCancelled({
 							...recipient,
@@ -536,6 +675,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 							label: MEMBERSHIPS[key].label,
 							...cancellationRate(subscription),
 							reactivateUrl: reactivateMembershipUrl(),
+							...(await includedMembershipCancelExtras(subscription, key, customerId)),
 						})
 					}
 				}
@@ -554,6 +694,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					break
 				}
 
+				// Replaced by another live subscription to the same membership (monthly → annual)?
+				// Then the member still holds it: record that one, no cancellation mirror or email.
+				const replacement = await otherLiveMembershipSubscription(customerId, key, subscription.id, subscription)
+				if (replacement) {
+					await setMembershipStatusByStripeCustomerId(customerId, key, membershipStateOf(replacement))
+					console.log("[webhooks/stripe] Deleted subscription replaced by a live one; record kept on it:", subscription.id, "->", replacement.id)
+					break
+				}
+
 				// Resolve the recipient BEFORE the update — the write doesn't clear the customer
 				// id, but reading first keeps this independent of that.
 				const recipient = await findEmailRecipientByStripeCustomerId(customerId)
@@ -566,7 +715,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 				await mirrorToSelectMember(key, customerId, "cancelled", subscription)
 
-				if (recipient && billedByJetzy(subscription, key)) {
+				// A Premium subscription WE retired because Concierge includes it was already explained
+				// when it was set to end; its actual ending changes nothing for the member.
+				const retiredAsIncluded =
+					(subscription.metadata as any)?.cancelledReason === INCLUDED_MEMBERSHIP_CANCEL_REASON
+				if (recipient && billedByJetzy(subscription, key) && !retiredAsIncluded) {
 					await sendMembershipCancelled({
 						...recipient,
 						alreadyEnded: true,
@@ -575,6 +728,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 						label: MEMBERSHIPS[key].label,
 						...cancellationRate(subscription),
 						reactivateUrl: reactivateMembershipUrl(),
+						...(await includedMembershipCancelExtras(subscription, key, customerId)),
 					})
 				}
 				break

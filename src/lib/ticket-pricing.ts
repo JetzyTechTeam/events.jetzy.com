@@ -61,6 +61,13 @@ export type RecurringCharge = {
 	 * follows hides the charge rather than explaining it.
 	 */
 	trialMonths?: number
+	/**
+	 * This membership REPLACES a subscription on a shorter period (monthly → yearly). The billing
+	 * period it replaced, and when the new period begins (the old one's paid time ends) — so the
+	 * receipt can say the monthly plan stops then and the year runs from that date.
+	 */
+	replacesInterval?: string
+	startsAt?: Date | string
 }
 
 export type TicketPricing = {

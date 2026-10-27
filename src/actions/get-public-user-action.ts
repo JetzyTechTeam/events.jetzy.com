@@ -2,6 +2,7 @@
 import { ensureDbConnected } from "@Jetzy/configs/database"
 import { Users } from "@Jetzy/models/userModal"
 import { escapeRegExp } from "@Jetzy/utils/text"
+import { isMembershipEntitled } from "@/lib/memberships"
 import { isValidObjectId } from "mongoose"
 
 export const getPublicUserAction = async (id: string) => {
@@ -14,9 +15,9 @@ export const getPublicUserAction = async (id: string) => {
 
         if (isValidObjectId(id)) {
             // Standard ID lookup
-            user = await Users.findById(id).select("firstName lastName image email premiumSubscription.active").lean()
+            user = await Users.findById(id).select("firstName lastName image email premiumSubscription.active conciergeSubscription.active").lean()
             if (!user) {
-                user = await EventUsers.findById(id).select("firstName lastName image email premiumSubscription.active").lean()
+                user = await EventUsers.findById(id).select("firstName lastName image email premiumSubscription.active conciergeSubscription.active").lean()
             }
         } else {
             // Derived Slug lookup: firstname-lastname-last3id
@@ -39,8 +40,8 @@ export const getPublicUserAction = async (id: string) => {
             };
 
             const potentialUsers = [
-                ...(await Users.find(searchBySuffix).select("firstName lastName image email premiumSubscription.active").lean()),
-                ...(await EventUsers.find(searchBySuffix).select("firstName lastName image email premiumSubscription.active").lean())
+                ...(await Users.find(searchBySuffix).select("firstName lastName image email premiumSubscription.active conciergeSubscription.active").lean()),
+                ...(await EventUsers.find(searchBySuffix).select("firstName lastName image email premiumSubscription.active conciergeSubscription.active").lean())
             ];
 
             console.log(`[Slug Lookup] Found ${potentialUsers.length} potential matches by suffix`);
@@ -74,7 +75,7 @@ export const getPublicUserAction = async (id: string) => {
                 lastName: user.lastName,
                 image: finalImage || null,
                 _id: user._id.toString(),
-                isPremiumSubscriber: !!user.premiumSubscription?.active,
+                isPremiumSubscriber: isMembershipEntitled(user, "premium"),
             }
         }
     } catch (error: any) {

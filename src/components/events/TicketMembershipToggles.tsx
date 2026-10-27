@@ -5,6 +5,7 @@ import {
 	MAX_MEMBERSHIP_FREE_MONTHS,
 	bundleApprovalNotice,
 	bundleFreeTicketNotice,
+	splitBundleCharges,
 	bundleFreeTrialTicketNotice,
 	freeMonthsLabel,
 } from "@/lib/premium-bundle"
@@ -22,7 +23,7 @@ import { planPriceForInterval, useMembershipPlans } from "@/hooks/usePremiumPlan
  * BILLING SITS INSIDE EACH MEMBERSHIP'S OWN ROW. A ticket carries ONE `membershipInterval`, but
  * not every membership is sold at every interval: checkout resolves each membership with
  * `findMembershipPriceForInterval(key, interval) || getMembershipPrice(key)`, so a ticket set to
- * annual still bills a monthly-only membership (Full Concierge today) monthly. A single
+ * annual still bills a monthly-only membership monthly. A single
  * "Billed: Monthly / Annual" control under both checkboxes read as applying to both, and hosts
  * believed they were selling annual Concierge. Now the choice appears only on a membership that
  * actually offers it, and a monthly-only one says so in its own row.
@@ -93,7 +94,10 @@ const TicketMembershipToggles: React.FC<Props> = ({
 	const toggle = (key: MembershipKey, checked: boolean) => {
 		// Rebuilt from MEMBERSHIP_KEYS rather than from the ticked order, so what is stored is
 		// always canonical whichever order the host clicked them in.
-		const next = ALL_KEYS.filter((k) => (k === key ? checked : selected.includes(k)))
+		const ticked = ALL_KEYS.filter((k) => (k === key ? checked : selected.includes(k)))
+		// A membership another ticked one INCLUDES is dropped: Concierge includes Premium, so
+		// selling both is just Concierge. Also tidies a ticket saved with both before this rule.
+		const next = ticked.filter((k) => !ticked.some((other) => other !== k && (MEMBERSHIPS[other].includes || []).includes(k)))
 		// Annual chosen, and nothing left on the ticket can be billed annually → back to monthly,
 		// so a stale "year" doesn't sit on a ticket that can't use it. Only when every remaining
 		// price is KNOWN to be monthly-only; an unread price changes nothing.
@@ -114,7 +118,9 @@ const TicketMembershipToggles: React.FC<Props> = ({
 
 	// "What a non-member pays at checkout". Every figure from the plan, never written down; if
 	// any membership's price is unknown the total is left out rather than understated.
-	const lines = selected.map((key) => {
+	// Concierge includes Premium: with both ticked, a non-member is billed for Concierge only.
+	const { toCharge: chargedKeys, included: includedKeys } = splitBundleCharges(selected, [])
+	const lines = chargedKeys.map((key) => {
 		const resolved = resolvedFor(key)
 		return { key, ...resolved }
 	})
@@ -220,7 +226,12 @@ const TicketMembershipToggles: React.FC<Props> = ({
 
 			<Flex direction="column" gap={2} mt={3}>
 				{ALL_KEYS.map((key) => {
-					const checked = selected.includes(key)
+					// Included with another ticked membership (Premium under Concierge) — shown as
+					// given, not as a second thing to sell.
+					const includedBy = ALL_KEYS.find(
+						(other) => other !== key && selected.includes(other) && (MEMBERSHIPS[other].includes || []).includes(key),
+					)
+					const checked = selected.includes(key) && !includedBy
 					const plan = planOf(key)
 					// Every interval on sale, for the row's at-a-glance price.
 					const priceSummary = (plan?.prices || []).length
@@ -239,7 +250,8 @@ const TicketMembershipToggles: React.FC<Props> = ({
 							<Flex align="center" justify="space-between" gap={3} wrap="wrap">
 								<Checkbox
 									colorScheme="yellow"
-									isChecked={checked}
+									isChecked={checked || !!includedBy}
+									isDisabled={!!includedBy}
 									onChange={(e) => toggle(key, e.target.checked)}
 									// Phones only: a taller row, so the box is not a 16px target.
 									sx={{ "@media screen and (max-width: 47.99em)": { paddingTop: "6px", paddingBottom: "6px" } }}
@@ -248,10 +260,16 @@ const TicketMembershipToggles: React.FC<Props> = ({
 										{MEMBERSHIPS[key].label}
 									</Text>
 								</Checkbox>
-								{priceSummary && (
-									<Text fontSize="12px" color="#9C9C9C">
-										{priceSummary}
+								{includedBy ? (
+									<Text fontSize="12px" color="#F5C518">
+										Included with {MEMBERSHIPS[includedBy].shortLabel}
 									</Text>
+								) : (
+									priceSummary && (
+										<Text fontSize="12px" color="#9C9C9C">
+											{priceSummary}
+										</Text>
+									)
 								)}
 							</Flex>
 							{checked && (
@@ -335,6 +353,17 @@ const TicketMembershipToggles: React.FC<Props> = ({
 							</Text>
 						</Flex>
 					))}
+					{includedKeys.map((key) => (
+						<Flex key={key} justify="space-between" gap={3} fontSize="13px" py={0.5}>
+							<Text color="#D6D6D6">
+								{MEMBERSHIPS[key].label}{" "}
+								<Text as="span" color="#9C9C9C">
+									(included with {membershipLabelList(chargedKeys)})
+								</Text>
+							</Text>
+							<Text textAlign="right">$0</Text>
+						</Flex>
+					))}
 					{dueToday != null && (
 						<Flex justify="space-between" gap={3} fontSize="13px" fontWeight={700} pt={2} mt={1} borderTop="1px solid #343536">
 							<Text>{requiresApproval ? "Held on the card at checkout" : "Due at checkout"}</Text>
@@ -342,14 +371,14 @@ const TicketMembershipToggles: React.FC<Props> = ({
 						</Flex>
 					)}
 					<Text fontSize="12px" color="#9C9C9C" mt={2} lineHeight="140%">
-						Then {selected.map((key) => `${MEMBERSHIPS[key].label} renews ${resolvedFor(key).label ? `at ${resolvedFor(key).label}` : resolvedIntervals[key] === "year" ? "yearly" : "monthly"}`).join("; ")} until cancelled.
+						Then {chargedKeys.map((key) => `${MEMBERSHIPS[key].label} renews ${resolvedFor(key).label ? `at ${resolvedFor(key).label}` : resolvedIntervals[key] === "year" ? "yearly" : "monthly"}`).join("; ")} until cancelled.
 					</Text>
 				</Box>
 			)}
 
 			{selected.length > 0 && requiresApproval && (
 				<Text fontSize="12px" color="#F5C518" mt={3} lineHeight="140%">
-					{bundleApprovalNotice(selected, resolvedIntervals)}
+					{bundleApprovalNotice(chargedKeys, resolvedIntervals)}
 				</Text>
 			)}
 

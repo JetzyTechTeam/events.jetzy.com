@@ -13,6 +13,8 @@ import { sendBookingCancellation, sendHostCancellationNotice } from "@/lib/send-
 import { sessionIsAdmin, sessionOwnsBooking, sessionUserId } from "@/lib/booking-identity"
 import { bookingMoneyAmount, bookingMoneyState, canGuestCancel } from "@/lib/booking-cancellation"
 import { isCancelledBooking } from "@/lib/booking-status"
+import { bookingMemberships } from "@/lib/booking-memberships"
+import { cancellationMembershipNote } from "@/lib/booking-membership-display"
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
 	if (req.method !== "POST") {
@@ -153,6 +155,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					totalAmount: moneyAmount,
 					moneyState,
 					cancelledBy,
+					// Cancelling the booking doesn't cancel a membership bought with it — and part of
+					// the money above bought that membership, which the guest keeps.
+					membershipNote: cancellationMembershipNote(bookingMemberships(booking.payment) as any, moneyState),
 				})
 			}
 		} catch (emailErr) {
@@ -186,6 +191,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					moneyState,
 					cancelledBy,
 					organizerEmail,
+					membershipNote: cancellationMembershipNote(bookingMemberships(booking.payment) as any, moneyState, true),
 				})
 			}
 		} catch (noticeErr) {

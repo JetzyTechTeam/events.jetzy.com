@@ -47,7 +47,12 @@ export default async function handler(
     }
 
     const bookings = await Bookings.find({ eventId: eventId })
-      .select('-payment.paymentIntentId -payment.checkoutSessionId')
+      .select(
+        // No Stripe identifier reaches a host's browser: payment and checkout ids, and the
+        // subscription / customer / card ids that membership rows and upgrades carry.
+        '-payment.paymentIntentId -payment.checkoutSessionId -payment.subscriptionId -payment.paymentMethodId ' +
+          '-payment.memberships.subscriptionId -payment.memberships.upgradeFrom.subscriptionId -payment.memberships.upgradeFrom.customerId',
+      )
 
     return res.status(200).json(bookings)
   } catch (error) {

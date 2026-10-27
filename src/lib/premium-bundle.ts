@@ -22,6 +22,7 @@ import {
 	MEMBERSHIPS,
 	MEMBERSHIP_KEYS,
 	membershipLabelList,
+	membershipsIncluding,
 	sanitizeMembershipKeys,
 	type MembershipKey,
 } from "@/lib/memberships"
@@ -214,22 +215,58 @@ export type BundlePlan = {
 	toCharge: MembershipKey[]
 	/** The subset the buyer already pays for elsewhere. */
 	alreadyHeld: MembershipKey[]
+	/**
+	 * The subset this order gives at no charge because another membership being CHARGED here
+	 * includes it — Premium on a ticket that also sells Concierge. Not billed, no subscription
+	 * created: the Concierge subscription is what makes them a Premium member.
+	 */
+	included: MembershipKey[]
+	/**
+	 * The subset charged as an UPGRADE: the buyer already holds it on a shorter billing period
+	 * (monthly Concierge) and this ticket sells it yearly. Also in `toCharge` — it is charged like
+	 * a new sale — but the subscription it creates replaces the old one. See `membership-upgrade.ts`.
+	 */
+	upgrades: MembershipKey[]
 	mode: BundleMode
+}
+
+/**
+ * The one split of "what this ticket sells" into charged / already held / included.
+ * Shared by `resolveBundlePlan` (server) and `EventCheckoutModel` (preview), so the two can't
+ * disagree about whether Premium is billed on a Concierge order.
+ *
+ * `alreadyHeld` must already be EXPANDED (`heldMemberships` returns entitlements), so a
+ * Concierge member reads as holding Premium here too.
+ */
+export const splitBundleCharges = (
+	selected: MembershipKey[],
+	alreadyHeld: MembershipKey[],
+	/** Held, but on a shorter billing period than this ticket sells — charged as an upgrade. */
+	upgradeKeys: MembershipKey[] = [],
+) => {
+	const upgrades = selected.filter((key) => alreadyHeld.includes(key) && upgradeKeys.includes(key))
+	const held = selected.filter((key) => alreadyHeld.includes(key) && !upgrades.includes(key))
+	const owed = selected.filter((key) => !held.includes(key))
+	// Concierge includes Premium (CEO, 2026-10-19): when Concierge is being bought on this order,
+	// Premium comes with it and is never billed on top.
+	const included = owed.filter((key) => membershipsIncluding(key).some((other) => owed.includes(other)))
+	const toCharge = owed.filter((key) => !included.includes(key))
+	return { toCharge, alreadyHeld: held, included, upgrades }
 }
 
 export const resolveBundlePlan = (
 	tickets: BundleTicketLike[] | null | undefined,
 	alreadyHeld: MembershipKey[],
+	upgradeKeys: MembershipKey[] = [],
 ): BundlePlan => {
 	const selected = selectionMemberships(tickets)
-	const held = selected.filter((key) => alreadyHeld.includes(key))
-	const toCharge = selected.filter((key) => !alreadyHeld.includes(key))
+	const { toCharge, alreadyHeld: held, included, upgrades } = splitBundleCharges(selected, alreadyHeld, upgradeKeys)
 
 	// "already-member" means NOTHING is left to sell — the order is an ordinary paid ticket.
 	// A buyer who holds one of two still needs the bundle machinery for the other.
 	const mode: BundleMode = selected.length === 0 ? "none" : toCharge.length === 0 ? "already-member" : "bundle"
 
-	return { selected, toCharge, alreadyHeld: held, mode }
+	return { selected, toCharge, alreadyHeld: held, included, upgrades, mode }
 }
 
 /** @deprecated Single-product shim. Use `resolveBundlePlan`. */
@@ -257,7 +294,7 @@ export const bundleApprovalNotice = (
 	keys: MembershipKey[],
 	/**
 	 * How each membership is billed — the interval it RESOLVES to, not the ticket's setting: a
-	 * ticket set to annual still bills a monthly-only membership (Full Concierge) monthly. A
+	 * ticket set to annual still bills a monthly-only membership monthly. A
 	 * single string applies to every key, which is the old call shape.
 	 */
 	intervals?: string | null | Partial<Record<MembershipKey, string>>,

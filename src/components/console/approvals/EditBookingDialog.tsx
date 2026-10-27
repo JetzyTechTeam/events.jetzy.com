@@ -18,7 +18,14 @@ import {
 } from "@chakra-ui/react"
 import { approvalCaptureCents, bookingTicketCount } from "@/lib/booking-approval"
 import { bookingMembershipTotal, bookingMemberships } from "@/lib/booking-memberships"
-import { MEMBERSHIPS, type MembershipKey } from "@/lib/memberships"
+import {
+	includedRowsCents,
+	membershipRowKind,
+	membershipRowName,
+	membershipRowSummary,
+	soldMembershipNames,
+	soldMembershipRows,
+} from "@/lib/booking-membership-display"
 import {
 	GUEST_NAME_LIMIT,
 	REQUEST_LOCK_MESSAGE,
@@ -132,12 +139,24 @@ export function EditBookingDialog({
 	// row holds 0, which is right: nothing was held for it.
 	const membershipRows = bookingMemberships(target?.payment)
 	const membershipHeld = hasHold ? bookingMembershipTotal(target?.payment, membershipRows) : 0
-	const membershipNames = membershipRows.map((row) => MEMBERSHIPS[row.key as MembershipKey]?.label || "membership").join(" and ")
-	// The same function `approve.ts` captures with. Assumes every membership is still owed; one
-	// the guest already holds by then is released at approval, so the real charge can be lower.
+	// Only what is actually SOLD here — a membership another one on the booking includes (Premium
+	// beside Concierge) is not charged, and must not be named as if it were.
+	const membershipNames = soldMembershipNames(membershipRows as any) || "the membership"
+	const soldRows = soldMembershipRows(membershipRows as any)
+	const hasUpgrade = soldRows.some((row) => membershipRowKind(row as any, membershipRows as any) === "upgrade")
+	// Released at approval without fail, so never part of the figure the host is shown.
+	const includedHeld = hasHold ? includedRowsCents(membershipRows as any) / 100 : 0
+	// The same function `approve.ts` captures with. Assumes every sold membership is still owed;
+	// one the guest has acquired by then is released at approval, so the real charge can be lower.
 	const chargeOnApproval =
-		hasHold && draftQty > 0 && draftQty < requestedQty
-			? approvalCaptureCents({ held, membershipHeld, membershipKept: membershipHeld, approved: draftQty, requested: requestedQty }) / 100
+		hasHold && draftQty > 0 && (draftQty < requestedQty || includedHeld > 0)
+			? approvalCaptureCents({
+					held,
+					membershipHeld,
+					membershipKept: Math.max(0, membershipHeld - includedHeld),
+					approved: draftQty,
+					requested: requestedQty,
+			  }) / 100
 			: held
 
 	const canSave = !!editTarget && (!nameEditable || normalizedName.ok) && !ticketRefusal && (nameChanged || ticketsChanged)
@@ -256,9 +275,17 @@ export function EditBookingDialog({
 										{/* What is held, split, so the host can see the membership is not part of
 										    what shrinks. Only when there is a membership charge to separate out. */}
 										{hasHold && membershipHeld > 0 && (
-											<Text fontSize="xs" color="#D6D6D6" mt={2}>
-												The hold covers the tickets ({money(held - membershipHeld)}) and the first period of {membershipNames} ({money(membershipHeld)}).
-											</Text>
+											<Box mt={2}>
+												<Text fontSize="xs" color="#D6D6D6">
+													The hold covers the tickets ({money(held - membershipHeld)}) and:
+												</Text>
+												{membershipRows.map((row) => (
+													<Text key={row.key} fontSize="xs" color="#D6D6D6" pl={2}>
+														• {membershipRowName(row as any)} — {membershipRowSummary(row as any, membershipRows as any)} (
+														{money(Number(row.amount) || 0)})
+													</Text>
+												))}
+											</Box>
 										)}
 										<Text fontSize="xs" color="#D6D6D6" mt={2}>
 											{hasHold
@@ -279,8 +306,9 @@ export function EditBookingDialog({
 										)}
 										{hasHold && membershipHeld > 0 && draftQty < requestedQty && (
 											<Text fontSize="xs" color="#9C9C9C" mt={2}>
-												If the guest already holds the membership by the time you approve, that part of the hold is released too, so the
-												final charge can be lower.
+												{hasUpgrade
+													? "If the guest has already moved to yearly billing by the time you approve, the yearly part of the hold is released too, so the final charge can be lower."
+													: "If the guest already holds the membership by the time you approve, that part of the hold is released too, so the final charge can be lower."}
 											</Text>
 										)}
 										<Text fontSize="xs" color="#D6D6D6" mt={2}>

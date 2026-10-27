@@ -58,7 +58,7 @@ import { EditBookingDialog } from "@/components/console/approvals/EditBookingDia
 import { useBookingEdit } from "@/components/console/approvals/useBookingEdit"
 import { describeDiscount } from "@/lib/booking-revenue"
 import { bookingMemberships } from "@/lib/booking-memberships"
-import { MEMBERSHIPS, type MembershipKey } from "@/lib/memberships"
+import { membershipRowKind, membershipRowName, membershipRowSummary } from "@/lib/booking-membership-display"
 import CancelBookingDialog from "@/components/bookings/CancelBookingDialog"
 import { MoneyState, bookingMoneyAmount, bookingMoneyState } from "@/lib/booking-cancellation"
 import { getEventStatus } from "@/utils/eventSort"
@@ -2276,6 +2276,7 @@ export default function HostedEvents({ event }: Props) {
 				eventName={stripHtml(clonedEvent?.name || "")}
 				moneyState={(myBooking?.moneyState || "free") as MoneyState}
 				amount={Number(myBooking?.moneyAmount || 0)}
+				memberships={bookingMemberships((myBooking as any)?.payment) as any}
 			/>
 	
 				{/* QR Code Modal for Event */}
@@ -2956,15 +2957,22 @@ function EventBookings({
 														<span>Ticket</span>
 														<span>${Number(booking.total || 0).toFixed(2)}</span>
 													</div>
-													{bookingMembershipRows.map((row: any) => (
-														<div key={row.key} className="flex justify-between gap-3">
-															<span>
-																{MEMBERSHIPS[row.key as MembershipKey]?.receiptLabel || row.key} (first {row.interval || "month"})
-																{row.status === "failed" ? " — not started" : ""}
-															</span>
-															<span>${(Number(row.amount) || 0).toFixed(2)}</span>
-														</div>
-													))}
+													{bookingMembershipRows.map((row: any) => {
+														// The shared wording: yearly, monthly → yearly upgrade, free months,
+														// or included / already held (not charged — no amount shown).
+														const kind = membershipRowKind(row, bookingMembershipRows as any)
+														return (
+															<div key={row.key} className="flex justify-between gap-3">
+																<span>
+																	{membershipRowName(row)}{" "}
+																	<span className="text-[#8a8a8a]">({membershipRowSummary(row, bookingMembershipRows as any)})</span>
+																</span>
+																<span className="flex-shrink-0">
+																	{kind === "included" || kind === "held" ? "—" : `$${(Number(row.amount) || 0).toFixed(2)}`}
+																</span>
+															</div>
+														)
+													})}
 												</div>
 											)}
 										</div>
@@ -3022,6 +3030,7 @@ function EventBookings({
 				asManager
 				moneyState={bookingMoneyState(cancelTarget as any) as MoneyState}
 				amount={bookingMoneyAmount(cancelTarget as any)}
+				memberships={bookingMemberships((cancelTarget as any)?.payment) as any}
 			/>
 
 			<EditBookingDialog controller={requestEditor} eventTickets={eventTickets} />
