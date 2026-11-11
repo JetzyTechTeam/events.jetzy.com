@@ -2,6 +2,16 @@
 
 For the mobile app / backend, which writes to the same `events` collection this portal does.
 
+**Revision 6 (2026-11-11).** No schema change. Brings the document up to date with the code:
+**§0 — handoff** (who builds what, what changed, the remaining work); **§6 rewritten** —
+Premium repriced to **$10/month and $100/year** (2026-09-18, new price ids), **Full Concierge now
+sells yearly** ($595/yr, a separate Stripe product), **Concierge includes Jetzy Premium** (the
+ticket form drops Premium when Concierge is ticked), and **membership options on a ticket are
+admin-only**; **§4a — the ticket endpoints**, including the rule that every ticket write clears
+`event.draftRevision`; **§7 / §7a** are now marked web-only — the app does not call checkout
+(`BOOKING_FLOW.md` §5.0); **§14 — what a buyer must see on a ticket in the app**. Booking rules
+(approval, partial approval, edits) live in `BOOKING_FLOW.md` Revision 2.
+
 **Revision 5 (2026-09-24).** Adds three sections, all read/write contracts rather than schema
 changes: **§11 — `GET /api/events/:eventId/availability`**, the endpoint that answers "how many
 are left" so you don't have to run §10's aggregation yourself; **§12 — approvals**, including the
@@ -34,6 +44,47 @@ completeness so the two implementations can still be diffed end to end.
 
 ---
 
+## 0. Handoff (Rev 6)
+
+### 0.1 Who builds what
+
+| Part | Built by | Section |
+|---|---|---|
+| Host/admin **creates, edits, deletes** tickets (the ticket form) | **the app** | §1–§6a, §10, §4a |
+| **Shows** tickets to a buyer: price, sold out / last one, membership disclosure | **the app** | §10–§11, §14 |
+| **Buys** a ticket: checkout, Stripe, the booking | **the web** — the app opens `events.jetzy.com/<slug>?src=app` | `BOOKING_FLOW.md` §5.0; §7 / §7a here are reference only |
+| Everything after a booking exists (approve, edit, cancel, check-in…) | the app | `BOOKING_FLOW.md` |
+
+### 0.2 What changed since Revision 5 (2026-09-24)
+
+| # | Change | Section |
+|---|---|---|
+| 1 | Membership toggles on a ticket are **admin / super-admin only** (2026-09-24). A host editing a ticket must not see them and must not change them — preserve-on-omit keeps an admin's setting. **The web enforces this in its UI only; the app's API must enforce it** (§6 rule 0). | §6 |
+| 2 | **Premium repriced** to $10/month, $100/year (2026-09-18). New price ids. Never hardcode a price — read `/api/subscriptions/plan`. | §6 |
+| 3 | **Concierge sells yearly** — Concierge Annual is a SEPARATE Stripe product ($595/yr). A ticket's `membershipInterval: "year"` now sells Concierge yearly too. | §6, §6b |
+| 4 | **Concierge includes Jetzy Premium.** Ticking Concierge drops/greys Premium on the form; new tickets store `["concierge"]` alone; a legacy ticket with both bills Concierge only. | §6, §6b |
+| 5 | The ticket form chooses billing **per membership row** (Monthly / Annual inside each row that offers annual; "Monthly only · $X/month" for one that doesn't). The data is still ONE `membershipInterval` per ticket. Unticking the last annual-capable membership resets it to month. | §6 |
+| 6 | A **monthly Concierge member** buying a **yearly-Concierge** ticket is upgraded to yearly (charged on the web). Matters to the app only for disclosure. | §14 |
+| 7 | Ticket `desc` is **HTML** (rich-text editor), rendered sanitised; older values are plain text. | §1 |
+| 8 | Ticket endpoints secured (admin-or-owner, method guards); delete blocked by any non-dead booking; **every ticket write `$unset`s `draftRevision`**. | §4a |
+| 9 | Only the **last** remaining ticket is announced ("Only 1 left"); "Sold out" at 0. | §14 |
+
+### 0.3 Remaining work for the app — checklist
+
+- [ ] Ticket form: name, description (HTML), price (0 or ≥ 0.50), quantity (blank = unlimited,
+      sends `null` to clear), require approval (tri-state), and — **admin only** — memberships,
+      billing per membership, free months. §1–§6a, §10.
+- [ ] Write through the rules in §3–§4 (keep `_id`, preserve-on-omit, new Stripe price only on a
+      price change, mirror `includesPremium`) and §4a (`$unset draftRevision`, delete guard).
+- [ ] Enforce admin-only memberships server-side (§6 rule 0).
+- [ ] Concierge-includes-Premium on the form (§6 rule 6).
+- [ ] Buyer display: availability, sold out / last one, stepper caps, membership disclosure with
+      live prices (§10, §11, §14).
+- [ ] Remove any "membership isn't available yet" block (§6b) and any hardcoded price.
+- [ ] Hand buying to the web (`BOOKING_FLOW.md` §5.0).
+
+---
+
 ## 1. Ticket sub-document
 
 ```jsonc
@@ -60,8 +111,8 @@ completeness so the two implementations can still be diffed end to end.
 |---|---|---|---|
 | `_id` | ObjectId | auto | **Must survive edits.** Bookings store this id, not the name. |
 | `name` | String | yes | Buyer-facing. The web form field is called `title` and is mapped to `name` on write. |
-| `price` | Number | yes | Major units, `usd`. See §2a for the valid range. |
-| `desc` | String | no | Free text; read from the event record for receipts, never from a checkout payload. |
+| `price` | Number | yes | Major units, `usd`, 2 decimals (the web writes `price.toFixed(2)`; Mongoose casts to Number). See §2a for the valid range. |
+| `desc` | String | no | **HTML** from the web's rich-text editor (older tickets hold plain text — render both). Sanitise before rendering. Read from the event record for receipts, never from a checkout payload. |
 | `stripeProductId` | String | yes | **A Stripe price id**, despite the name. |
 | `requireApproval` | Boolean | no | `undefined` = inherit `event.requireApproval`. |
 | `quantity` | Number | no | **NEW.** How many of this ticket exist. `undefined` = unlimited, `0` = closed. See §10. |
@@ -127,6 +178,16 @@ const price = await stripe.prices.create({
 
 `Math.round` matters: `19.99 * 100` is `1998.9999999999998` in floating point and Stripe rejects a
 non-integer `unit_amount`.
+
+**Every ticket gets a Stripe price, including a $0 one** (`unit_amount: 0`) — `stripeProductId` is
+required. **An event created with no tickets gets one** on the web: `{ name: "General Admission",
+price: 0, desc: "Free ticket for this event." }`. `memberships` on create is written as the
+resolved array (`[]` when none); `membershipInterval` / `membershipFreeMonths` / `requireApproval`
+/ `quantity` are written only when the host chose a value.
+
+**`event.isPaid`** means "the event has tickets", not "costs money": the web's tickets endpoint
+sets `isPaid: tickets.length > 0`, and the buyer's quantity stepper only renders when `isPaid` is
+true. Keep it in step whenever you write `tickets`.
 
 **Also create the capacity row** for a new event:
 
@@ -197,6 +258,48 @@ Bookings already made keep the old price id. That is correct — it is what the 
 
 ---
 
+## 4a. NEW (Rev 6) — the web's ticket endpoints, and two rules every ticket write follows
+
+If the app writes tickets **through the web**, these are the endpoints. If it writes the
+`events` document **directly**, it must reproduce what they do — especially the two rules below.
+
+| Endpoint | Auth | Body | Does |
+|---|---|---|---|
+| `PATCH /api/events/:eventId/tickets` | session, admin **or** owner | `{ tickets: [IncomingTicket] }` (shape below) | Replaces the ticket list via `resolveTickets` (§4) — `_id`s and price ids survive; sets `isPaid: tickets.length > 0`; `$unset draftRevision`. Returns `{ _id, tickets, isPaid }`. Writes nothing else on the event. |
+| `PUT /api/events/:eventId/tickets/:ticketId/update` | session, admin or owner | `{ title, description }` — both required, non-empty | Renames one ticket (`name`, `desc`) in place; `$unset draftRevision`. |
+| `DELETE /api/events/:eventId/tickets/:ticketId/delete` | session, admin or owner | — | Refused (400 "Ticket has bookings and cannot be deleted") when any booking **on this event** for this ticket has a status **not** in `cancelled / rejected / failed / refunded` (exclusion, never an allow-list — `checked_in` must block). Else `$pull` the ticket, `$unset draftRevision`. |
+| `PUT /api/events/:eventId/update` | session, admin or owner | the **whole** event | Full-document replace — tickets included. Don't use it just to edit tickets: an omitted key there resets timezone, status, poll, etc. |
+
+All return the `{ message, status, code, data }` envelope, 405 on the wrong method, 400 on a
+malformed id, 403 for a non-owner host.
+
+`IncomingTicket` (the wire shape — note `title` / `description`, not `name` / `desc`):
+
+```jsonc
+{
+  "id": "<stored _id string, or any new client id for a new ticket>",
+  "title": "VIP",                       // required, non-empty — "Give this ticket a name."
+  "description": "<p>…</p>",            // optional
+  "price": 120,                         // number, ≥ 0, never 0.01–0.49
+  "requireApproval": true,              // optional — omit = unchanged
+  "quantity": 50,                       // optional int ≥ 0; null = clear to unlimited; omit = unchanged
+  "memberships": ["concierge"],         // optional — omit = unchanged (ADMIN only, §6 rule 0)
+  "membershipInterval": "year",         // optional "month" | "year"
+  "membershipFreeMonths": 1,            // optional int 0–12
+  "includesPremium": false              // deprecated, still accepted
+}
+```
+
+**Rule 1 — every ticket write clears the event's autosave shadow draft:** `$unset: {
+draftRevision: "" }` in the same update. The web's Manage Event screen seeds its form from
+`draftRevision` when one is current, so a draft written before your edit would show the old
+tickets and republish them on the host's next Save. (`draftRevision` is `select: false`.)
+
+**Rule 2 — check ownership before any Stripe call.** Creating a price for a request that is then
+refused leaves an orphan price in Stripe.
+
+---
+
 ## 5. `requireApproval` is tri-state — REVISION 1
 
 | Stored | Meaning |
@@ -249,25 +352,40 @@ function ticketMembershipInterval(ticket) {
 Note the first function: an **empty array is an answer** ("sells nothing"), not a missing value.
 Only `undefined` falls through to `includesPremium`.
 
-### Prices (live)
+### Prices (Rev 6 — repriced 2026-09-18; Concierge Annual added 2026-10-19)
 
-| | Product | Price |
+**Never hardcode a price or price id in the app.** Read `GET /api/subscriptions/plan?membership=…`
+(§6b rule 3). The ids below are for recognising products and for testing.
+
+| | Test | Live |
 |---|---|---|
-| Premium monthly | `prod_UzMR33CL777c3R` | `price_1U16VVB7XccR5GE08PIyF8i7` — $20/month |
-| Premium annual | `prod_UzMR33CL777c3R` | `price_1U3KGWB7XccR5GE0h8qqEOtm` — $200/year |
-| Concierge | `prod_UlQTOgXS73TAEV` | monthly only |
+| Premium product | `prod_Uxn2R9FQd5F3sp` | `prod_UzMR33CL777c3R` |
+| Premium **$10/month** (product default) | `price_1TxrSKB7XccR5GE0D3uPXEF5` | `price_1TzNi9B7XccR5GE0JT9sMe3b` |
+| Premium **$100/year** | `price_1UGhmtB7XccR5GE0n4uLaXjp` | `price_1UH2dpB7XccR5GE07ESXO7Qg` |
+| ~~Premium $20/mo, $200/yr~~ | retired — existing subscribers are being moved off them | |
+| Concierge monthly product | `prod_UjabUJ9OXWhLPJ` ($59.50/month) | `prod_UlQTOgXS73TAEV` |
+| Concierge **Annual** product (separate) | `prod_UlPxrsQgIknFRQ` ($595/year default) | `prod_UlQT3lIpJo2PK6` ($595/year default) |
 
-(Test-mode equivalents: Premium product `prod_Uxn2R9FQd5F3sp`, monthly
-`price_1U16eYB7XccR5GE0AdABnPwO`, annual `price_1U3KA0B7XccR5GE0ZRwK6yKH`; Concierge product
-`prod_UjabUJ9OXWhLPJ`.)
+Both Premium prices are on the **same product** — membership is detected by product id. Never
+create a new Premium price or product. **Concierge is the exception**: its annual price lives on a
+separate product, so detect Concierge by **either** product id (`isMembershipProduct`,
+`BOOKING_FLOW.md` §3.6).
 
-Both Premium prices are on the **same product** — membership is detected by product id, so a
-separate product would be invisible to every eligibility check. Never create a new Premium price.
-
-Concierge has **no annual price**. An annual ticket that also sells Concierge falls back to
-Concierge's monthly price; Premium still goes annual.
+**What a ticket set to `membershipInterval: "year"` charges, per membership:** that membership's
+yearly price if one exists across its products, else its default monthly price
+(`findMembershipPriceForInterval(key, "year") || getMembershipPrice(key)`). Today **both**
+memberships have a yearly price, so a yearly ticket sells Premium at $100/yr and Concierge at
+$595/yr. Resolve it from `/api/subscriptions/plan`'s `prices[]` rather than assuming — the fallback
+exists for a membership that loses its yearly price.
 
 ### Rules
+
+0. **(Rev 6) Membership options are ADMIN / SUPER-ADMIN only.** A host (non-admin owner) may
+   create and edit tickets, but must neither see nor change `memberships`, `membershipInterval` or
+   `membershipFreeMonths`. Their form omits those keys, and preserve-on-omit (§4) keeps whatever an
+   admin set. **On the web this is enforced by the UI only** — the endpoints accept the keys from a
+   host. **The app's API must enforce it**: for a non-admin, ignore (don't 403) any membership keys
+   in the payload and keep the stored values; on create, write `memberships: []`.
 
 1. **~~A ticket selling a membership must have `price > 0`.~~ THIS RULE IS REVERSED (2026-09-03).**
    A membership-selling ticket may now be **`$0`**. The membership is the thing being sold and
@@ -278,12 +396,34 @@ Concierge's monthly price; Premium still goes annual.
 2. **Write both fields.** `memberships` is what everything reads; `includesPremium` is mirrored so
    older readers still see a bundled Premium ticket. Set it to
    `memberships.includes("premium")`.
-3. **Only Premium is sold annually.** `membershipInterval` is per *ticket*, not per membership.
-4. **Disclosure follows the ticket's interval.** Any screen showing the ticket must state the real
-   recurring amount and interval before purchase — "$200/year", not "$20/month", on an annual
-   ticket. This is a card-network requirement, not a preference.
+3. **~~Only Premium is sold annually.~~ (Rev 6: false since 2026-10-19 — Concierge sells yearly
+   too.)** `membershipInterval` is still ONE value per *ticket*; each membership on it resolves that
+   interval against its own prices (above). The web's form puts the Monthly / Annual choice
+   **inside each membership's row** that offers annual, and shows "Monthly only · $X/month" in the
+   row of one that doesn't. Unticking the last annual-capable membership sets the interval back to
+   `"month"` in the **same** write as the membership change.
+4. **Disclosure follows the RESOLVED interval of each membership.** Any screen showing the ticket
+   must state the real recurring amount and interval before purchase — "$100/year", not
+   "$10/month", on an annual ticket; one line per membership. This is a card-network requirement,
+   not a preference.
 5. **Approval and memberships can coexist.** A bundled ticket may require approval; it is held as a
-   manual-capture authorization and the subscription is created when the host approves.
+   manual-capture authorization and the subscription is created when the host approves
+   (`BOOKING_FLOW.md` §7). On an approval ticket, the hold includes the membership's first period —
+   up to $595 + ticket for ~7 days on a yearly Concierge ticket; warn the admin when setting it.
+6. **(Rev 6) Concierge INCLUDES Jetzy Premium.** A Concierge member is a Premium member for every
+   purpose, billed for Concierge only. On the ticket form, ticking Concierge greys out Premium
+   ("Included with Concierge", disabled), and the stored list drops any membership another ticked
+   one includes:
+   ```js
+   const INCLUDES = { premium: [], concierge: ["premium"] }
+   const toggle = (current, key, checked) => {
+     const ticked = ["premium", "concierge"].filter((k) => (k === key ? checked : current.includes(k)))
+     return ticked.filter((k) => !ticked.some((o) => o !== k && INCLUDES[o].includes(k)))   // ["premium","concierge"] → ["concierge"]
+   }
+   ```
+   New tickets therefore store `["concierge"]`, never both. A legacy ticket that stores both still
+   sells — checkout bills Concierge only — and is tidied by the admin's next toggle. `includesPremium`
+   mirrors the stored array, so it is `false` on a `["concierge"]` ticket.
 
 ### Examples
 
@@ -291,18 +431,23 @@ Concierge's monthly price; Premium still goes annual.
 // plain paid ticket
 { "name": "General", "price": 40, "stripeProductId": "price_…", "memberships": [] }
 
-// ticket + Premium, monthly ($40 + $20 today, then $20/month)
+// ticket + Premium, monthly ($40 + $10 today, then $10/month)
 { "name": "Member Entry", "price": 40, "stripeProductId": "price_…",
   "memberships": ["premium"], "includesPremium": true }
 
-// ticket + Premium, ANNUAL ($40 + $200 today, then $200/year)
+// ticket + Premium, ANNUAL ($40 + $100 today, then $100/year)
 { "name": "Founding Member", "price": 40, "stripeProductId": "price_…",
   "memberships": ["premium"], "membershipInterval": "year", "includesPremium": true }
 
-// ticket + both memberships, Premium annual, Concierge monthly (its only interval)
+// ticket + Concierge, ANNUAL ($120 + $595 today, then $595/year; includes Jetzy Premium)
+// what the form stores when the admin ticks Concierge (Premium is dropped — rule 6)
 { "name": "Full Access", "price": 120, "stripeProductId": "price_…",
-  "memberships": ["premium", "concierge"], "membershipInterval": "year",
-  "includesPremium": true }
+  "memberships": ["concierge"], "membershipInterval": "year",
+  "includesPremium": false }
+
+// LEGACY — both stored (saved before rule 6). Still sells; billed as Concierge only.
+{ "name": "Full Access (old)", "price": 120, "stripeProductId": "price_…",
+  "memberships": ["premium", "concierge"], "includesPremium": true }
 
 // approval-gated bundled ticket — allowed
 { "name": "Vetted Entry", "price": 75, "stripeProductId": "price_…",
@@ -378,12 +523,12 @@ free, not the membership.
 
 ```jsonc
 // $50 ticket + Premium, host gives 1 free month, no code needed
-// buyer pays $50 today; Premium is $0 for month 1, then $20/month
+// buyer pays $50 today; Premium is $0 for month 1, then $10/month
 { "name": "Launch Party", "price": 50, "stripeProductId": "price_…",
   "memberships": ["premium"], "membershipFreeMonths": 1, "includesPremium": true }
 
 // FREE ticket + Premium + 2 free months
-// buyer pays $0 today for everything, but a card is still collected so month 3 can bill $20
+// buyer pays $0 today for everything, but a card is still collected so month 3 can bill $10
 { "name": "Community Meetup", "price": 0, "stripeProductId": "price_…",
   "memberships": ["premium"], "membershipFreeMonths": 2, "includesPremium": true }
 
@@ -443,9 +588,11 @@ from the app itself. Remove the check that produces it.
    }
    ```
 
-   Pick the entry in `prices[]` whose `interval` matches the ticket's interval. If there isn't one
-   (Concierge has no `"year"`), use the default. The server charges the same way. For reference,
-   test mode is currently **$59.50/month**. Premium is $20/month and $200/year.
+   Pick the entry in `prices[]` whose `interval` matches the ticket's interval. If there isn't one,
+   use the default (`isDefault`). The server charges the same way. **(Rev 6)** Concierge's `prices[]`
+   now includes a `"year"` entry gathered from the Concierge Annual product. For reference, test
+   mode is currently Concierge **$59.50/month, $595/year**; Premium **$10/month, $100/year**.
+   `productId` is also returned (the main product only — don't use it for detection).
 4. **Use these names** in the disclosure:
 
    | key | Buyer-facing label | Receipt line |
@@ -454,15 +601,24 @@ from the app itself. Remove the check that produces it.
    | `concierge` | Full Concierge Membership | Full Concierge Membership |
 
    (Don't append "membership" to the Concierge label — it already contains the word.)
-5. **Concierge is monthly only.** On a ticket with `membershipInterval: "year"`, Premium is quoted
-   and charged yearly and Concierge monthly. Show **one recurring line per membership** — one line
-   for two charges fails disclosure (§6 rule 4).
+5. **~~Concierge is monthly only.~~ (Rev 6: false.)** On a ticket with `membershipInterval:
+   "year"`, Concierge is quoted and charged yearly ($595/yr). Show **one recurring line per
+   membership charged** — one line for two charges fails disclosure (§6 rule 4). Under a Concierge
+   line, also show **"Includes Jetzy Premium"**.
+5a. **(Rev 6) Concierge includes Premium on the BUYER side too.** A ticket storing both (legacy)
+   shows and charges Concierge only, with Premium "included with Full Concierge Membership". A
+   buyer who already holds Concierge is never charged for Premium; the web's checkout says
+   "Jetzy Premium — included with your Full Concierge Membership. You won't be charged for it."
 6. **Free months:** the ticket's `membershipFreeMonths` covers Concierge too; a referral code's
    months never do (§6a).
 7. **Already a member:** the server skips any membership the buyer already holds, looked up by the
-   **checkout email** against Stripe, and it asks separately for each membership. A Premium member
-   buying a Premium + Concierge ticket pays for Concierge only. The app can preview this, but the
-   server has the final say.
+   **checkout email** (our records, then Stripe across every customer with that email, then
+   SelectMember's status), separately for each membership. A Concierge member counts as holding
+   Premium. **Exception — upgrade:** a MONTHLY Concierge member on a ticket selling Concierge
+   YEARLY is charged $595 (no free months), the year starting when their paid month ends, and
+   their monthly plan stops then. **Exception — reactivation:** a member who cancelled (still in
+   the paid period) is not charged, and their cancellation is undone when the booking confirms.
+   The server has the final say; the app only previews (§14).
 8. **Limits are per membership** — 2 per order, 2 per email per event, counted separately for
    Premium and Concierge (§6a "Cap").
 
@@ -470,28 +626,47 @@ from the app itself. Remove the check that produces it.
 
 ```jsonc
 // ticket
-{ "name": "Full Access", "price": 120, "memberships": ["premium", "concierge"],
-  "membershipInterval": "year" }
+{ "name": "Full Access", "price": 120, "memberships": ["concierge"], "membershipInterval": "year" }
 ```
 
 ```
-Full Access                         $120.00
-Jetzy Premium — first year          $200.00   then $200/year until you cancel
-Full Concierge Membership — month 1  $59.50   then $59.50/month until you cancel
-Due today                           $379.50
+Full Access                              $120.00
+Full Concierge Membership — first year   $595.00   then $595/year until you cancel
+  Includes Jetzy Premium
+Due today                                $715.00
+```
+
+```jsonc
+// ticket
+{ "name": "Member Night", "price": 40, "memberships": ["premium"], "membershipInterval": "year",
+  "membershipFreeMonths": 1 }
+```
+
+```
+Member Night                             $40.00
+Jetzy Premium — 1 month free             $0.00     then $100/year until you cancel
+Due today                                $40.00
 ```
 
 (Figures are test mode; take them from `/api/subscriptions/plan`.)
 
 ### Test on staging
 
-Concierge test product `prod_UjabUJ9OXWhLPJ`. Cover: a Concierge-only ticket, Premium +
-Concierge, an annual ticket with both, a `$0` ticket with Concierge, and a buyer who already holds
-Premium buying Premium + Concierge.
+Concierge test products `prod_UjabUJ9OXWhLPJ` (monthly) and `prod_UlPxrsQgIknFRQ` (annual).
+Cover: a Concierge-only ticket (monthly and yearly), an admin ticking Concierge with Premium
+already ticked (Premium must drop), a legacy ticket storing both, a `$0` ticket with Concierge, a
+host editing an admin's membership ticket (memberships untouched), and buyers who already hold
+Premium / Concierge / a monthly Concierge (upgrade) / a cancelled Concierge (reactivation).
 
 ---
 
 ## 7. Selling: what the checkout expects — REVISION 1, with one addition
+
+> **(Rev 6) WEB-ONLY — reference.** The app does **not** call these endpoints: ticket buying
+> happens on the web, which the app opens at `events.jetzy.com/<slug>?src=app` and returns from via
+> `jetzy.com/jetzy_event?eventId=…&bookingRef=…&status=…` (`BOOKING_FLOW.md` §5.0). §7 and §7a
+> stay here so you know what the booking you read back was built from. The checkout contract
+> (all five Stripe session shapes, fulfilment) is `BOOKING_FLOW.md` §5.
 
 Post the ticket **id** and quantity — the server rebuilds prices from the event record and
 re-validates any referral code. Nothing about money is trusted from the request body.
@@ -517,14 +692,14 @@ registration. Since nothing is charged, a subscription created with no saved car
 would silently lose the membership they were promised. Our implementation routes that specific
 case to a separate Stripe Checkout Session shape purely to collect a card (no charge), or in the
 common single-membership case a `subscription`-mode session with `trial_end` so the page shows a
-priced summary. This is genuinely a distinct feature from the schema in this document — **if your
-checkout backend needs to handle this case, ask us for the checkout contract separately** rather
-than guessing the session shapes from this doc; getting it wrong either fails to save the card
-(member loses their gift silently) or double-creates a subscription against the same customer.
+priced summary. (Rev 6: the session shapes are written down in `BOOKING_FLOW.md` §5.3 — and the
+app does not build checkout, so this is reference only.)
 
 ---
 
 ## 7a. NEW (Revision 3) — the two routing replies
+
+> **(Rev 6) WEB-ONLY — reference**, like §7. The app hands buying to the web.
 
 A ticket that sells a membership is a `$0` registration for someone who already holds it and a
 purchase for everyone else. The app picks the endpoint from its own guess (usually a lookup of the
@@ -582,8 +757,21 @@ Rules:
       block; ignore unknown keys rather than blocking the ticket (§6b)
 - [ ] **(Rev 3)** Quote membership prices from `/api/subscriptions/plan?membership=…`, one recurring
       line per membership, Concierge always monthly (§6b)
-- [ ] **(Rev 3)** Handle `needsCheckout` / `freeOrder` by switching endpoint once, before showing
-      any error (§7a)
+- [ ] ~~**(Rev 3)** Handle `needsCheckout` / `freeOrder`~~ — web-only since buying moved to the
+      web (§7a)
+- [ ] **(Rev 6)** Membership toggles shown to admins only, and the API ignores membership keys
+      from a non-admin (§6 rule 0)
+- [ ] **(Rev 6)** Ticking Concierge drops/greys Premium; store `["concierge"]`, never both (§6 rule 6)
+- [ ] **(Rev 6)** Billing chosen per membership row; one `membershipInterval` stored; reset to
+      `"month"` when nothing annual-capable is left (§6 rule 3)
+- [ ] **(Rev 6)** No hardcoded prices — Premium is $10/$100 now, Concierge $59.50/$595 on test;
+      read `/api/subscriptions/plan` (§6, §6b)
+- [ ] **(Rev 6)** Detect Concierge by either product (monthly or annual) (§6)
+- [ ] **(Rev 6)** Every ticket write `$unset`s `draftRevision`; delete is refused while a non-dead
+      booking holds the ticket; keep `isPaid` in step (§3, §4a)
+- [ ] **(Rev 6)** Ticket `desc` is HTML — sanitise and render; plain text still possible (§1)
+- [ ] **(Rev 6)** Buyer display per §14: "Sold out" at 0, "Only 1 left" at 1 only, stepper caps,
+      one recurring line per membership, "Includes Jetzy Premium" under Concierge
 
 ---
 
@@ -934,6 +1122,73 @@ absent means the booking was never edited, which is not the same as edited zero 
 ```
 
 If you display a booking's quantity anywhere, read it from `booking.tickets` — it is no longer
-guaranteed to be what was originally purchased.
+guaranteed to be what was originally purchased. (A pending request edited down by the host stores
+the lower number in `adjustedTickets` instead — read it through `plannedTickets`,
+`BOOKING_FLOW.md` §8.)
+
+---
+
+## 14. NEW (Rev 6) — What a buyer sees on a ticket in the app
+
+The app shows tickets before handing the buyer to the web to pay. What it shows must agree with
+what the web will charge. Web reference: `src/components/EventTicketsComponent.tsx`.
+
+### Selection
+
+- **One ticket type per order** (single-select). The quantity stepper only renders when
+  `event.isPaid` is true (§3).
+- Stepper cap = the smaller of: `maxSelectable(availability, ticketId)` (§11) and, on a ticket that
+  sells a membership, `PREMIUM_TICKET_MAX_PER_ORDER = 2`.
+- When the stepper stops, say why: availability → `Only N tickets left for "<name>".` /
+  `"<name>" is sold out.`; membership cap → the order-cap message (2 per order). The per-person
+  limit (2 per email per event per membership, cancelled orders included) can only be judged
+  against the email typed at checkout — the web enforces it there.
+
+### Badges on the ticket card
+
+| Remaining | Badge |
+|---|---|
+| `0` | **Sold out** — ticket not selectable |
+| `1` | **Only 1 left** |
+| `≥ 2` or unlimited | nothing — by decision (CEO 2026-09-24): "Only 4 left" reads as a quiet event |
+
+Refetch availability when the app regains focus and when the buyer comes back from the web.
+
+### Membership disclosure (card-network requirement — not optional)
+
+Shown beside the order total **once a ticket is selected** (the per-ticket notice on the browse
+list was removed by decision; don't add it back). One line **per membership that will be charged**,
+priced from `/api/subscriptions/plan?membership=<key>` at the ticket's **resolved** interval (§6):
+
+```
++ Jetzy Premium — $10/month, confirmed at checkout
++ Jetzy Premium — first 1 month free, then $100/year, confirmed at checkout
++ Full Concierge Membership (includes Jetzy Premium) — $595/year, confirmed at checkout
++ Full Concierge Membership — switch from monthly to $595/year, starting when your paid month ends; confirmed at checkout   ← logged-in monthly member, yearly ticket
+```
+
+- A legacy ticket storing both: one Concierge line only (Premium is included).
+- Free months lead the line; never on an upgrade line (upgraders get no free months).
+- On an approval ticket, say the card is **held, not charged**, until the host approves.
+
+**Personalising the preview** (optional — the web decides at checkout either way):
+`POST /api/premium/check-email` `{ email, eventId }` (unauthenticated, rate-limited, envelope):
+
+```jsonc
+"data": {
+  "held": ["concierge", "premium"],          // entitlements — Concierge counts as Premium
+  "includedWith": { "premium": "concierge" },// held only through another membership
+  "upgrades": ["concierge"],                 // KEYS ONLY — a monthly member a yearly ticket here would upgrade
+  "reactivations": [ { "key": "concierge", "interval": "month" } ],   // cancelled, still paid — booking keeps it
+  "allowances": { "premium": { "limit": 2, "used": 0, "remaining": 2 }, "concierge": { … } },
+  "sellsPremium": true
+}
+```
+
+Use it with the signed-in user's email to: drop the line for a membership in `held` (unless it is
+in `upgrades` **and** the selected ticket is yearly — then show the switch line); say "Jetzy
+Premium — included with your Full Concierge Membership" for `includedWith`; for `reactivations`
+say "Your … was set to end. Booking this ticket keeps it — it will renew at $X until you cancel."
+An event that sells no membership returns `{ held: [], sellsPremium: false }`.
 
 ---
