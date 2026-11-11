@@ -1,6 +1,9 @@
 # Booking flow — complete contract for the mobile app (front-end + back-end)
 
-**Revision 1 — 2026-10-15.** Written for the mobile front-end and back-end engineers.
+**Revision 2 — 2026-11-11.** Written for the mobile front-end and back-end engineers.
+Revision 1 was 2026-10-15. **Start with §0** — it lists everything that changed since Revision 1
+and the work the app still has to do. Companion document for tickets: `TICKET_SCHEMA.md`
+Revision 6.
 
 The mobile back-end builds **its own API** on the **same MongoDB** and the **same Stripe account**
 as this web portal (`events.jetzy.com`). Everything below is what that API must do so that a
@@ -31,6 +34,7 @@ How to read it:
 
 ## Contents
 
+0. [Handoff — what changed in Revision 2, and what the app must build](#0-handoff)
 1. [Rules that must never break](#1-rules-that-must-never-break)
 2. [Roles and permissions — admin vs host vs guest](#2-roles-and-permissions)
 3. [Data model](#3-data-model)
@@ -45,11 +49,76 @@ How to read it:
 12. [Emails and notifications](#12-emails-and-notifications)
 13. [Guest-facing reads](#13-guest-facing-reads)
 13b. [Host / admin screens — the Bookings module](#13b-host--admin-screens--the-bookings-module)
+13c. [Describing a booking's memberships](#13c-describing-a-bookings-memberships--one-wording-everywhere-rev-2)
 14. [Mobile front-end checklist](#14-mobile-front-end-checklist)
 15. [Mobile back-end checklist](#15-mobile-back-end-checklist)
 16. [Test scenarios](#16-test-scenarios)
 17. [Known gaps](#17-known-gaps)
 18. [Changelog vs TICKET_SCHEMA.md Revision 5](#18-changelog)
+
+---
+
+## 0. Handoff
+
+### 0.1 What changed since Revision 1 (2026-10-15)
+
+Every change below is now written into the section it belongs to. This list tells you where to
+look.
+
+| # | Change | Where | Affects |
+|---|---|---|---|
+| 1 | **Full Concierge includes Jetzy Premium.** A Concierge member counts as a Premium member everywhere. A pending Premium membership row is **released, not started**, when the guest holds Concierge or a Concierge row on the same booking is being started. | §3.6, §7.1 step 6.3, §7.4a | approve |
+| 2 | **Concierge sells yearly** as a separate Stripe product. Detect a membership by **any** of its product ids. | §3.6, §7.4 | approve, reads |
+| 3 | **A yearly ticket upgrades a monthly Concierge member.** New field `payment.memberships[].upgradeFrom`. Approve re-checks Stripe and either replaces the monthly subscription, starts a new one, or releases the row. | §3.3, §7.1 step 6.3, §7.4 | approve, screens |
+| 4 | **A cancelled member buying a membership ticket keeps the membership.** When a booking is **confirmed**, a membership the ticket sells that the guest had cancelled is switched back on (unless this order charged for it). | §7.4b | approve |
+| 5 | **Separate welcome email** for a membership a booking **creates**. | §7.4, §12 | approve |
+| 6 | **Membership wording helpers** — one way to describe a booking's memberships on every screen and email. | §13c | all screens |
+| 7 | **Cancelling never cancels a membership**, and the cancel dialog / emails now say so. | §9.1, §13c | cancel |
+| 8 | **More Stripe ids are stripped** from every client-facing booking response. | §13 | all reads |
+| 9 | **Admin approval notices go to `ADMIN_NOTIFICATION_EMAIL`** (was the sender address, which silently dropped them). | §12 | emails |
+| 10 | Corrected: the "does the customer already subscribe?" check before **creating** a subscription accepts `active`/`trialing` only; the wider four-status list belongs to the double-subscribe guard. | §5.3, §7.4 | approve |
+| 11 | New helper `canGuestCancel`. | §4.3 | guest cancel |
+| 12 | Every created membership writes one row to `membership_purchases`, and a Concierge one is mirrored to selectmember.jetzy.com. | §3.6, §7.4 | approve |
+
+### 0.2 What the app must build — in order
+
+Ticket **buying** stays on the web (§5.0). Everything else here is the app's job.
+
+**Back-end**
+
+1. [ ] **Approve** — §7.1, all eleven steps, including the membership resolution in step 6.3
+   (Concierge-includes-Premium, upgrade re-check) and step 9b (reactivation). Highest risk: it
+   moves money.
+2. [ ] **Start a membership** — §7.4 (`startMembershipSubscription`) and §7.4a
+   (`heldMemberships`). Shared by approve; nothing else in the app creates subscriptions.
+3. [ ] **Reject** — §7.5.
+4. [ ] **Edit a pending request** — §8.2. **Edit a confirmed booking** — §8.3 + §8.4.
+5. [ ] **Cancel** — §9.1. **Delete** — §9.2.
+6. [ ] **Waiting list** — join / list / approve / remove, §10.
+7. [ ] **Check-in** — §11.
+8. [ ] **Reads** — my bookings, booking by reference, my booking for one event, an event's
+   bookings with filters, pending count, counters, availability — §6, §13, §13b. Strip the ids in
+   §13 from every response.
+9. [ ] **Emails** — the triggers in §12. Either call the web's templates' equivalents or send your
+   own with the same content. **Never send hold-expiry emails** (the web's webhook does).
+10. [ ] **Do not** handle Stripe booking webhooks (§15).
+
+**Front-end**
+
+1. [ ] Hand off to the web for buying, and come back (§5.0).
+2. [ ] One Bookings screen per event: Bookings · Waiting List · Approvals tabs (§13b), the
+   Approvals tab shown by `showApprovalsSurface`.
+3. [ ] Approvals queue + approve sheet (§14), with "Approve N of M" (§7.2) and the charge preview
+   from `approvalCaptureCents`.
+4. [ ] One Edit sheet for every booking (§8, §14).
+5. [ ] Cancel dialogs that state the money consequence **and** the membership note (§9.1, §13c).
+6. [ ] Guest: My bookings, cancel, "you're registered" on the event (§13).
+7. [ ] Describe memberships only through the §13c helpers.
+
+**Port these files line for line** (they are pure, no database): `booking-status.ts`,
+`booking-cancellation.ts` (§4.3), `booking-memberships.ts` (§3.3), `booking-approval.ts` (§7.3,
+§7.6), `booking-request-edit.ts` (§8.6), `ticket-approval.ts` (§13b.2), `booking-membership-display.ts`
+(§13c), `memberships.ts` registry (§3.6).
 
 ---
 
@@ -80,6 +149,11 @@ How to read it:
     `requireApproval` on a ticket). Don't write `[]`, `0` or `false` where the field was absent.
 11. **Money is decided on the server from the EVENT record**, never from prices or flags in the
     request body.
+12. **Cancelling, rejecting or deleting a booking never touches a membership subscription.** Once
+    a membership exists it is the member's, managed at Manage membership.
+13. **Premium = `premiumSubscription.active` OR `conciergeSubscription.active`.** Full Concierge
+    includes Jetzy Premium. Never charge or start Premium for a Concierge member.
+14. **Never put a Stripe id in a response to a client** (full list in §13).
 
 ---
 
@@ -200,8 +274,10 @@ index); generate it before creating the Stripe session so the session metadata c
   "capturedAt": ISODate, "canceledAt": ISODate,
   "lastError": "…",
   "memberships": [                      // §3.3 — only when the order sold a membership
-    { "key": "premium", "status": "pending", "amount": 20, "priceId": "price_…",
-      "interval": "month", "trialMonths": 1, "renewalAmount": 20, "subscriptionId": "sub_…", "lastError": "…" }
+    { "key": "premium", "status": "pending", "amount": 10, "priceId": "price_…",
+      "interval": "month", "trialMonths": 1, "renewalAmount": 10, "subscriptionId": "sub_…", "lastError": "…" },
+    { "key": "concierge", "status": "pending", "amount": 595, "priceId": "price_…", "interval": "year",
+      "upgradeFrom": { "subscriptionId": "sub_…", "customerId": "cus_…", "paidThrough": "2026-12-01T00:00:00.000Z" } }
   ],
   // Legacy single-membership shape (bookings from before Concierge). READ it, never write it:
   "premiumStatus": "pending", "premiumAmount": 20, "premiumPriceId": "price_…", "premiumInterval": "month", "subscriptionId": "sub_…"
@@ -223,6 +299,12 @@ store unknown values, ignore them on read).
 | `priceId`, `interval` | the exact price quoted. **Stored, never re-resolved** — a price change while a request waits must not move the buyer |
 | `trialMonths`, `renewalAmount` | free months given, and what it renews at afterwards |
 | `subscriptionId`, `lastError` | after creation / failure |
+| `upgradeFrom` | **(Rev 2)** present only when this row moves a **monthly** member onto **yearly** billing: `{ subscriptionId, customerId?, paidThrough? }` — the monthly subscription to replace, the Stripe customer it lives on (may be selectmember.jetzy.com's), and the end of the month already paid for (ISO). No default; absent = an ordinary sale. Upgrade rows never carry `trialMonths`. Client responses keep only `paidThrough` (§13). |
+
+A row can also end up `status: "active"` with `amount: 0` and no `subscriptionId`: the guest
+already held that membership at approval (or another row on the same booking includes it), so
+that part of the hold was released and nothing was created. §13c calls this kind `held` /
+`included`.
 
 Read with this (legacy flat fields → one synthesised `premium` row):
 
@@ -261,6 +343,68 @@ Clamped update used on the web (`src/lib/event-tracker-sync.ts`):
 EventTracker.findOneAndUpdate({ eventId },
   [{ $set: { bookedTickets: { $max: [0, { $add: [{ $ifNull: ["$bookedTickets", 0] }, delta] }] } } }])
 ```
+
+### 3.6 Memberships — registry, user fields, sale records (Rev 2)
+
+Only **approve** (§7) creates or changes membership subscriptions in the app. This is what it
+reads and writes.
+
+**Registry** (`src/lib/memberships.ts` — port it; nothing else may hardcode a product):
+
+| key | label | receipt label | user field | includes | upgrade on ticket | SelectMember plan |
+|---|---|---|---|---|---|---|
+| `premium` | Jetzy Premium | Jetzy Premium membership | `premiumSubscription` | — | no | — (ours) |
+| `concierge` | Full Concierge Membership | Full Concierge Membership | `conciergeSubscription` | `["premium"]` | **yes** | `select_monthly` / `select_yearly` |
+
+**Stripe products.** A membership is detected by **product id**, never price id, and by **any**
+of its products:
+
+| | Test | Live |
+|---|---|---|
+| Premium (monthly + yearly prices on one product) | `prod_Uxn2R9FQd5F3sp` | `prod_UzMR33CL777c3R` |
+| Concierge monthly | `prod_UjabUJ9OXWhLPJ` | `prod_UlQTOgXS73TAEV` |
+| Concierge **annual** (separate product, $595/yr default) | `prod_UlPxrsQgIknFRQ` | `prod_UlQT3lIpJo2PK6` |
+
+`isMembershipProduct(key, productId)` must match **every** id in the row (both modes' ids may sit
+in the list — a test id never matches live data). Unknown product → not a membership: leave it
+alone.
+
+**On the user document** (`users` **and** `eventusers` — one person can have both; search both,
+email case-insensitive):
+
+```jsonc
+"stripeCustomerId": "cus_…",            // ROOT — billing identity (older docs may have it only inside a sub-doc)
+"premiumSubscription":   { "active": true, "stripeCustomerId": "cus_…", "stripeSubscriptionId": "sub_…",
+                           "status": "trialing", "currentPeriodEnd": ISODate, "cancelAtPeriodEnd": false },
+"conciergeSubscription": { …same shape… }
+```
+
+Customer id read order: `stripeCustomerId` → `premiumSubscription.stripeCustomerId` →
+`conciergeSubscription.stripeCustomerId`.
+
+**Entitlement** — never read `premiumSubscription.active` alone:
+
+```ts
+const MEMBERSHIP_KEYS = ["premium", "concierge"]
+const INCLUDES = { premium: [], concierge: ["premium"] }
+const USER_FIELD = { premium: "premiumSubscription", concierge: "conciergeSubscription" }
+export const expandEntitlements = (held) => {
+  const all = new Set(held)
+  held.forEach((k) => (INCLUDES[k] || []).forEach((i) => all.add(i)))
+  return MEMBERSHIP_KEYS.filter((k) => all.has(k))
+}
+export const membershipsIncluding = (key) => MEMBERSHIP_KEYS.filter((o) => (INCLUDES[o] || []).includes(key))
+export const isMembershipEntitled = (doc, key) =>
+  expandEntitlements(MEMBERSHIP_KEYS.filter((k) => !!doc?.[USER_FIELD[k]]?.active)).includes(key)
+```
+
+**`membership_purchases`** — one row per membership **sale**, written once, never updated; the
+growth report reads it. Upsert on `stripeSubscriptionId` with `$setOnInsert` (unique sparse index —
+a replay must not double-count). Fields: `key`, `source` (`"ticket"` for an approval-started
+membership, `"upgrade"` for a monthly→yearly replacement), `email`, `name`, `userId`,
+`stripeCustomerId`, `stripeSubscriptionId`, `priceId`, `interval`, `amount` (the price's
+`unit_amount / 100`), `currency`, `referralCode` (if the booking had one), `trialMonths`,
+`trialEndsAt` (= the subscription's `trial_end`), `eventId`, `bookingRef`, timestamps.
 
 ---
 
@@ -326,6 +470,14 @@ export const bookingMoneyAmount = (b) => Number(b?.payment?.amount ?? b?.total ?
 // Guest cut-off is the exact start instant. No date (TBD / date poll) = not started.
 export const hasEventStarted = (event, now = Date.now()) =>
   !!event?.startsOn && !Number.isNaN(new Date(event.startsOn).getTime()) && new Date(event.startsOn).getTime() <= now
+export const EVENT_STARTED_MESSAGE = "This event has already started, so the booking can no longer be cancelled."
+// (Rev 2) The guest-side cancel rule. Hosts/admins have no cut-off.
+export const canGuestCancel = (booking, event, now = Date.now()) => {
+  if (!booking) return { allowed: false, reason: "Booking not found." }
+  if (isCancelledBooking(booking)) return { allowed: false, reason: "This booking is no longer active." }
+  if (hasEventStarted(event, now)) return { allowed: false, reason: EVENT_STARTED_MESSAGE }
+  return { allowed: true }
+}
 ```
 
 `unknown` = a priced total with no payment record (238 legacy rows, and every waiting-list
@@ -443,12 +595,24 @@ On a membership order, or a code scoped to some tickets, set `applies_to.product
 **products** only (read off `stripe.prices.retrieve(priceId).product`), so the code never
 discounts Jetzy's membership revenue.
 
-Before adding a membership line, ask **Stripe** whether the customer already holds that membership
-(`hasActiveMembershipSubscription(customerId, key)` — matches by **product id**, statuses
-`active`, `trialing`, `past_due`, `unpaid`). If they do, don't sell it again.
+Before adding a membership line, the web decides what the buyer already holds by **checkout
+email** (`heldMemberships`, §7.4a — returns entitlements, so a Concierge member holds Premium) and
+asks **Stripe** per customer (`hasActiveMembershipSubscription(customerId, key)` — any product of
+the membership, statuses **`active` / `trialing` only**). If they hold it, it isn't sold again.
+(The separate double-subscribe guard `findActiveSubscriptionForProduct` also counts `past_due` and
+`unpaid`.)
 
-The membership price for a ticket set to annual: the product's yearly price **if it has one,
-else its default monthly price** (Full Concierge is monthly only). (`TICKET_SCHEMA.md` §6)
+What the order charges is split by `splitBundleCharges` (`src/lib/premium-bundle.ts`):
+memberships already held are skipped; a membership another one **being charged on this order**
+includes is `included` — no line item, no subscription, no `payment.memberships` row (a ticket
+selling Concierge + Premium bills Concierge only); a **monthly** Concierge member on a ticket that
+sells Concierge **yearly** is an `upgrade` — charged the yearly price with no free months, line
+item named "Full Concierge Membership — first year (replaces your monthly plan)", row carries
+`upgradeFrom`.
+
+The membership price for a ticket set to annual: the yearly price across **all** the membership's
+products if one exists (Premium yearly; Concierge Annual product), else its default monthly price.
+(`findMembershipPriceForInterval(key, "year") || getMembershipPrice(key)`; `TICKET_SCHEMA.md` §6)
 
 ### 5.4 Fulfilment — turning a finished session into a booking
 
@@ -489,7 +653,9 @@ Then:
   notify the approver (§12). Do **not** touch the tracker, do **not** count the referral code.
 - **Confirmed:** tracker `+count`, referral `usageCount + 1`, add the buyer to the event's members,
   **start each membership** (§7.4) — a failure there sets that row to `failed` and never undoes
-  the booking — send the ticket confirmation with QR, notify the host of the sale (§12).
+  the booking — reactivate any cancelled membership the ticket sells (§7.4b), send the ticket
+  confirmation with QR, a welcome email per membership created (§12), notify the host of the
+  sale (§12).
 
 ### 5.5 Free path
 
@@ -547,8 +713,28 @@ Input: `bookingRef`, optional `tickets` (a reduced selection — "approve 1 of 2
    2. **Re-check the plan** on the latched document. If `plannedTickets(latched)` differs from step 3,
       put `payment.status` back to its previous value and refuse
       `"This request was edited while it was being approved — refresh and try again."`
-   3. **Membership already owned?** For each pending membership row, ask whether the buyer now
-      holds it (by checkout email). Those are **released**, not charged (`releasedAmount`).
+   3. **Which pending membership rows are NOT started now?** (Computed before the latch on the web;
+      it only reads. `pendingRows = bookingMemberships(payment).filter(r => r.status === "pending")`.)
+      Those rows are **released**, not charged; their `amount`s summed (to the cent) are
+      `releasedAmount`.
+      - **Ordinary row** (no `upgradeFrom`): skip it when
+        `heldMemberships(booking.customerEmail, pendingRows.map(r => r.key))` includes its key
+        (§7.4a — entitlements, so a Concierge member skips a Premium row).
+      - **Upgrade row** (`upgradeFrom.subscriptionId` set): "already held" can't decide it — the
+        guest holds Concierge monthly, that's why it's an upgrade. Re-ask Stripe with
+        `liveMembershipSubscriptionsByEmail(email)` (§7.4a):
+        - Stripe unreachable (`null`) → start it, replacing `upgradeFrom.subscriptionId`.
+        - a live subscription to this membership at the row's interval (`year`) already exists →
+          **skip** (they went yearly meanwhile).
+        - else `findMembershipUpgrade(email, key, row.interval || "year", live)` → found: start it,
+          replacing **that** subscription id; not found (monthly gone): start a fresh one, no
+          replacement.
+      - **Included row**: after the two rules above, skip any row whose key is included by
+        another row that **is** being started (`membershipsIncluding(row.key)` ∩ starting keys) —
+        a Premium row beside a Concierge row (bookings held before the Concierge-includes-Premium
+        rule).
+      - The lookup throws → skip nothing, capture in full, start everything. (Charging for a
+        membership we then create is recoverable; refusing the approval is not.)
    4. **Capture** — full: `paymentIntents.capture(pi)`; with a membership released or a partial
       approval: `paymentIntents.capture(pi, { amount_to_capture })` using **`approvalCaptureCents`**
       (§7.3).
@@ -569,12 +755,33 @@ Input: `bookingRef`, optional `tickets` (a reduced selection — "approve 1 of 2
    `approved / requested` (round to cents); append to `ticketsEditHistory`, set
    `ticketsEditedAt/By`.
 8. **Start memberships** owed (§7.4) — also when there was **no hold** (a free ticket with free
-   months). Each independently; a failure marks that row `failed` and never undoes anything.
-9. `status: "confirmed"`, save. Tracker `+approved count`. Add the buyer to the event's members.
-10. **Referral usage** `+1` if a hold was captured or a membership was owed and the booking has a
-    `referralCode` (scoped by event).
-11. **Emails**: ticket confirmation with QR to the guest (with the partial-approval note, §12);
-    approval notice to the Jetzy inbox on an admin-owned event only.
+   months; step 6.3's skip rules apply here too, they are not hold-only). For each pending row:
+   - **skipped** in 6.3 → row `status: "active"`, `amount: 0`; nothing created.
+   - else `startMembershipSubscription({ key, priceId: row.priceId, interval: row.interval,
+     trialMonths: row.trialMonths, customerId, paymentMethodId, email: booking.customerEmail,
+     name: booking.customerName, subscriberId: booking.bookerUserId, metadata: { bookingRef,
+     eventId, approvedAt }, replaces: <id from 6.3, if any> })`.
+     - `customerId` = the captured PaymentIntent's `customer`; no hold → resolve/create the
+       user's Stripe customer from `checkoutUserId || bookerUserId` (§7.4).
+     - `paymentMethodId` = the captured PaymentIntent's `payment_method`, else
+       `booking.payment.paymentMethodId` (setup-mode orders).
+     - Success → row `status: "active"`, `subscriptionId`, clear `lastError`. If a subscription
+       was **created** and it is **not** an upgrade → send the membership welcome email (§12).
+     - Throws → row `status: "failed"`, row `lastError`, and `payment.lastError =
+       "<label> not started: <message>"`. Continue with the next row.
+   - Rows are independent; a failure never undoes the capture or the booking. Before writing,
+     normalise a legacy flat-field booking onto `payment.memberships` (`bookingMemberships`).
+9. `status: "confirmed"`, save. Tracker `+approved count`.
+   **9b. Reactivate** (§7.4b) with `keys` = memberships the booking's tickets sell (from the event's
+   stored tickets) and `chargedKeys` = pending rows **not** skipped. Best-effort.
+   Add the buyer (`checkoutUserId || bookerUserId`) to the event's members.
+10. **Referral usage** `+1` if a hold was captured **or** the booking had any pending membership
+    row, and the booking has a `referralCode` — looked up by `{ code: UPPER, eventId, isDeleted:
+    false }`.
+11. **Emails**: ticket confirmation with QR to the guest (with the partial-approval note, §12; its
+    membership lines list only rows this approval actually started, by receipt label); one welcome
+    email per membership created (step 8); approval notice to the Jetzy inbox on an admin-owned
+    event only.
 
 Response: `{ bookingRef, status, payment: { status, amount, capturedAt }, amountCharged,
 requestedTickets, approvedTickets, partial }`.
@@ -621,22 +828,154 @@ Call it with `held = payment.amount`, `membershipHeld = bookingMembershipTotal(p
 
 Capturing under the authorization is **not a refund**: Stripe releases the rest at no cost.
 
-### 7.4 Starting a membership (`src/lib/membership-subscriptions.ts`)
+### 7.4 Starting a membership — `startMembershipSubscription` (`src/lib/membership-subscriptions.ts`)
 
-```js
-// skip if Stripe says the customer already holds this product (hasActiveMembershipSubscription)
-stripe.subscriptions.create({
-  customer, items: [{ price: row.priceId }],                       // the STORED price
-  trial_end: row.trialMonths ? now + trialMonths months : now + 1 × row.interval,  // first period already paid / given
-  default_payment_method: paymentMethodId,                         // from the captured PI, or booking.payment.paymentMethodId
-  ...(paymentMethodId ? {} : { trial_settings: { end_behavior: { missing_payment_method: "cancel" } } }),
-  metadata: { bookingRef, eventId, membershipKey: row.key },       // membershipKey is REQUIRED — webhooks key on it
-})
+Throws on failure; the caller (§7.1 step 8) records it on the row. In order:
+
+1. Refuse if no `customerId` or no `priceId`.
+2. **Upgrade only** (`replaces` given): `stripe.subscriptions.retrieve(replaces.subscriptionId)`.
+   - `resource_missing` → no replacement; carry on as a plain start.
+   - any other error → **throw** ("couldn't read the monthly subscription being upgraded") — falling
+     through would see the live monthly plan, say "already subscribed", and leave a member charged
+     $595 with no yearly subscription.
+   - status not `active` / `trialing` → no replacement.
+3. **Duplicate guard.**
+   - With a replacement: list the customer's subscriptions; if any **other** `active`/`trialing`
+     subscription is on a product of this membership → return `{ created: false }`.
+   - Without: `hasActiveMembershipSubscription(customerId, key)` (`active`/`trialing`, any product of
+     the key) → return `{ created: false }`.
+4. **`trial_end`** (the date of the first real charge):
+   - upgrade → `subscriptionPaidThrough(replaced) + 1 × interval` (the paid month is never wasted).
+     `subscriptionPaidThrough` = the subscription's `trial_end` if trialing, else
+     `current_period_end`.
+   - `trialMonths > 0` → now + `trialMonths` months (the gift itself).
+   - else → now + 1 × `interval` (the first period was just captured).
+5. **Card.** `cardId = paymentMethodId`. On an upgrade with no card, use the customer's
+   `invoice_settings.default_payment_method`; still none → **throw** "no card to bill the yearly
+   membership on". (SelectMember's backend reads trialing + long trial + no default card as a
+   GIFTED membership — an upgrade must always have a card.)
+6. Create:
+   ```js
+   stripe.subscriptions.create({
+     customer: customerId,
+     items: [{ price: priceId }],                  // the STORED price — never re-resolved
+     trial_end: trialEnd,
+     ...(cardId ? { default_payment_method: cardId }
+                : { trial_settings: { end_behavior: { missing_payment_method: "cancel" } } }),
+     metadata: { bookingRef, eventId, approvedAt, membershipKey: key,   // membershipKey REQUIRED — the webhooks key on it,
+                 ...(replaced ? { upgradedFrom: replaced.id } : {}) }    // and SelectMember skips its welcome for it
+   })
+   ```
+7. **Upgrade only — stop the old one, after the new one exists** (never before):
+   `subscriptions.update(replaced.id, { cancel_at_period_end: true, metadata: { ...replaced.metadata,
+   cancelledReason: "upgraded_to_yearly", replacedBy: <new id> } })`. Best-effort: log a failure,
+   never roll back the yearly one. Never send SelectMember a `cancelled` for the replaced monthly
+   (the web's webhook knows `replacedBy` and stays silent).
+8. **Activate on the user** — write `<userField>.{active, stripeCustomerId, stripeSubscriptionId,
+   status, currentPeriodEnd, cancelAtPeriodEnd}` and root `stripeCustomerId`, on the account whose
+   `stripeCustomerId` is this customer (fallback: Stripe customer's email, case-insensitive, both
+   collections — and link the id onto it if it has none), and also on `subscriberId` if given.
+   `active` = status `active` or `trialing`.
+9. **Concierge only — retire an included Premium**: if the customer has a separate Premium
+   subscription (`active`/`trialing`/`past_due`, not already ending), set it
+   `cancel_at_period_end: true`, `metadata.cancelledReason = "included_with_concierge"`,
+   `metadata.includedWith = "concierge"`. No refund; they keep the period paid for. Best-effort.
+10. **Concierge only — mirror to selectmember.jetzy.com** (best-effort, 8 s timeout, never fails
+    the approval):
+    ```
+    PATCH <SELECT_MEMBER_API_URL>/api/v1/subscription/select       (prod https://prod-api.jetzy.com, staging https://test.jetzy.com)
+    headers: Content-Type: application/json, x-api-key: <SELECT_MEMBER_API_KEY>
+    { "email", "source": "external_portal", "status": "active",
+      "plan": "select_monthly" | "select_yearly",                    // from the subscription's price interval
+      "externalSubscriptionId": "sub_…", "startedAt": ISO, "expiresAt": ISO(current_period_end) }
+    ```
+11. **Record the sale** in `membership_purchases` (§3.6), `source: replaced ? "upgrade" : "ticket"`.
+    Best-effort.
+12. Return `{ created: true, subscriptionId, firstRenewalAt: trialEnd, replacedInterval?, startsAt? }`
+    (the last two only on an upgrade, for the receipt).
+
+**Who resolves the Stripe customer when there is no hold** (`resolveStripeCustomerForUser(userId,
+email)`): read the user (both collections); existing customer id (read order in §3.6) → use it
+and copy it to root if missing; none → `stripe.customers.create({ email, metadata: { userId } })`
+and store it at root.
+
+### 7.4a "What does this email already hold?" — port these
+
+```ts
+// Every live (active/trialing) membership subscription on ANY Stripe customer with this email.
+// null = Stripe couldn't be asked (≠ none). customers.SEARCH, not list — list is exact-match and
+// neither site lowercases emails. One person may have a customer on each site.
+async function liveMembershipSubscriptionsByEmail(email) {
+  const q = email.trim().replace(/\\/g, "\\\\").replace(/"/g, '\\"')
+  try {
+    const customers = await stripe.customers.search({ query: `email:"${q}"`, limit: 10 })
+    const found = []
+    for (const c of customers.data) {
+      const subs = await stripe.subscriptions.list({ customer: c.id, status: "all", limit: 100 })
+      for (const s of subs.data) {
+        if (s.status !== "active" && s.status !== "trialing") continue
+        for (const item of s.items.data) {
+          const productId = typeof item.price?.product === "string" ? item.price.product : item.price?.product?.id
+          const key = MEMBERSHIP_KEYS.find((k) => isMembershipProduct(k, productId))
+          if (!key) continue
+          found.push({ key, subscriptionId: s.id, customerId: c.id, interval: item.price?.recurring?.interval || "month",
+            status: s.status, cancelAtPeriodEnd: !!s.cancel_at_period_end, cancelledReason: s.metadata?.cancelledReason,
+            paidThrough: new Date(((s.status === "trialing" && s.trial_end) || s.current_period_end) * 1000) })
+          break
+        }
+      }
+    }
+    return found
+  } catch { return null }
+}
+
+// Upgrade = Concierge only, target yearly, a live MONTHLY (a cancelling one counts too, a renewing
+// one preferred), and NO live yearly one.
+function findMembershipUpgrade(email, key, targetInterval, live) {
+  if (key !== "concierge" || targetInterval !== "year" || !live) return null
+  const ofKey = live.filter((s) => s.key === key)
+  if (ofKey.some((s) => s.interval === "year")) return null
+  const monthly = ofKey.find((s) => s.interval === "month" && !s.cancelAtPeriodEnd)
+               || ofKey.find((s) => s.interval === "month" && s.cancelAtPeriodEnd)
+  return monthly ? { key, subscriptionId: monthly.subscriptionId, customerId: monthly.customerId,
+                     paidThrough: monthly.paidThrough.toISOString() } : null
+}
 ```
 
-Then set the row `status: "active"`, `subscriptionId`, and activate the membership on the user
-(same writes as the web's `setUserMembershipStatus`). On a Concierge membership the web also
-mirrors the sale to selectmember.jetzy.com.
+`heldMemberships(email, scope)` — entitlements the address holds (`src/lib/premium-eligibility.ts`):
+
+1. `users` and `eventusers`, email case-insensitive regex, project only
+   `premiumSubscription.active conciergeSubscription.active`. A key is held if `active` on
+   **either** doc.
+2. Look-up set = `scope` + every membership that includes a scoped key (asking about `premium`
+   also asks about `concierge`). For keys in it still not held: `liveMembershipSubscriptionsByEmail`
+   — any live subscription of that key counts. `null` → remember "Stripe failed".
+3. Still missing and the key has a SelectMember plan (Concierge):
+   `GET <SELECT_MEMBER_API_URL>/api/v1/subscription/select/status?email=<encoded>` (same headers as
+   §7.4 step 10; failure = no answer). Counts only when `status === "active"` **and** (`isConcierge === true` or
+   `includesPremium === true` or `plan` ∈ `{select_monthly, select_yearly}`) — or, only when Stripe
+   failed, a bare active with no `plan`. (A bare "active" can be a hotels-only member.)
+4. Return `expandEntitlements(held)`.
+
+### 7.4b Reactivating a cancelled membership (`reactivateHeldMemberships`, `src/lib/membership-upgrade.ts`)
+
+Runs when a booking becomes **confirmed** through checkout or approval (the web: paid fulfilment,
+free path, approval — so in the app: **approval**). Waiting-list approval does not run it. Never
+for a pending request.
+Best-effort: log, never throw.
+
+1. `keys` = memberships the booking's tickets sell, minus `chargedKeys` (rows started or upgraded
+   on this order).
+2. For each key: `live = liveMembershipSubscriptionsByEmail(email)`, rows of that key. Only when
+   **every** one is `cancelAtPeriodEnd` (a renewing one = nothing to undo), and excluding ones **we**
+   ended (`cancelledReason` `"included_with_concierge"` or `"upgraded_to_yearly"` — switching those
+   back on bills Premium twice / revives a replaced plan). Pick the one with the latest
+   `paidThrough`.
+3. Re-retrieve it; if still `cancel_at_period_end`, `subscriptions.update(id, {
+   cancel_at_period_end: false, metadata: { ...metadata, reactivatedBy: bookingRef } })`.
+
+No charge today — the current period is already paid; it renews as before. (Disclosed to the buyer
+at web checkout: "Your … was set to end… Booking this ticket keeps it.")
 
 ### 7.5 Reject, and a hold that expires
 
@@ -649,7 +988,9 @@ mirrors the sale to selectmember.jetzy.com.
 - other errors → refuse, change nothing.
 
 Then `payment.status: "canceled"`, `canceledAt`, `status: "rejected"`; email the guest (§12).
-No tracker change (a pending booking never consumed a seat).
+No tracker change (a pending booking never consumed a seat). No membership is touched: the
+decline email says the membership on the request "was not started" — or, on an upgrade row, that
+the guest "stays on monthly billing" (`membershipRowsForEmail`, §13c).
 
 **Hold expiry** — handled by the **web's** Stripe webhook for every booking on the shared account.
 **The app must not handle it too** (the guest would get two emails). What it does, so you can show
@@ -962,6 +1303,14 @@ What the guest is told, by money state:
 | `captured` | "Bookings are non-refundable. Cancelling releases your seat but any payment already made will not be returned." |
 | `unknown` | don't claim either — "contact the organiser about any payment" |
 
+**Plus the membership line** (Rev 2), whenever the booking sold one:
+`cancellationMembershipNote(bookingMemberships(booking.payment), moneyState, asManager)` (§13c) —
+e.g. "$595.00 of this was for Full Concierge Membership, which you keep — cancelling the booking
+doesn't cancel the membership. Manage it from Manage membership." On a hold: "The Jetzy Premium
+membership on this request will not be started." Show it in the cancel dialog (guest wording, or
+`asManager = true` for host/admin) **and** put it in both cancellation emails. Cancelling never
+calls Stripe on a subscription.
+
 ### 9.2 Delete (`src/pages/api/bookings/delete.ts`)
 
 Removes the document. Admin **or** host by the API; the web shows Delete to admins on the Event
@@ -1018,19 +1367,25 @@ MUST NEVER fail a booking, approval, capture or cancellation.
 
 | Trigger | Guest | Host (host-owned event) | Jetzy inbox |
 |---|---|---|---|
-| Booking confirmed (paid, free, waiting list) | ticket confirmation + QR (+ recurring terms for memberships) | "you made a sale" | `tech@jetzyapp.com` is a second `to` on **every** ticket confirmation, any event |
-| Request submitted (pending) | "request received" (+ hold amount and expiry) | approval request with a link to Approvals | approval request — admin-owned event, or owner not resolvable |
+| Booking confirmed (paid, free, waiting list) | ticket confirmation + QR (+ recurring terms for memberships; "Includes Jetzy Premium" under a Concierge line) | "you made a sale" | `tech@jetzyapp.com` is a second `to` on **every** ticket confirmation, any event |
+| **(Rev 2)** A membership was **created** by the booking (instant purchase or approval; paid first period or free months) — not an upgrade, not a reactivation, not one already held | **membership welcome email**, separate from the ticket receipt (`sendMembershipStarted`: amount + interval + next billing date, or "free until <date>" and — with no card — "then it ends unless you add a card") | — | — |
+| Request submitted (pending) | "request received" (+ hold amount and expiry; membership sentence: new / free months / upgrade) | approval request with a link to Approvals, quoting the **full** hold (ticket + membership first periods) and itemising memberships | approval request — admin-owned event, or owner not resolvable |
 | Approved | ticket confirmation + QR (also to `tech@jetzyapp.com`); if fewer than asked: **partial note** (below) | — (they pressed it) | "request approved" notice — admin-owned event only |
 | Rejected, or pending request deleted | "not approved" (+ hold released, not charged) | — | — |
 | Hold expired | "wasn't reviewed in time — you were not charged" | — | expiry notice, **every** event (sent by the web's webhook) |
-| Cancelled | cancellation receipt with the money line (§9.1) | cancellation notice | **always** a copy, on every event |
+| Cancelled | cancellation receipt with the money line + membership note (§9.1) | cancellation notice (with membership note) | **always** a copy, on every event |
 | Edited (name or quantity) | nothing | nothing | nothing |
 
 **Addresses** (web environment variables):
-- "Jetzy inbox" for approval notices (request / approved / expired) = **`SENDGRID_EMAIL_SENDER`** — `contact@jetzyapp.com`.
-- Cancellation inbox copy = **`ADMIN_NOTIFICATION_EMAIL`** — `tech@jetzyapp.com` (falls back to the sender address).
+- "Jetzy inbox" for approval notices (request / approved / expired) = **`ADMIN_NOTIFICATION_EMAIL`**
+  — `tech@jetzyapp.com`, falling back to `SENDGRID_EMAIL_SENDER` only when unset. **Changed
+  2026-10-22**: they used to go to the sender address; once that became `reservations@jetzy.com`
+  the mail was sent to itself and SendGrid dropped it. Never address a notice to the sender.
+- Cancellation inbox copy = **`ADMIN_NOTIFICATION_EMAIL`** — `tech@jetzyapp.com` (same fallback).
 - Every ticket confirmation also goes to `tech@jetzyapp.com` (hard-coded second recipient).
-- Guest-facing mail is sent from the same verified sender with the display name "Jetzy".
+- **Sender** = `SENDGRID_EMAIL_SENDER` (verified, currently `reservations@jetzy.com`), display
+  name "Jetzy" on guest-facing mail. On a host-owned event the host-audience approval notice sets
+  `replyTo` = the guest.
 
 **QR code**: the confirmation embeds a QR image whose content is **just the `bookingRef` string**
 (`QRCode.toDataURL(bookingRef)`, `src/lib/qr-generator.ts`). Check-in looks the booking up by that
@@ -1046,13 +1401,28 @@ reference, so any QR library producing the same content works.
 
 ## 13. Guest-facing reads
 
+**Strip from EVERY booking you send to a client** (guest or host screens alike — Rev 2 list,
+verified on staging data: no `sub_` / `cus_` / `pm_` / `pi_` / `cs_` in any response):
+
+```
+payment.paymentIntentId   payment.checkoutSessionId   payment.subscriptionId   payment.paymentMethodId
+payment.memberships.subscriptionId
+payment.memberships.upgradeFrom.subscriptionId   payment.memberships.upgradeFrom.customerId
+```
+
+Keep `payment.memberships.upgradeFrom.paidThrough` — the screens need it to describe an upgrade
+(§13c detects an upgrade by `subscriptionId` **or** `paidThrough` for exactly this reason).
+
 - **My bookings**: bookings where `bookerUserId == user._id` **or** `customerEmail` matches the
-  user's email case-insensitively, `isDeleted: false`. Never send `paymentIntentId` /
-  `checkoutSessionId`. Classify upcoming/past by the event's timezone-aware date.
+  user's email case-insensitively, `isDeleted: false`. Classify upcoming/past by the event's
+  timezone-aware date. The booking detail itemises its memberships (§13c) and says the membership
+  "continues if the booking is cancelled".
 - **Booking by reference** (from an emailed link, no login): return **no PII** — only
   `bookingRef`, `status`, ticket count, money state + amount, `canCancel` + reason, and the event's
   name / slug / start / timezone. The reference is a bearer token; someone holding a leaked one must
   not be able to read the booker's email or phone.
+- **Booking by reference** also returns `memberships` (no ids) so the cancel page can show the
+  membership note (§9.1).
 - **The guest's booking for one event** (event page — "You're registered" / Cancel button): the
   booker's newest booking for that event that is **not** cancelled / rejected / failed. Return it
   with `moneyState`, `moneyAmount`, `canCancel`, `cancelBlockedReason`, and — when the event hides
@@ -1265,6 +1635,99 @@ cancelled. It is not a booking list.
 
 ---
 
+## 13c. Describing a booking's memberships — one wording everywhere (Rev 2)
+
+Port `src/lib/booking-membership-display.ts` (pure). **Every** surface that shows a booking's
+memberships — approve sheet, edit sheet, bookings panel, guest booking detail, cancel dialogs,
+emails — uses it. Before it existed the surfaces disagreed: "Full Concierge Membership membership",
+an included Premium shown as charged, an upgrade shown as a new membership.
+
+Input rows: `bookingMemberships(booking.payment)` (§3.3).
+
+```ts
+const LABEL   = { premium: "Jetzy Premium", concierge: "Full Concierge Membership" }
+const RECEIPT = { premium: "Jetzy Premium membership", concierge: "Full Concierge Membership" }   // never `${label} membership`
+const INCLUDES = { premium: [], concierge: ["premium"] }
+const isKey = (k) => k === "premium" || k === "concierge"
+export const membershipRowName  = (row) => (isKey(row?.key) ? RECEIPT[row.key] : "Membership")
+export const membershipRowLabel = (row) => (isKey(row?.key) ? LABEL[row.key] : "Membership")
+export const periodWord = (interval) => (interval === "year" ? "year" : "month")
+export const formatMembershipDate = (v) => { if (!v) return null; const d = new Date(v); return isNaN(d) ? null :
+  d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) }
+
+export const includingRow = (row, rows) => !isKey(row?.key) ? null :
+  rows.find((o) => isKey(o.key) && o.key !== row.key && INCLUDES[o.key].includes(row.key) && o.status !== "failed") || null
+
+// "upgrade" | "included" | "held" | "trial" | "failed" | "new"
+export const membershipRowKind = (row, rows) => {
+  if (row.upgradeFrom && (row.upgradeFrom.subscriptionId || row.upgradeFrom.paidThrough)) return "upgrade"
+  if (includingRow(row, rows)) return "included"
+  if (row.status === "failed") return "failed"
+  if (row.status === "active" && !row.subscriptionId && !(Number(row.amount) > 0) && !(Number(row.trialMonths) > 0)) return "held"
+  if (Number(row.trialMonths) > 0) return "trial"
+  return "new"
+}
+export const soldMembershipRows = (rows) => rows.filter((r) => !["included", "held"].includes(membershipRowKind(r, rows)))
+
+export const membershipRowSummary = (row, rows) => {
+  switch (membershipRowKind(row, rows)) {
+    case "upgrade": { const d = formatMembershipDate(row.upgradeFrom?.paidThrough)
+      return d ? `switch from monthly to yearly — the year starts ${d}, when the monthly plan ends`
+               : "switch from monthly to yearly — the year starts when the monthly plan's paid month ends" }
+    case "included": { const by = includingRow(row, rows); return `included with ${by ? membershipRowLabel(by) : "another membership"} — not charged` }
+    case "held": return "already a member — not charged"
+    case "trial": { const m = Number(row.trialMonths)
+      const then = Number(row.renewalAmount) > 0 ? `, then $${Number(row.renewalAmount).toFixed(2)}/${periodWord(row.interval)}` : ""
+      return `${m} ${m === 1 ? "month" : "months"} free${then}` }
+    case "failed": return `first ${periodWord(row.interval)} — not started`
+    default: return `first ${periodWord(row.interval)}`
+  }
+}
+export const membershipRowCharged = (row, rows) => { const k = membershipRowKind(row, rows)
+  return k === "new" || k === "upgrade" || (k === "failed" && Number(row.amount) > 0) }
+// Part of a hold approval WILL release for certain (included rows). The approve sheet subtracts it
+// from "Card will be charged" before the host presses Approve.
+export const includedRowsCents = (rows) => rows.filter((r) => r.status === "pending" && membershipRowKind(r, rows) === "included")
+  .reduce((s, r) => s + Math.round((Number(r.amount) || 0) * 100), 0)
+export const membershipIncludesLine = (key) => key === "concierge" ? "Includes Jetzy Premium" : null
+export const chargedMembershipTotal = (rows) =>
+  Math.round(rows.filter((r) => membershipRowCharged(r, rows)).reduce((s, r) => s + (Number(r.amount) || 0), 0) * 100) / 100
+```
+
+`soldMembershipNames(rows)` = the labels of `soldMembershipRows`, de-duplicated, joined "A", "A and
+B", "A, B and C". `cancellationMembershipNote(rows, moneyState, asManager)`:
+
+```ts
+export const cancellationMembershipNote = (rows, moneyState, asManager = false) => {
+  const sold = soldMembershipRows(rows || [])
+  if (sold.length === 0) return null
+  const names = soldMembershipNames(rows)
+  const upgrade = sold.some((r) => membershipRowKind(r, rows) === "upgrade")
+  const who = asManager ? "the guest keeps" : "you keep"
+  if (moneyState === "hold") return upgrade
+    ? `The ${names} switch to yearly billing will not happen — ${asManager ? "the guest's" : "your"} monthly plan continues unchanged.`
+    : `The ${names} on this request will not be started.`
+  if (moneyState === "captured" || moneyState === "unknown") {
+    const paid = chargedMembershipTotal(rows)
+    const part = paid > 0 ? `$${paid.toFixed(2)} of this was for ${names}, which ${who}` : `${names} is separate from the ticket and ${who} it`
+    return `${part} — cancelling the booking doesn't cancel the membership${upgrade ? ", and the switch to yearly billing stands" : ""}. ${asManager ? "The guest can manage it" : "Manage it"} from Manage membership.`
+  }
+  return null
+}
+```
+
+Where each is used:
+
+| Surface | Show |
+|---|---|
+| Approve sheet | one line per row: `membershipRowName` · `membershipRowSummary` · amount (only if `membershipRowCharged`). "Card will be charged" = `approvalCaptureCents(...)` minus `includedRowsCents(rows)` |
+| Edit sheet, bookings panel "What this covers" | the same per-row lines |
+| Guest booking detail / success page | `membershipRowSummary`; an upgrade states the date; a pending request says the membership starts **on approval**, never "is active" |
+| Cancel dialogs (guest + host), cancel-by-link page, both cancellation emails | `cancellationMembershipNote` |
+| Ticket confirmation / approval emails | `soldMembershipRows` only, by receipt label; "Includes Jetzy Premium" under Concierge |
+
+---
+
 ## 14. Mobile front-end checklist
 
 ### Host/admin — Approvals (pending requests)
@@ -1278,8 +1741,12 @@ cancelled. It is not a booking list.
 - Actions: **Approve** (label **Retry charge** when `payment.status === "failed"`; disabled when the
   hold expired), **Reject**, **Edit** (hidden when the hold expired).
 - Approve sheet: what was asked, itemised money (subtotal and discount scaled to the approved
-  number, each membership row, "Card will be charged $X", "Released from the hold $Y"), prior
-  bookings warning; buttons per §7.2.
+  number, each membership row via §13c, "Card will be charged $X" = `approvalCaptureCents` −
+  `includedRowsCents`, "Released from the hold $Y"), prior bookings warning; buttons per §7.2.
+  The final figure can still drop at approval if the guest has bought the membership elsewhere
+  meanwhile — the server decides (§7.1 step 6.3).
+- A row whose membership `status` is `failed` after approval shows "— not started" and
+  `lastError` to admins: money was taken, a subscription is owed (Jetzy support resolves it).
 - After any action refresh: the booking list, the guest list, availability, counters.
 
 ### Host/admin — Bookings / Guests lists
@@ -1299,7 +1766,8 @@ cancelled. It is not a booking list.
 
 ### Guest
 - My bookings with money badges from `bookingMoneyState`; Cancel only when `canGuestCancel`
-  allows; the cancel confirmation states the money consequence (§9.1).
+  allows; the cancel confirmation states the money consequence **and** the membership note (§9.1).
+- Memberships on a booking described only through §13c.
 
 ---
 
@@ -1323,6 +1791,20 @@ Suggested endpoints, one per web reference:
 | guest's booking for one event | §13 | `api/bookings/my-for-event.ts` |
 | bookings overview, event bookings list (+ filters), pending count | §13b | `console/bookings/index.tsx`, `[eventId].tsx`, `api/get-bookings.ts`, `api/events/[eventId]/event-bookings.ts` |
 | event counters | §13b.4 | `api/events/[eventId]/totals.ts` |
+
+Shared services the approve endpoint needs (Rev 2): `startMembershipSubscription` (§7.4),
+`heldMemberships` + `liveMembershipSubscriptionsByEmail` + `findMembershipUpgrade` (§7.4a),
+`reactivateHeldMemberships` (§7.4b), `resolveStripeCustomerForUser` (§7.4), the SelectMember
+PATCH/GET (§7.4, §7.4a), and the `membership_purchases` writer (§3.6).
+
+Configuration the app's back-end needs (same values as the web's Vercel env, per environment):
+
+| Setting | Purpose |
+|---|---|
+| Stripe secret key | same account as the web — test on staging, live on prod |
+| Premium / Concierge product ids | §3.6 table; test and live ids are entirely different strings — never infer one from the other |
+| `SELECT_MEMBER_API_URL`, `SELECT_MEMBER_API_KEY` | Concierge mirror + status (§7.4, §7.4a). Staging → `https://test.jetzy.com`; never point a non-production app at the production URL |
+| `ADMIN_NOTIFICATION_EMAIL` | Jetzy inbox (§12) |
 
 Non-negotiables:
 - Ownership check before any write or Stripe call.
@@ -1369,6 +1851,34 @@ from the app (§5.0); then act on them from the app **and** confirm the web show
 16. Confirmed paid booking: quantity locked, name saves.
 17. Non-owner host calls approve / edit / cancel on another host's event → 403.
 
+**Membership scenarios (Rev 2)** — test Concierge product ids in §3.6, test card above:
+
+18. Concierge member (on our records **or** only in Stripe under another customer with the same
+    email) has a pending request on a Premium ticket held at $50 + $10 → approve → captured **$50**,
+    Premium row `active`/`amount 0`, no Premium subscription created.
+19. Pending request holding **both** a Concierge row and a Premium row (legacy shape) → approve →
+    one Concierge subscription, Premium row released, its amount not captured.
+20. Monthly Concierge member, yearly-Concierge ticket, approval → approve → yearly subscription
+    with `trial_end` = monthly paid-through + 1 year, `metadata.upgradedFrom`; the monthly one
+    `cancel_at_period_end: true`, `cancelledReason: "upgraded_to_yearly"`, `replacedBy`; no welcome
+    email; `membership_purchases.source = "upgrade"`.
+21. Same, but the guest went yearly on selectmember.jetzy.com before approval → upgrade row
+    released, nothing created.
+22. Same, but the monthly plan ended before approval → a fresh yearly subscription, no replacement.
+23. Guest who **cancelled** their Concierge (still in the paid period) gets a Concierge-ticket
+    request approved, membership not charged on the order → their subscription
+    `cancel_at_period_end: false`, `metadata.reactivatedBy = <bookingRef>`.
+24. A Premium subscription retired by Concierge (`cancelledReason: "included_with_concierge"`) is
+    **never** reactivated by scenario 23.
+25. New Premium member via approval → separate welcome email + ticket confirmation; one
+    `membership_purchases` row; SelectMember is **not** called (Premium is ours).
+26. New Concierge member via approval → SelectMember PATCH with `plan: select_monthly` /
+    `select_yearly` to the **staging** URL; a separate Premium subscription on the same customer is
+    set to end (`included_with_concierge`).
+27. Cancel a captured Concierge booking → booking `cancelled`, subscription untouched, dialog and
+    emails carry the membership note.
+28. Every booking list response: no `sub_`, `cus_`, `pm_`, `pi_`, `cs_` anywhere.
+
 ---
 
 ## 17. Known gaps
@@ -1386,10 +1896,24 @@ from the app (§5.0); then act on them from the app **and** confirm the web show
   list only shows `"waiting"`. If you write entries, use `"approved"` for consistency with ours.
 - The Bookings overview's `bookingsCount` counts every booking document, cancelled and pending
   included.
+- **(Rev 2)** A membership row left `failed` after approval (money captured, subscription not
+  created) is not retried automatically. It is visible (`lastError`) and handled by Jetzy support.
+- **(Rev 2)** `SELECT_MEMBER_WEBHOOK_SECRET` is still unset on the web, so a Concierge cancelled on
+  selectmember.jetzy.com does not stop billing on our side. Not a booking concern; mentioned so it
+  isn't mistaken for an app bug.
+- **(Rev 2)** No existing double-holders (Concierge + a separate Premium) are cleaned up — by
+  decision. Only a Concierge **started** from now on retires a separate Premium (§7.4 step 9).
 
 ---
 
 ## 18. Changelog
+
+**Revision 2 (2026-11-11):** no new booking behaviour beyond the 2026-10-19 → 10-23 entries
+below; those rules are now written into the body (§3.3 `upgradeFrom`, §3.6, §5.3, §7.1 steps
+6.3 / 8 / 9b / 11, §7.4, §7.4a, §7.4b, §9.1 membership note, §12, §13 ids, §13c). Corrections:
+admin approval notices go to `ADMIN_NOTIFICATION_EMAIL` (since 2026-10-22); the pre-create
+"already subscribed" check is `active`/`trialing` only; `canGuestCancel` added to §4.3. New §0
+(handoff checklist) and test scenarios 18–28.
 
 **Revision 1 note:** ticket buying stays on the web; the app hands off via §5.0 and builds
 everything from §6 on.
