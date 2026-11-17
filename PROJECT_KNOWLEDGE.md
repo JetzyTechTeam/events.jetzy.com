@@ -1551,6 +1551,12 @@ QR code + manual check-in
 Tracks: totalTickets, checkedInCount, checkInHistory[], guests
 Admin OR owner access on all check-in APIs
 
+### Walk-in "scan to buy" QR + guest check-in QR on the success screens (2026-11-17, CEO ask)
+- **Walk-in QR** — `src/components/WalkInTicketQR.tsx`, under `CheckInPortal` on `/console/events/[eventId]/check-in`. Shown to an admin / super admin or the event's owner. Encodes `eventUrl(window.location.origin, slug) + "?buy=1"`; Show full screen (large QR to turn toward the guest) + Copy link. While the event can't sell (`isPendingAdminApproval`, `status === "draft"`, or `getEventStatus === "past"`) the card shows a note instead of a QR.
+- **`?buy=1` is decided on the EVENT PAGE at scan time** (`EventTicketsComponent.tsx`), never on the check-in side — a ticket can be added or sell out while the door screen is open. One ticket, not sold out → `handleTicketSelection` then `handleCheckoutClick` (so the membership cap / stock checks / funnel tracking all still run); free event with no tickets → `handleCheckoutClick`; otherwise scroll to `#event-tickets`. Waits for the availability query to settle (unloaded availability reads as unlimited). The param is consumed with a shallow `router.replace` (other params kept) and latched, so refresh / closing the modal doesn't reopen checkout. Inert under `?preview=1`. Survives the retired-slug redirect (`withQuery`).
+- **Guest check-in QR** — `src/components/bookings/CheckInQR.tsx` renders the BARE `bookingRef` (same payload as the email, so the scanner and `validate.ts` need nothing new) + the ref in text. On the free success pop-up (`EventCheckoutModel.tsx`, `freeRegistrationSuccess` only) and paid `/success` (only when the booking returned by `/api/checkout/confirm` exists and is not pending / cancelled). **Never for a pending request** — check-in refuses those.
+- **The free pop-up no longer reloads the page after 2.5s** — that wiped the QR. `reloadOnCloseRef` reloads when the pop-up closes instead (any close path, via the `showCheckout` reset effect); still skipped for app buyers (`cameFromApp`).
+
 ---
 
 ## Feature: Return to the mobile app after checkout

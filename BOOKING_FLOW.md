@@ -1356,6 +1356,14 @@ Reference: `src/pages/api/check-in/*`. Admin or host.
   `isFullyCheckedIn = checkedInCount >= ticket total`.
 - Edits keep it in step (§8.4); a confirmed booking can't be reduced below `checkedInCount`;
   cancelling deletes it.
+- **The guest's check-in QR is the bare `bookingRef`** (`src/lib/qr-generator.ts`). Besides the
+  confirmation email, the web now shows the same QR on the booking success screens (the free
+  registration pop-up and the paid `/success` page) — **confirmed bookings only**; never for a
+  pending request, which this section refuses. The app may want the same on its confirmation.
+- **Walk-in deep link: `<event url>?buy=1`** — the "No ticket? Scan to buy" QR on the web check-in
+  page. The event page decides at scan time: exactly one ticket, not sold out → that ticket is
+  selected and checkout opens; a free event with no tickets → the register form opens; otherwise →
+  scroll to the tickets. The param is removed from the URL once handled.
 
 ---
 
@@ -1911,6 +1919,10 @@ from the app (§5.0); then act on them from the app **and** confirm the web show
 ---
 
 ## 18. Changelog
+
+**2026-11-17 (check-in QRs):** the booking success screens show the guest's check-in QR (bare
+`bookingRef`, confirmed bookings only), and the web check-in page shows a walk-in "scan to buy" QR
+encoding `<event url>?buy=1` (§11). No API or data change.
 
 **2026-11-17:** booking lists show the newest bookings on top — the event-page Bookings tab
 (§13b.4) is sorted `createdAt` descending (it had no sort), and the Guests tab (§13b.3) puts the

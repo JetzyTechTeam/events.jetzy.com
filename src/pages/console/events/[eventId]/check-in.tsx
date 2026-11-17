@@ -2,6 +2,10 @@ import React from "react"
 import ConsoleLayout from "@/components/layout/ConsoleLayout"
 import CheckInPortal from "@/components/CheckInPortal"
 import CheckInStats from "@/components/CheckInStats"
+import WalkInTicketQR from "@/components/WalkInTicketQR"
+import { useSession } from "next-auth/react"
+import { isPendingAdminApproval } from "@/lib/event-approval"
+import { getEventStatus } from "@/utils/eventSort"
 import { Pages } from "@/types"
 import { GetServerSideProps } from "next"
 import { authorizedOnly } from "@/lib/authSession"
@@ -18,6 +22,7 @@ interface CheckInPageProps {
 export default function CheckInPage({ event }: CheckInPageProps) {
 	const router = useRouter()
 	const { eventId } = router.query
+	const { data: session } = useSession()
 
 	const { data: eventData, isLoading, error } = useQuery({
 		queryKey: ["event", eventId],
@@ -43,6 +48,14 @@ export default function CheckInPage({ event }: CheckInPageProps) {
 		)
 	}
 
+	const role = (session?.user as any)?.role
+	const sessionUserId = (session?.user as any)?._id?.toString()
+	const isAdmin = role === "admin" || role === "super admin"
+	const canShowWalkInQR = isAdmin || (!!sessionUserId && eventData.ownerId?.toString() === sessionUserId)
+	// A guest scanning must land on a page that will sell to them: not while the event awaits
+	// review (guests are bounced), not a draft, not once it has ended (tickets are hidden).
+	const salesOpen = !isPendingAdminApproval(eventData) && eventData.status !== "draft" && getEventStatus(eventData) !== "past"
+
 	return (
 		<ConsoleLayout page={Pages.Manage} maxW="max-w-7xl">
 			{/* Phones: ConsoleLayout already insets 16px. This container and the portal each added
@@ -50,6 +63,16 @@ export default function CheckInPage({ event }: CheckInPageProps) {
 			<Container maxW="container.xl" py={8} sx={{ "@media screen and (max-width: 47.99em)": { paddingLeft: 0, paddingRight: 0, paddingTop: "4px", paddingBottom: "8px" } }}>
 				<CheckInStats eventId={eventData._id.toString()} />
 				<CheckInPortal eventId={eventData._id.toString()} eventName={eventData.name} />
+				{/* Walk-in QR — whoever may run check-in for this event: an admin, or its host.
+				    The link itself is public; the gate only keeps the card off the page for anyone
+				    else who opens this URL (the check-in APIs already refuse them). */}
+				{canShowWalkInQR && (
+					<WalkInTicketQR
+						slug={eventData.slug || eventData._id.toString()}
+						eventName={eventData.name}
+						salesOpen={salesOpen}
+					/>
+				)}
 			</Container>
 		</ConsoleLayout>
 	)

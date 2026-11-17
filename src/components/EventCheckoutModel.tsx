@@ -16,6 +16,7 @@ import { usePremiumStatus } from "@/hooks/usePremiumStatus"
 import { useSession } from "next-auth/react"
 import { StarIcon } from "@heroicons/react/24/solid"
 import ReturnToAppButton from "./misc/ReturnToAppButton"
+import CheckInQR from "./bookings/CheckInQR"
 import { cameFromApp } from "@/lib/app-return"
 import { trialEndsOn } from "@/lib/invite-trial"
 import { useRouter } from "next/router"
@@ -44,6 +45,8 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 	const [liveEventData, setLiveEventData] = useState<any>(eventData || null)
 	const [checkoutStep, setCheckoutStep] = useState<"details" | "questions">("details")
 	const [freeRegistrationSuccess, setFreeRegistrationSuccess] = useState(false)
+	// Set on a confirmed free registration; the page reloads when the pop-up closes.
+	const reloadOnCloseRef = useRef(false)
 	const [pendingApproval, setPendingApproval] = useState(false)
 	// The free path never leaves the origin, so unlike a Stripe purchase there is no /success
 	// page to read the reference off — it has to be kept here to name it on the way back to the app.
@@ -473,10 +476,13 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 					setPendingApproval(true)
 				} else {
 					setFreeRegistrationSuccess(true)
-					// The reload refreshes remaining capacity for a buyer who is staying on the
-					// page. For one who came from the app it would destroy the return link
-					// before they could tap it, and they are not staying anyway.
-					if (!cameFromApp()) setTimeout(() => window.location.reload(), 2500)
+					// The reload refreshes remaining capacity and the "you're registered" state for
+					// a buyer who is staying on the page. It runs when the pop-up CLOSES (see the
+					// reset effect), not on a 2.5s timer: the pop-up now carries the guest's
+					// check-in QR, and a timer wiped it before they could screenshot it. For a
+					// buyer from the app it would destroy the return link, and they are not
+					// staying anyway.
+					if (!cameFromApp()) reloadOnCloseRef.current = true
 				}
 				return
 			}
@@ -723,6 +729,12 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 	// Fetch live event data (including questions) every time checkout opens
 	useEffect(() => {
 		if (!showCheckout) {
+			// However the confirmed pop-up was closed (×, Close), refresh the page now.
+			if (reloadOnCloseRef.current) {
+				reloadOnCloseRef.current = false
+				window.location.reload()
+				return
+			}
 			setFreeRegistrationSuccess(false)
 			setPendingApproval(false)
 			setAcceptedTerms(false)
@@ -805,7 +817,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 							</div>
 						) : /* Free Registration Success UI */
 						freeRegistrationSuccess ? (
-							<div className="p-6 space-y-6">
+							<div className="p-6 space-y-6 overflow-y-auto">
 								<div className="text-center">
 									<div className="w-16 h-16 mx-auto mb-4 bg-green-500/20 rounded-full flex items-center justify-center">
 										<svg className="w-8 h-8 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -819,6 +831,13 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 										You have successfully registered for <strong>&quot;{event}&quot;</strong>.
 									</p>
 									<p className="text-gray-400 text-sm mb-6">A confirmation email has been sent to {formData.email}.</p>
+									{/* Confirmed only — the pending-approval branch above gets no QR,
+									    since check-in refuses a request that hasn't been approved. */}
+									{freeBookingRef && (
+										<div className="mb-6">
+											<CheckInQR bookingRef={freeBookingRef} variant="dark" />
+										</div>
+									)}
 									<ReturnToAppButton
 										eventId={checkoutEventId}
 										bookingRef={freeBookingRef}
