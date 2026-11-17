@@ -153,13 +153,23 @@ export const buildGuestRows = ({
 	// invitations-first, so invited people were on page one; ranking them below every booking
 	// pushed them off it entirely on any busy event, and the invitation flow looked like it had
 	// been removed. Ten rows per page is not much to hide behind.
+	//
+	// Inside each band, most recent activity first (CEO, 2026-11-17: newest bookings on top):
+	// the person's newest booking of any status (`bookings` is already newest first), or when
+	// they were invited if that is later or they have not booked. Name only breaks an exact tie,
+	// so the order is stable between renders. The pending band is NOT the expiry queue — the
+	// Approvals tab keeps soonest-expiring first, and this tab has its own expiring-holds banner.
 	const band = (row: GuestRow) =>
 		row.pendingBookings.length > 0 ? 0 : row.cancelledOnly ? 3 : row.bookings.length === 0 ? 1 : 2
+	const lastActivity = (row: GuestRow) => Math.max(time(row.bookings[0]?.createdAt), time(row.invitedAt))
 
 	return rows.sort((a, b) => {
 		const ba = band(a)
 		const bb = band(b)
 		if (ba !== bb) return ba - bb
+		const ta = lastActivity(a)
+		const tb = lastActivity(b)
+		if (ta !== tb) return tb - ta
 		return (a.name || a.email).localeCompare(b.name || b.email)
 	})
 }

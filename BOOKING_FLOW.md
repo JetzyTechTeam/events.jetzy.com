@@ -1543,7 +1543,9 @@ One row per **person**, not per booking (`src/lib/guest-rows.ts`):
 - `cancelledOnly`: has bookings, none live, none pending.
 - Filter chips: All · Needs approval (has a pending booking) · Booked (has bookings and is not
   cancelled-only) · Invited only · Cancelled / expired. Sort: people with a pending request first,
-  then invited-only, then booked, then cancelled-only.
+  then invited-only, then booked, then cancelled-only; **within each group, most recent activity
+  first** — the person's newest booking (`createdAt`, any status), or their invite date if later
+  or they have not booked; name breaks an exact tie.
 - Actions: per pending booking — Approve / Reject / Edit (two requests are two holds and two
   approvals, never merged); on the row — Edit and Cancel (primary booking, when live), Delete,
   View details.
@@ -1580,7 +1582,8 @@ On a phone the same figures are a small grid: rows Active / Pending / Inactive �
 Customers.
 
 **Bookings tab — the list**: every booking for the event (`GET /api/events/:eventId/event-bookings`,
-admin or host, Stripe ids removed), 10 per page, dead bookings dimmed. Collapsed row: customer
+admin or host, Stripe ids removed), **newest first** (`createdAt` descending, `_id` breaks ties;
+rows with no `createdAt` sort last), 10 per page, dead bookings dimmed. Collapsed row: customer
 name, "Ref: <bookingRef>", status pill, total (amber when money is on hold). Status pill text:
 
 | Booking | Pill |
@@ -1907,6 +1910,11 @@ from the app (§5.0); then act on them from the app **and** confirm the web show
 ---
 
 ## 18. Changelog
+
+**2026-11-17:** booking lists show the newest bookings on top — the event-page Bookings tab
+(§13b.4) is sorted `createdAt` descending (it had no sort), and the Guests tab (§13b.3) orders
+each group by most recent activity instead of A–Z. Groups and the Approvals queue (soonest-expiring
+first) are unchanged. Display order only; no data or API shape change.
 
 **Revision 2 (2026-11-11):** no new booking behaviour beyond the 2026-10-19 → 10-23 entries
 below; those rules are now written into the body (§3.3 `upgradeFrom`, §3.6, §5.3, §7.1 steps

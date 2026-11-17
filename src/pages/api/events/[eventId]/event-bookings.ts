@@ -51,7 +51,11 @@ export default async function handler(
         // subscription / customer / card ids that membership rows and upgrades carry.
         "-payment.paymentIntentId -payment.checkoutSessionId -payment.subscriptionId -payment.paymentMethodId " +
           "-payment.memberships.subscriptionId -payment.memberships.upgradeFrom.subscriptionId -payment.memberships.upgradeFrom.customerId",
-      );
+      )
+      // Newest booking first — the panel pages client-side, so page 1 must be the latest.
+      // `_id` breaks ties and orders rows written without `createdAt` (mobile app / admin
+      // portal) deterministically at the bottom instead of leaving them to natural order.
+      .sort({ createdAt: -1, _id: -1 });
 
     return res.status(200).json(bookings);
   } catch (error) {
