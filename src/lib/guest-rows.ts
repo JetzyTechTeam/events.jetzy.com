@@ -146,20 +146,27 @@ export const buildGuestRows = ({
 		}
 	})
 
-	// Requests awaiting a decision first, then the people who were INVITED but have not booked,
-	// then everyone else, then the dead rows.
+	// LATEST BOOKING ON TOP (CEO, 2026-11-17) — the same order as the Event Bookings page.
+	// Everyone holding a booking comes first, ordered by their newest booking's `createdAt`
+	// (`bookings` is already newest first), whatever its status: pending, confirmed and
+	// cancelled are mixed by date, not grouped. People invited but never booked follow, newest
+	// invite first. Name only breaks an exact tie, so the order is stable between renders.
 	//
-	// Invited-only sits above booked deliberately. The list this replaced was built
-	// invitations-first, so invited people were on page one; ranking them below every booking
-	// pushed them off it entirely on any busy event, and the invitation flow looked like it had
-	// been removed. Ten rows per page is not much to hide behind.
-	const band = (row: GuestRow) =>
-		row.pendingBookings.length > 0 ? 0 : row.cancelledOnly ? 3 : row.bookings.length === 0 ? 1 : 2
+	// This replaced a banded order (pending → invited-only → booked → cancelled) that pinned
+	// approval requests to the top and put every invited-only person above the bookings. A
+	// pending request is no longer pinned: the "Needs approval" chip, this tab's expiring-holds
+	// banner and the Approvals tab (soonest-expiring first) are where requests are worked.
+	const hasBooking = (row: GuestRow) => (row.bookings.length > 0 ? 0 : 1)
+	const sortTime = (row: GuestRow) =>
+		row.bookings.length > 0 ? time(row.bookings[0]?.createdAt) : time(row.invitedAt)
 
 	return rows.sort((a, b) => {
-		const ba = band(a)
-		const bb = band(b)
-		if (ba !== bb) return ba - bb
+		const ga = hasBooking(a)
+		const gb = hasBooking(b)
+		if (ga !== gb) return ga - gb
+		const ta = sortTime(a)
+		const tb = sortTime(b)
+		if (ta !== tb) return tb - ta
 		return (a.name || a.email).localeCompare(b.name || b.email)
 	})
 }

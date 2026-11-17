@@ -1356,6 +1356,14 @@ Reference: `src/pages/api/check-in/*`. Admin or host.
   `isFullyCheckedIn = checkedInCount >= ticket total`.
 - Edits keep it in step (§8.4); a confirmed booking can't be reduced below `checkedInCount`;
   cancelling deletes it.
+- **The guest's check-in QR is the bare `bookingRef`** (`src/lib/qr-generator.ts`). Besides the
+  confirmation email, the web now shows the same QR on the booking success screens (the free
+  registration pop-up and the paid `/success` page) — **confirmed bookings only**; never for a
+  pending request, which this section refuses. The app may want the same on its confirmation.
+- **Walk-in deep link: `<event url>?buy=1`** — the "No ticket? Scan to buy" QR on the web check-in
+  page. The event page decides at scan time: exactly one ticket, not sold out → that ticket is
+  selected and checkout opens; a free event with no tickets → the register form opens; otherwise →
+  scroll to the tickets. The param is removed from the URL once handled.
 
 ---
 
@@ -1542,8 +1550,11 @@ One row per **person**, not per booking (`src/lib/guest-rows.ts`):
 - `kind`: `invited_and_booked` · `booked` · `invited` (no booking).
 - `cancelledOnly`: has bookings, none live, none pending.
 - Filter chips: All · Needs approval (has a pending booking) · Booked (has bookings and is not
-  cancelled-only) · Invited only · Cancelled / expired. Sort: people with a pending request first,
-  then invited-only, then booked, then cancelled-only.
+  cancelled-only) · Invited only · Cancelled / expired. Sort: **latest booking on top** — everyone
+  holding a booking first, by their newest booking's `createdAt` (any status: pending, confirmed
+  and cancelled are mixed by date, not grouped), then invited-only people by invite date, newest
+  first; name breaks an exact tie. Pending requests are not pinned to the top (use the Needs
+  approval chip / Approvals tab).
 - Actions: per pending booking — Approve / Reject / Edit (two requests are two holds and two
   approvals, never merged); on the row — Edit and Cancel (primary booking, when live), Delete,
   View details.
@@ -1580,7 +1591,8 @@ On a phone the same figures are a small grid: rows Active / Pending / Inactive �
 Customers.
 
 **Bookings tab — the list**: every booking for the event (`GET /api/events/:eventId/event-bookings`,
-admin or host, Stripe ids removed), 10 per page, dead bookings dimmed. Collapsed row: customer
+admin or host, Stripe ids removed), **newest first** (`createdAt` descending, `_id` breaks ties;
+rows with no `createdAt` sort last), 10 per page, dead bookings dimmed. Collapsed row: customer
 name, "Ref: <bookingRef>", status pill, total (amber when money is on hold). Status pill text:
 
 | Booking | Pill |
@@ -1907,6 +1919,16 @@ from the app (§5.0); then act on them from the app **and** confirm the web show
 ---
 
 ## 18. Changelog
+
+**2026-11-17 (check-in QRs):** the booking success screens show the guest's check-in QR (bare
+`bookingRef`, confirmed bookings only), and the web check-in page shows a walk-in "scan to buy" QR
+encoding `<event url>?buy=1` (§11). No API or data change.
+
+**2026-11-17:** booking lists show the newest bookings on top — the event-page Bookings tab
+(§13b.4) is sorted `createdAt` descending (it had no sort), and the Guests tab (§13b.3) puts the
+latest booking on top (bookings by newest `createdAt`, then invited-only by invite date), replacing
+the pending → invited-only → booked → cancelled bands. The Approvals queue (soonest-expiring first)
+is unchanged. Display order only; no data or API shape change.
 
 **Revision 2 (2026-11-11):** no new booking behaviour beyond the 2026-10-19 → 10-23 entries
 below; those rules are now written into the body (§3.3 `upgradeFrom`, §3.6, §5.3, §7.1 steps

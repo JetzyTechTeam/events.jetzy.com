@@ -7,6 +7,8 @@ import { buildTicketPricing } from "@/lib/ticket-pricing"
 import { MEMBERSHIPS, type MembershipKey } from "@/lib/memberships"
 import { formatMembershipDate, membershipIncludesLine } from "@/lib/booking-membership-display"
 import ReturnToAppButton from "@Jetzy/components/misc/ReturnToAppButton"
+import CheckInQR from "@Jetzy/components/bookings/CheckInQR"
+import { isCancelledBooking, isPendingBooking } from "@/lib/booking-status"
 import axios from "axios"
 import { useRouter } from "next/router"
 import React, { useMemo } from "react"
@@ -52,6 +54,9 @@ const CheckoutSuccessPage: React.FC = () => {
 	// Approval orders authorize the card instead of charging it, so Stripe reports the
 	// session as "unpaid". That is success, not failure — this flag switches the page copy.
 	const [pendingApproval, setPendingApproval] = React.useState(false)
+	// The booking as `/api/checkout/confirm` returned it. The check-in QR reads its ref from HERE,
+	// not from the session metadata, so it only appears once the booking really exists.
+	const [confirmedBooking, setConfirmedBooking] = React.useState<{ bookingRef?: string; status?: string } | null>(null)
 	const [holdExpiresAt, setHoldExpiresAt] = React.useState<string | null>(null)
 
 	let { payload, session_id, event } = query
@@ -95,6 +100,7 @@ const CheckoutSuccessPage: React.FC = () => {
 					const isApproval = approvalFlag === "1" || requiresApproval === true || session?.metadata?.requiresApproval === "true"
 					setPendingApproval(isApproval)
 					if (booking?.payment?.authExpiresAt) setHoldExpiresAt(booking.payment.authExpiresAt)
+					setConfirmedBooking(booking || null)
 
 					// Only a genuinely failed payment is an error. An approval hold leaves the
 					// session "unpaid" on purpose.
@@ -446,6 +452,17 @@ const CheckoutSuccessPage: React.FC = () => {
 							)}
 						</div>
 					</div>
+
+					{/* Check-in QR — the same bookingRef payload as the emailed one. Confirmed bookings
+					    only: check-in refuses a request awaiting approval or a cancelled booking. */}
+					{confirmedBooking?.bookingRef &&
+						!pendingApproval &&
+						!isPendingBooking(confirmedBooking as any) &&
+						!isCancelledBooking(confirmedBooking as any) && (
+							<div className="mt-6">
+								<CheckInQR bookingRef={confirmedBooking.bookingRef} variant="light" />
+							</div>
+						)}
 
 					{/* Buyers who came from the mobile app are sent back into it; everyone else keeps
 					    the web event page. Both ids come from the Stripe session metadata, which is

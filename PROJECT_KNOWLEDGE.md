@@ -1145,6 +1145,8 @@ The old "force `requireApproval=false` when every ticket is paid" rule in `creat
 
 **Public event page admin panel** ([HostedEvents.tsx](src/components/HostedEvents.tsx), `Bookings & Waiting List`): the Approvals tab button carries a pending count badge plus a red `!` when any hold expires within 48h. `EventBookings` rows use `BookingStatusPill` — `pending · $X on hold` (amber) / `charged` (green) / `charge failed` / `hold expired` — instead of painting every non-cancelled status green, and the expanded row shows a payment panel with the hold deadline, capture timestamp, or `lastError`. The amount turns amber while only authorized.
 
+**Newest bookings on top (2026-11-17, CEO ask).** `event-bookings.ts` (the panel above) sorts `{ createdAt: -1, _id: -1 }` — it had no sort and returned natural (≈ oldest-first) order. The Manage Event **Guests** tab puts the **latest booking on top** (`buildGuestRows` in `src/lib/guest-rows.ts`): everyone with a booking first, by their newest booking's `createdAt` regardless of status, then invited-only people by `invitedAt`, newest first. This replaced the pending → invited-only → booked → cancelled bands — pending requests are no longer pinned to the top. Deliberately unchanged: the Approvals pending queue (soonest-expiring first), `/console/bookings/[eventId]` and `/api/bookings/mine` (already newest first), and `/api/get-bookings` (every consumer re-sorts client-side).
+
 **Public ticket list** shows a per-ticket pill (`Approval required · card authorized, charged on approval` for paid) and the event-level banner distinguishes "every ticket" from "some tickets". The CTA reads **Request to Book** when the current selection needs approval. `[slug].tsx` serialises via `event.toJSON()`, so per-ticket flags reach the page unmodified.
 
 **Both booking-list endpoints were unauthenticated and are now admin-or-owner with Stripe ids projected out**: [get-bookings.ts](src/pages/api/get-bookings.ts) and [events/[eventId]/event-bookings.ts](src/pages/api/events/[eventId]/event-bookings.ts).
@@ -1548,6 +1550,12 @@ QR code + manual check-in
 `CheckInPortal.tsx` (28KB) — main component
 Tracks: totalTickets, checkedInCount, checkInHistory[], guests
 Admin OR owner access on all check-in APIs
+
+### Walk-in "scan to buy" QR + guest check-in QR on the success screens (2026-11-17, CEO ask)
+- **Walk-in QR** — `src/components/WalkInTicketQR.tsx`, under `CheckInPortal` on `/console/events/[eventId]/check-in`. Shown to an admin / super admin or the event's owner. Encodes `eventUrl(window.location.origin, slug) + "?buy=1"`; Show full screen (large QR to turn toward the guest) + Copy link. While the event can't sell (`isPendingAdminApproval`, `status === "draft"`, or `getEventStatus === "past"`) the card shows a note instead of a QR.
+- **`?buy=1` is decided on the EVENT PAGE at scan time** (`EventTicketsComponent.tsx`), never on the check-in side — a ticket can be added or sell out while the door screen is open. One ticket, not sold out → `handleTicketSelection` then `handleCheckoutClick` (so the membership cap / stock checks / funnel tracking all still run); free event with no tickets → `handleCheckoutClick`; otherwise scroll to `#event-tickets`. Waits for the availability query to settle (unloaded availability reads as unlimited). The param is consumed with a shallow `router.replace` (other params kept) and latched, so refresh / closing the modal doesn't reopen checkout. Inert under `?preview=1`. Survives the retired-slug redirect (`withQuery`).
+- **Guest check-in QR** — `src/components/bookings/CheckInQR.tsx` renders the BARE `bookingRef` (same payload as the email, so the scanner and `validate.ts` need nothing new) + the ref in text. On the free success pop-up (`EventCheckoutModel.tsx`, `freeRegistrationSuccess` only) and paid `/success` (only when the booking returned by `/api/checkout/confirm` exists and is not pending / cancelled). **Never for a pending request** — check-in refuses those.
+- **The free pop-up no longer reloads the page after 2.5s** — that wiped the QR. `reloadOnCloseRef` reloads when the pop-up closes instead (any close path, via the `showCheckout` reset effect); still skipped for app buyers (`cameFromApp`).
 
 ---
 

@@ -179,7 +179,7 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
     staleTime: 60_000,
   });
 
-  const { data: availability, refetch: refetchAvailability } = useQuery<EventAvailability>({
+  const { data: availability, refetch: refetchAvailability, isFetched: availabilityFetched } = useQuery<EventAvailability>({
     queryKey: ["event-availability", eventId],
     queryFn: async () => {
       const res = await fetch(`/api/events/${eventId}/availability`);
@@ -449,6 +449,55 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
       label: event.name,
     });
   };
+
+  // Walk-in deep link: `?buy=1` (the QR on the check-in page). Decided HERE, when the guest
+  // scans, not on the check-in page when it loaded — a host can add a ticket or sell one out
+  // while the door screen sits open, and one QR has to stay right all night.
+  //  - exactly one ticket and it isn't sold out → select it and open its checkout;
+  //  - a free event with no tickets → open the register form (what the button does);
+  //  - otherwise (several tickets, or the only one is sold out) → scroll to the tickets.
+  // Waits for availability: before it loads `remainingFor` reads as unlimited and would open
+  // checkout on a sold-out ticket. Auto-open goes through `handleCheckoutClick`, so every check
+  // `showCheckoutForm` makes (membership cap, stock, funnel tracking) still applies. The param
+  // is consumed so a refresh or closing the modal doesn't reopen it; inert under `?preview=1`.
+  const buyHandledRef = useRef(false);
+  const autoOpenRef = useRef(false);
+  React.useEffect(() => {
+    if (buyHandledRef.current) return;
+    if (!router.isReady || router.query.buy !== "1" || previewAsGuest) return;
+    if (!availabilityFetched) return;
+    buyHandledRef.current = true;
+
+    const { buy: _buy, ...rest } = router.query;
+    router.replace({ pathname: router.pathname, query: rest }, undefined, { shallow: true, scroll: false });
+
+    if (tickets.length === 1 && !isSoldOutFor(tickets[0].id)) {
+      if (tickets[0].isSelected) {
+        handleCheckoutClick();
+      } else {
+        // Selection is async — the effect below opens checkout once it has landed, since
+        // `showCheckoutForm` reads the tickets of the render it is called from.
+        autoOpenRef.current = true;
+        handleTicketSelection(tickets[0].id);
+      }
+      return;
+    }
+    if (tickets.length === 0 && !event.isPaid) {
+      handleCheckoutClick();
+      return;
+    }
+    document.getElementById("event-tickets")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    // Runs once (latched by `buyHandledRef`); reads the tickets of the render that fires it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [router.isReady, router.query.buy, previewAsGuest, availabilityFetched]);
+
+  React.useEffect(() => {
+    if (!autoOpenRef.current || !tickets.some((t) => t.isSelected)) return;
+    autoOpenRef.current = false;
+    handleCheckoutClick();
+    // `handleCheckoutClick` is recreated every render; only a tickets change should fire this.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tickets]);
 
   return (
     <>
