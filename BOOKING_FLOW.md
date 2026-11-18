@@ -1371,6 +1371,20 @@ Reference: `src/pages/api/check-in/*`. Admin or host.
   confirmation email, the web now shows the same QR on the booking success screens (the free
   registration pop-up and the paid `/success` page) — **confirmed bookings only**; never for a
   pending request, which this section refuses. The app may want the same on its confirmation.
+- **Fast scan: `POST /api/check-in/scan` `{ eventId, bookingRef }` — ONE scan checks in ONE guest**
+  (2026-11-18). No confirm step: the web scanner keeps the camera on and checks in every ticket QR
+  it reads. A booking for three is the same QR scanned three times; a fourth scan answers
+  `already_full`. The +1 is **atomic** — upsert the `CheckIn` row with `$setOnInsert` (unique index
+  on `bookingId`; ignore an 11000 from a racing first scan), then
+  `findOneAndUpdate({ bookingId, checkedInCount: { $lt: total } }, { $inc: { checkedInCount: 1 }, $push: history, $set: { lastCheckInAt, totalTickets } })`
+  — `null` means everyone is in. `isFullyCheckedIn` is then set only by a conditional
+  `{ checkedInCount: { $gte: total } }` update and `firstCheckInAt` only where it is null, so
+  concurrent scans can't overwrite each other. Reply `data.outcome`: `checked_in` / `already_full`
+  (status true) or `pending` / `cancelled` / `not_found` / `not_ticket` (status false; `not_ticket` =
+  the payload doesn't start with `JZ-`). **Re-scan rule on the client:** a QR just acted on is ignored
+  until it has been out of the camera's view for ~1s, so holding it up never seats a second guest.
+  The manual path (`validate` + `record`, any count, optional guest details) is unchanged and is
+  still read-modify-write.
 - **Walk-in deep link: `<event url>?buy=1`** — the "No ticket? Scan to buy" QR on the web check-in
   page. The event page decides at scan time: exactly one ticket, not sold out → that ticket is
   selected and checkout opens; a free event with no tickets → the register form opens; otherwise →
@@ -1930,6 +1944,10 @@ from the app (§5.0); then act on them from the app **and** confirm the web show
 ---
 
 ## 18. Changelog
+
+**2026-11-18 (fast QR check-in):** new `POST /api/check-in/scan` checks in ONE guest per scan,
+atomically (§11). The web check-in page's camera now scans continuously and checks in on read — no
+capture button, no confirm step. `validate` / `record` unchanged.
 
 **2026-11-18 (email-verified checkout):** web ticket checkout requires a session signed in as the
 checkout email (admins exempt) — both `api/checkout` and `api/checkout/free-events` answer 401
