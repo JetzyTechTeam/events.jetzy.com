@@ -24,8 +24,17 @@ import jsQR from "jsqr"
  *
  * THE RE-SCAN RULE (user decision): the camera sees a held-up QR many times a second, so a code that
  * was just acted on is BLOCKED until it has been out of view for `REARM_MS`. Holding it up longer
- * never seats another guest; moving it away and back does. A DIFFERENT code is acted on at once —
- * that's the next party in the queue.
+ * never seats another guest; moving it away and back does.
+ *
+ * ONLY A QR THAT IS DELIBERATELY SHOWN COUNTS (2026-11-18 staging incident: the host scanned one
+ * ticket and a second booking, whose QR was merely in view on the same screen, was checked in 2.4s
+ * later). So:
+ *  - a code must be read in `STEADY_HITS` consecutive decodes (~0.4s) — a glimpse while the camera
+ *    moves never counts;
+ *  - EVERY code acted on is remembered (not just the last one), so two QRs in view can't take turns
+ *    re-triggering each other;
+ *  - a frame with two or more QRs checks in nothing and says so;
+ *  - after each result, new codes are ignored for `RESULT_PAUSE_MS` while the phone is lowered.
  *
  * Decoding uses the native `BarcodeDetector` where the browser has one (Chrome / Android — fast), and
  * `jsQR` on a downscaled frame everywhere else (iPhone Safari).
@@ -35,6 +44,12 @@ const PHONE = "@media screen and (max-width: 47.99em)"
 
 /** How long a just-scanned QR must be out of view before the same QR counts again. */
 const REARM_MS = 1000
+/** Consecutive decodes of the SAME code needed before it is acted on (~0.4s at the scan interval). */
+const STEADY_HITS = 3
+/** After a result, new codes are ignored this long — time to read the banner and lower the phone. */
+const RESULT_PAUSE_MS = 1200
+/** "Two QR codes in view" is said at most this often. */
+const MULTI_WARN_MS = 3000
 /** Decode at most this often — fast enough to feel instant, light enough for an old phone. */
 const SCAN_INTERVAL_MS = 120
 /** jsQR fallback: frames are shrunk to this width first. Plenty for a QR held up to the camera. */
@@ -99,7 +114,13 @@ const LiveTicketScanner: React.FC<Props> = ({ isOpen, onClose, eventId, onChecke
 	const onCheckedInRef = useRef(onCheckedIn)
 	eventIdRef.current = eventId
 	onCheckedInRef.current = onCheckedIn
-	const blockRef = useRef<{ code: string; lastSeen: number } | null>(null)
+	// Every code acted on recently → when it was last in view. Cleared per code once it has been
+	// out of view for REARM_MS.
+	const seenRef = useRef<Map<string, number>>(new Map())
+	// The code currently being held up, and in how many consecutive decodes it has been read.
+	const candidateRef = useRef<{ code: string; hits: number } | null>(null)
+	const pauseUntilRef = useRef(0)
+	const multiWarnAtRef = useRef(0)
 	const inFlightRef = useRef(false)
 	const resultIdRef = useRef(0)
 	const audioRef = useRef<AudioContext | null>(null)
@@ -126,10 +147,11 @@ const LiveTicketScanner: React.FC<Props> = ({ isOpen, onClose, eventId, onChecke
 	}, [])
 
 	const show = useCallback(
-		(r: Omit<ScanResult, "id" | "at">) => {
+		(r: Omit<ScanResult, "id" | "at">, opts: { record?: boolean } = {}) => {
 			const full: ScanResult = { ...r, id: ++resultIdRef.current, at: new Date() }
 			setResult(full)
-			setRecent((prev) => [full, ...prev].slice(0, 5))
+			// A guidance message ("two QR codes in view") isn't a scan — keep it out of the list.
+			if (opts.record !== false) setRecent((prev) => [full, ...prev].slice(0, 5))
 			feedback(r.kind)
 		},
 		[feedback],
@@ -148,28 +170,50 @@ const LiveTicketScanner: React.FC<Props> = ({ isOpen, onClose, eventId, onChecke
 				show(describe(body?.data, body?.message || (err?.response ? undefined : "No connection. Please scan again."), false))
 			} finally {
 				inFlightRef.current = false
+				pauseUntilRef.current = performance.now() + RESULT_PAUSE_MS
 				setChecking(false)
 			}
 		},
 		[show],
 	)
 
-	/** One decoded frame (or none). Applies the re-scan rule, then checks in. */
+	/** The distinct codes read in one decode (none, one, or several). Applies every rule, then checks in. */
 	const onFrame = useCallback(
-		(code: string | null) => {
+		(codes: string[]) => {
 			const now = performance.now()
-			const block = blockRef.current
-			if (block && code === block.code) {
-				// Still in view — refresh, and never count it again while it stays there.
-				block.lastSeen = now
+			const seen = seenRef.current
+			// Codes already acted on and still in view stay blocked; one out of view for REARM_MS re-arms.
+			codes.forEach((c) => {
+				if (seen.has(c)) seen.set(c, now)
+			})
+			seen.forEach((lastSeen, c) => {
+				if (now - lastSeen >= REARM_MS) seen.delete(c)
+			})
+
+			if (codes.length > 1) {
+				candidateRef.current = null
+				if (now - multiWarnAtRef.current >= MULTI_WARN_MS) {
+					multiWarnAtRef.current = now
+					show({ kind: "warn", title: "Two QR codes in view", detail: "Show one QR at a time." }, { record: false })
+				}
 				return
 			}
-			if (block && now - block.lastSeen >= REARM_MS) blockRef.current = null
-			if (!code || inFlightRef.current) return
-			blockRef.current = { code, lastSeen: now }
+
+			const code = codes[0]
+			if (!code || seen.has(code) || inFlightRef.current || now < pauseUntilRef.current) {
+				candidateRef.current = null
+				return
+			}
+
+			const candidate = candidateRef.current
+			candidateRef.current = candidate?.code === code ? { code, hits: candidate.hits + 1 } : { code, hits: 1 }
+			if (candidateRef.current.hits < STEADY_HITS) return
+
+			candidateRef.current = null
+			seen.set(code, now)
 			checkIn(code)
 		},
-		[checkIn],
+		[checkIn, show],
 	)
 
 	// Camera + decode loop, for as long as the scanner is open.
@@ -187,19 +231,20 @@ const LiveTicketScanner: React.FC<Props> = ({ isOpen, onClose, eventId, onChecke
 		const Detector = (window as any).BarcodeDetector
 		let detector: any = null
 
-		const decode = async (): Promise<string | null> => {
+		// Every DISTINCT code in the frame — more than one means "show one at a time".
+		const decode = async (): Promise<string[]> => {
 			if (detector) {
-				const found = await detector.detect(videoEl)
-				return found?.[0]?.rawValue ? String(found[0].rawValue).trim() : null
+				const found: any[] = (await detector.detect(videoEl)) || []
+				return Array.from(new Set(found.map((f) => String(f?.rawValue || "").trim()).filter(Boolean)))
 			}
-			if (!context || !videoEl.videoWidth) return null
+			if (!context || !videoEl.videoWidth) return []
 			const scale = Math.min(1, MAX_DECODE_WIDTH / videoEl.videoWidth)
 			canvas.width = Math.round(videoEl.videoWidth * scale)
 			canvas.height = Math.round(videoEl.videoHeight * scale)
 			context.drawImage(videoEl, 0, 0, canvas.width, canvas.height)
 			const image = context.getImageData(0, 0, canvas.width, canvas.height)
 			const qr = jsQR(image.data, image.width, image.height, { inversionAttempts: "dontInvert" })
-			return qr?.data ? qr.data.trim() : null
+			return qr?.data?.trim() ? [qr.data.trim()] : []
 		}
 
 		const loop = (ts: number) => {
@@ -209,8 +254,8 @@ const LiveTicketScanner: React.FC<Props> = ({ isOpen, onClose, eventId, onChecke
 			lastTick = ts
 			decoding = true
 			decode()
-				.then((code) => !stopped && onFrame(code))
-				.catch(() => !stopped && onFrame(null))
+				.then((codes) => !stopped && onFrame(codes))
+				.catch(() => !stopped && onFrame([]))
 				.finally(() => {
 					decoding = false
 				})
@@ -282,7 +327,9 @@ const LiveTicketScanner: React.FC<Props> = ({ isOpen, onClose, eventId, onChecke
 	// A fresh session each time the scanner opens.
 	useEffect(() => {
 		if (isOpen) return
-		blockRef.current = null
+		seenRef.current.clear()
+		candidateRef.current = null
+		pauseUntilRef.current = 0
 		setResult(null)
 		setCameraReady(false)
 		setCameraError(null)
@@ -362,8 +409,8 @@ const LiveTicketScanner: React.FC<Props> = ({ isOpen, onClose, eventId, onChecke
 						</Box>
 
 						<Text color="gray.400" textAlign="center" fontSize="sm">
-							Hold the QR inside the frame — it checks in on its own. For the next guest on the same ticket, move the QR away
-							and scan it again.
+							Hold one QR steady inside the frame — it checks in on its own. For the next guest on the same ticket, move it
+							away and scan again.
 						</Text>
 
 						{recent.length > 0 && (

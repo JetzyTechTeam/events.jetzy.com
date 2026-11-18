@@ -1381,8 +1381,12 @@ Reference: `src/pages/api/check-in/*`. Admin or host.
   `{ checkedInCount: { $gte: total } }` update and `firstCheckInAt` only where it is null, so
   concurrent scans can't overwrite each other. Reply `data.outcome`: `checked_in` / `already_full`
   (status true) or `pending` / `cancelled` / `not_found` / `not_ticket` (status false; `not_ticket` =
-  the payload doesn't start with `JZ-`). **Re-scan rule on the client:** a QR just acted on is ignored
+  the payload doesn't start with `JZ-`). **Re-scan rule on the client:** every QR acted on is ignored
   until it has been out of the camera's view for ~1s, so holding it up never seats a second guest.
+  **Only a QR deliberately shown counts:** it must be read in 3 consecutive decodes (~0.4s) before
+  acting, a frame containing two or more QRs checks in nothing ("show one at a time"), and new codes
+  are ignored for ~1.2s after each result — a QR merely in view on the same screen was once checked
+  in. An app scanner should copy these rules.
   The manual path (`validate` + `record`, any count, optional guest details) is unchanged and is
   still read-modify-write.
 - **Walk-in deep link: `<event url>?buy=1`** — the "No ticket? Scan to buy" QR on the web check-in
@@ -1944,6 +1948,10 @@ from the app (§5.0); then act on them from the app **and** confirm the web show
 ---
 
 ## 18. Changelog
+
+**2026-11-18 (scanner fix):** the web scanner acts only on a QR held steady (3 consecutive reads),
+remembers every code it acted on, refuses a frame with two or more QRs, and pauses 1.2s after each
+result (§11). A second QR glimpsed on the same screen had been checked in. Client-only; no API change.
 
 **2026-11-18 (fast QR check-in):** new `POST /api/check-in/scan` checks in ONE guest per scan,
 atomically (§11). The web check-in page's camera now scans continuously and checks in on read — no
