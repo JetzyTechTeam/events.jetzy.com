@@ -16,8 +16,8 @@ const base = () => (process.env.NEXT_PUBLIC_EXTERNAL_API_BASE_URL || "https://te
 
 const TIMEOUT_MS = 8000
 
-export type LoginCodePurpose = "login" | "album" | "premium"
-export type LoginCodeSource = "web_login" | "web_album" | "web_premium"
+export type LoginCodePurpose = "login" | "album" | "premium" | "ticket"
+export type LoginCodeSource = "web_login" | "web_album" | "web_premium" | "web_ticket"
 
 const post = async (path: string, body: Record<string, unknown>) => {
 	const controller = new AbortController()

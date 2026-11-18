@@ -20,6 +20,7 @@ import { BookingStatus } from "@/models/events/types"
 import { Events } from "@/models/events"
 import { NextApiRequest, NextApiResponse } from "next"
 import { getServerSession } from "next-auth"
+import { CHECKOUT_VERIFY_MESSAGE, sessionMayBookAs } from "@/lib/checkout-identity"
 import { authOptions } from "../auth/[...nextauth]"
 import { addEventMember } from "@/utils/eventMembership"
 import { reactivateHeldMemberships } from "@/lib/membership-upgrade"
@@ -102,6 +103,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		}
 
 		const acceptedTermsAt = new Date()
+
+		// Logged-in user, resolved once: it gates the booking below and is recorded as
+		// `bookerUserId` so they can later cancel even when the booking email differs (admin case).
+		const session = await getServerSession(req, res, authOptions)
+		const bookerUserId = (session?.user as any)?._id || (session?.user as any)?.id
+
+		// The checkout email must be PROVEN (CEO, 2026-11-18) — same rule as `api/checkout`: only a
+		// session signed in as that address may book under it; admins are exempt. This endpoint
+		// issues a booking with no payment step, so without this check anyone could register any
+		// address by calling it directly. Checked before `createOrUpdateUser` writes anything.
+		if (!sessionMayBookAs(session?.user as any, user.email)) {
+			return sendResponse(res, { needsVerification: true }, CHECKOUT_VERIFY_MESSAGE, false, 401)
+		}
 
 		// Create or update user profile. Resolves (or creates) the Users account behind the
 		// checkout email regardless of login state, so a guest checkout still has an account
@@ -306,10 +320,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// With a scoped code, only a priced ELIGIBLE ticket counts — a paid ticket the code
 		// doesn't cover would never reach this endpoint anyway (it isn't free).
 		const discountsDidWork = referralCodeData ? referralSubtotal > 0 : subtotal > 0
-
-		// Capture logged-in user (if any) so they can later cancel even when booking email differs
-		const session = await getServerSession(req, res, authOptions)
-		const bookerUserId = (session?.user as any)?._id || (session?.user as any)?.id
 
 		// Require-Approval: create a PENDING booking that the host must approve. Capacity is
 		// NOT consumed and no ticket is issued until approval. Resolved per-ticket (with the

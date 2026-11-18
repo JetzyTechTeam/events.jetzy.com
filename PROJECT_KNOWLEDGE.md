@@ -248,10 +248,12 @@ if (!isAdmin && event.ownerId?.toString() !== userId) {
 | POST | `/api/send-update-event-email` | — |
 
 ### Checkout
-`/api/checkout/index`, `/api/checkout/confirm`, `/api/checkout/free-events`
+`/api/checkout/index`, `/api/checkout/confirm`, `/api/checkout/free-events`, `/api/checkout/send-code`, `/api/checkout/verify-code`
 
 | Method | Route | Access |
 |---|---|---|
+| POST | `/api/checkout/send-code` | public, rate-limited — emails the buyer a 6-digit code (see "Email-verified ticket checkout") |
+| POST | `/api/checkout/verify-code` | public, rate-limited — spends the code, returns a magic token to sign in with |
 | POST | `/api/premium/check-email` | public — preview only, see "Jetzy Premium member discount" |
 
 ### Waiting List
@@ -1029,6 +1031,17 @@ therefore still appears on the Stripe page rather than being hidden from the buy
 Buyer-facing disclosure needed no change: `buildTicketPricing` already produces `total: 0`, the
 recurring line and `dueToday: 20`, and the ticket card already renders "$0.00" above
 "+ Jetzy Premium $20/month — confirmed at checkout".
+
+### Email-verified ticket checkout (2026-11-18)
+
+CEO: booking a ticket verifies the buyer's email with a code, which **creates their Jetzy account and signs them in**; the step takes name, email and phone, and the Terms page §1.1 says "By signing up for this ticket, you create an account at Jetzy." (in the Terms, not on the checkout form — decided 2026-11-18)
+
+- **Server rule (`src/lib/checkout-identity.ts`, `sessionMayBookAs`)**: `api/checkout` and `api/checkout/free-events` accept a booking only from a session signed in AS the checkout email (case-insensitive); **admins / super admins are exempt** so they can book for a guest. Otherwise 401 `{ data: { needsVerification: true } }`, checked **before** `createOrUpdateUser` writes anything. Before this, `free-events` would register any address for anyone who called it.
+- **Code endpoints** `api/checkout/send-code` / `verify-code` mirror `api/premium/*-code`: the backend login code (`purpose: "ticket"`, `source: "web_ticket"` — the backend stores `signupSource` as a free string and maps an unknown purpose to its neutral "login" email, checked in `jetzy-nodejs-backend`), our own code store (`purpose: "ticket"`, `eventId: null`) only on a backend outage. A correct backend code creates the account through `AuthLib.createUser()` with the typed name and returns a real accessToken inside the magic token.
+- **Modal (`EventCheckoutModel.tsx`)**: `checkoutStep` is `details → verify → questions`. Verification runs after the details checks; skipped when `sessionMayBookAs` already holds. `confirmEmailCode` → `signIn("credentials", { magicToken, redirect: false })` → questions or `placeOrder()` (the old free/Stripe tail, shared). **A signed-in buyer who types another email is switched to the verified account** (decided 2026-11-18). On a switch only `sessionStorage.api_token` is removed — never `destroySession`, which clears ALL sessionStorage and would drop the app-return marker and stored referral code mid-checkout; `SessionSync` writes the new token. A `needsVerification` reply from either endpoint (stale session) drops the buyer into the code step instead of an error; `CreateCheckoutSessionThunk` RESOLVES that one verdict, since a rejection is serialized down to its message and toasted.
+- **Profile gate held** during checkout (`useHoldProfileGate(showCheckout)`) and on `/success`, so a brand-new account's empty profile doesn't cover the order or the check-in QR; it shows on the next page.
+- **Phone onto the account**: `createOrUpdateUser` sets `phone` on an existing `users` doc only when it has none — never overwrites one.
+- **Known, not changed**: `createOrUpdateUser` still upserts the whole `usersettings` default block on every checkout (pre-existing), so a returning account's settings are reset to those defaults each time it books.
 
 ### `free-events.ts` is a real checkout path, not a shortcut
 

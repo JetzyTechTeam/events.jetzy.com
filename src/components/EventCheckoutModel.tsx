@@ -13,7 +13,9 @@ import { membershipIncludesLine } from "@/lib/booking-membership-display"
 import { ROUTES } from "@/configs/routes"
 import { planPriceForInterval, useMembershipPlans } from "@/hooks/usePremiumPlan"
 import { usePremiumStatus } from "@/hooks/usePremiumStatus"
-import { useSession } from "next-auth/react"
+import { signIn, useSession } from "next-auth/react"
+import { sessionMayBookAs } from "@/lib/checkout-identity"
+import { useHoldProfileGate } from "@/components/profile/ProfileGate"
 import { StarIcon } from "@heroicons/react/24/solid"
 import ReturnToAppButton from "./misc/ReturnToAppButton"
 import CheckInQR from "./bookings/CheckInQR"
@@ -43,7 +45,15 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 	const [noAccount, setNoAccount] = useState<Record<string, boolean>>({})
 	const [noAccountNote, setNoAccountNote] = useState<Record<string, string>>({})
 	const [liveEventData, setLiveEventData] = useState<any>(eventData || null)
-	const [checkoutStep, setCheckoutStep] = useState<"details" | "questions">("details")
+	// "verify" sits between details and questions: the buyer proves the checkout email with a code,
+	// which creates their Jetzy account and signs them in (CEO, 2026-11-18).
+	const [checkoutStep, setCheckoutStep] = useState<"details" | "verify" | "questions">("details")
+	const [verifyOtp, setVerifyOtp] = useState("")
+	// Which code was sent — the backend's login code ("jetzy") or our outage fallback ("portal").
+	const [verifyVia, setVerifyVia] = useState<"jetzy" | "portal" | undefined>(undefined)
+	const [verifyError, setVerifyError] = useState<string | null>(null)
+	const [verifyBusy, setVerifyBusy] = useState(false)
+	const [verifyCooldown, setVerifyCooldown] = useState(0)
 	const [freeRegistrationSuccess, setFreeRegistrationSuccess] = useState(false)
 	// Set on a confirmed free registration; the page reloads when the pop-up closes.
 	const reloadOnCloseRef = useRef(false)
@@ -122,6 +132,9 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 	// person's membership counted as their own. `src/lib/premium-eligibility.ts` has the full
 	// reasoning; the server resolves it again the same way and stays authoritative.
 	const { data: session } = useSession()
+	// Verifying the email can sign in a brand-new account whose profile is empty; the profile form
+	// must not pop up over checkout. It shows once the buyer is done (next page they visit).
+	useHoldProfileGate(showCheckout)
 	const { isPremium: sessionIsPremium } = usePremiumStatus()
 	const sessionEmail = session?.user?.email || ""
 	// Which memberships does the CURRENT selection sell? One ticket may sell both.
@@ -321,9 +334,109 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 		}
 	}
 
+	// Resend cooldown, counted down so the link explains itself rather than just failing.
+	useEffect(() => {
+		if (verifyCooldown <= 0) return
+		const timer = setTimeout(() => setVerifyCooldown((n) => n - 1), 1000)
+		return () => clearTimeout(timer)
+	}, [verifyCooldown])
+
+	/**
+	 * Email the buyer a 6-digit code for the address in the form and move to the verify step.
+	 * Booking a ticket requires a session signed in AS the checkout email (CEO, 2026-11-18) — the
+	 * server refuses otherwise (`src/lib/checkout-identity.ts`).
+	 */
+	const startEmailVerification = async () => {
+		setVerifyBusy(true)
+		setVerifyError(null)
+		try {
+			const response = await fetch("/api/checkout/send-code", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ email: formData.email.trim() }),
+			})
+			const result = await response.json().catch(() => ({}))
+			if (!response.ok || !result?.status) {
+				// Already on the verify step (Resend) → show it there; from details → a toast.
+				if (checkoutStep === "verify") setVerifyError(result?.message || "We couldn't send that code. Please try again.")
+				else Error("Couldn't send code", result?.message || "We couldn't send that code. Please try again.")
+				return
+			}
+			setVerifyVia(result?.data?.via === "jetzy" ? "jetzy" : "portal")
+			setVerifyOtp("")
+			setVerifyCooldown(60)
+			setCheckoutStep("verify")
+		} catch {
+			Error("Couldn't send code", "We couldn't send that code. Please try again.")
+		} finally {
+			setVerifyBusy(false)
+		}
+	}
+
+	/**
+	 * Spend the code, sign in as the verified address (creating the Jetzy account when there isn't
+	 * one), then carry on exactly where the details step would have.
+	 */
+	const confirmEmailCode = async () => {
+		if (verifyOtp.trim().length < 4 || verifyBusy) return
+		setVerifyBusy(true)
+		setVerifyError(null)
+		try {
+			const response = await fetch("/api/checkout/verify-code", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					email: formData.email.trim(),
+					otp: verifyOtp.trim(),
+					...(verifyVia ? { via: verifyVia } : {}),
+					firstName: formData.firstName.trim(),
+					lastName: formData.lastName.trim(),
+				}),
+			})
+			const result = await response.json().catch(() => ({}))
+			const magicToken = result?.data?.magicToken
+			if (!response.ok || !magicToken) {
+				setVerifyError(result?.message || "That code didn't work. Check it and try again.")
+				return
+			}
+
+			// Signed in as somebody else? The verified address replaces them (decided 2026-11-18).
+			// Only the previous account's backend token is cleared — `SessionSync` writes the new one
+			// once the session refreshes. NOT `destroySession`: that clears ALL of sessionStorage,
+			// which mid-checkout would drop the app-return marker and the stored referral code.
+			if (session?.user) {
+				try { sessionStorage.removeItem("api_token") } catch {}
+			}
+
+			// Replaces the session cookie (and refreshes `useSession`) without leaving the page.
+			const signedIn = await signIn("credentials", { magicToken, redirect: false })
+			if (signedIn?.error) {
+				setVerifyError("We couldn't sign you in. Please try again.")
+				return
+			}
+
+			if ((liveEventData?.questions || []).length > 0) {
+				setCheckoutStep("questions")
+				return
+			}
+			setCheckoutStep("details")
+			await placeOrder()
+		} catch {
+			setVerifyError("We couldn't confirm that code. Please try again.")
+		} finally {
+			setVerifyBusy(false)
+		}
+	}
+
 	// Handle form submission
 	const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
 		e.preventDefault()
+
+		// Enter in the code box submits the form.
+		if (checkoutStep === "verify") {
+			await confirmEmailCode()
+			return
+		}
 
 		if (checkoutStep === "details") {
 			if (!acceptedTerms) {
@@ -359,7 +472,15 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 				Error("Form Error", "Please fill in all required fields.")
 				return
 			}
-			
+
+			// Prove the email before anything else (CEO, 2026-11-18). Skipped when the buyer is
+			// already signed in as this address, or is an admin booking for a guest — the same rule
+			// the checkout endpoints enforce.
+			if (!sessionMayBookAs(session?.user as any, formData.email)) {
+				await startEmailVerification()
+				return
+			}
+
 			if ((liveEventData?.questions || []).length > 0) {
 				setCheckoutStep("questions")
 				return
@@ -387,6 +508,15 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 			}
 		}
 
+		await placeOrder()
+	}
+
+	/**
+	 * Every check has passed: send the order to the free path or to Stripe. Shared by the form's
+	 * submit and the verify step, so a buyer who just confirmed their email continues down exactly
+	 * the same path as one who was already signed in.
+	 */
+	const placeOrder = async () => {
 		sendGAEvent({
 			category: "Event",
 			action: "Checkout Form Submitted",
@@ -470,6 +600,13 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 				setShowWaitingList(true)
 				return
 			}
+			// The server didn't see a session signed in as this email (expired, or signed out in
+			// another tab). Ask for the code rather than printing an error the buyer can't act on.
+			if (result.data?.needsVerification) {
+				setCheckoutStep("details")
+				await startEmailVerification()
+				return
+			}
 			if (result.status) {
 				setFreeBookingRef(result.data?.bookingRef)
 				if (result.data?.pendingApproval) {
@@ -529,6 +666,13 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 				} as any,
 			}),
 		)
+		// Same as the free path: no session signed in as this email → the code step, not an error.
+		// (The thunk resolves this one verdict instead of rejecting, so the flag survives.)
+		if (res.payload?.data?.needsVerification) {
+			setCheckoutStep("details")
+			await startEmailVerification()
+			return
+		}
 		if (!res.payload?.status) return
 		// Nothing chargeable after the server's own membership check: the ticket is free and
 		// every membership on it is already held.
@@ -737,6 +881,9 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 			}
 			setFreeRegistrationSuccess(false)
 			setPendingApproval(false)
+			setCheckoutStep("details")
+			setVerifyOtp("")
+			setVerifyError(null)
 			setAcceptedTerms(false)
 			setTermsError(false)
 			setAllowanceError(false)
@@ -1254,11 +1401,10 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 										{phoneError && <span className="text-red-500 text-sm">{phoneError}</span>}
 
 										{/* Terms & Conditions — required to register.
-										    The account-creation sentence that used to sit here now lives in
-										    the Terms themselves (§1.1: "By registering, you expressly agree to
-										    create a Jetzy Account…"), which is what this box consents to and
-										    what `acceptedTerms` records. The consent is unchanged; only where
-										    it is spelled out has moved. */}
+										    The account-creation sentence lives in the Terms themselves (§1.1: "By
+										    signing up for this ticket, you create an account at Jetzy." — CEO,
+										    2026-11-18), which is what this box consents to and what `acceptedTerms`
+										    records. Kept out of the form by decision. */}
 										<label
 											ref={termsRef}
 											className={`flex items-start gap-2 text-white cursor-pointer text-sm rounded-lg transition-colors ${termsError ? "bg-red-500/10 border border-red-500/50 p-2.5 -m-0.5" : ""}`}
@@ -1284,6 +1430,58 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 										    field and in the order summary, so the recurring charge is never
 										    invisible at the point of purchase. */}
 									</div>
+									)}
+
+									{/* Confirm the email. Proving the address is what creates the buyer's Jetzy
+									    account and signs them in; the server refuses a booking without it. The
+									    form behind it is kept as typed, so "Use a different email" loses nothing. */}
+									{checkoutStep === "verify" && (
+										<div className="space-y-3">
+											<h3 className="font-bold text-white text-lg">Confirm your email</h3>
+											<p className="text-sm text-gray-300">
+												We sent a 6-digit code to <span className="text-white font-semibold break-all">{formData.email.trim()}</span>. It
+												expires in 10 minutes.
+											</p>
+											<p className="text-xs text-gray-400">Can&apos;t find it? Check your spam or junk folder.</p>
+											<label htmlFor="checkout-verify-otp" className="block text-xs text-gray-400 pt-1">
+												6-digit code
+											</label>
+											<input
+												id="checkout-verify-otp"
+												type="text"
+												inputMode="numeric"
+												autoComplete="one-time-code"
+												autoFocus
+												maxLength={6}
+												value={verifyOtp}
+												onChange={(e) => setVerifyOtp(e.target.value.replace(/\D/g, ""))}
+												placeholder="123456"
+												className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg text-center text-xl tracking-[0.5em] placeholder:tracking-normal placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-600"
+											/>
+											{verifyError && <p className="text-sm text-red-400">{verifyError}</p>}
+											<div className="flex items-center justify-between text-xs pt-1">
+												<button
+													type="button"
+													onClick={() => {
+														setCheckoutStep("details")
+														setVerifyOtp("")
+														setVerifyError(null)
+													}}
+													className="text-gray-400 underline underline-offset-2 hover:text-white"
+												>
+													Use a different email
+												</button>
+												<button
+													type="button"
+													onClick={startEmailVerification}
+													disabled={verifyBusy || verifyCooldown > 0}
+													className="text-gray-400 underline underline-offset-2 hover:text-white disabled:no-underline disabled:opacity-50"
+												>
+													{verifyCooldown > 0 ? `Resend in ${verifyCooldown}s` : "Resend code"}
+												</button>
+											</div>
+											<p className="text-xs text-gray-500">No password needed — you&apos;ll be signed in with this email.</p>
+										</div>
 									)}
 
 									{/* Custom Questions */}
@@ -1497,7 +1695,15 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 
 								{/* Pinned action buttons */}
 								<div className="px-4 sm:px-6 py-4 shrink-0 border-t border-[#2E2E2E]">
-									{checkoutStep === "questions" ? (
+									{checkoutStep === "verify" ? (
+										<button
+											disabled={verifyBusy || isLoading || verifyOtp.trim().length < 4}
+											type="submit"
+											className="w-full bg-jetzy text-black font-bold px-6 py-3 rounded-xl transition-all transform hover:scale-105 shadow-lg disabled:opacity-50"
+										>
+											{verifyBusy || isLoading ? <Spinner /> : "Confirm and continue"}
+										</button>
+									) : checkoutStep === "questions" ? (
 										<div className="flex gap-3">
 											<button type="button" onClick={() => setCheckoutStep("details")} className="w-1/3 border border-[#444] text-white font-bold px-6 py-3 rounded-xl transition-all hover:bg-[#222]">Back</button>
 											<button disabled={isLoading} type="submit" className="w-2/3 bg-jetzy text-black font-bold px-6 py-3 rounded-xl transition-all transform hover:scale-105 shadow-lg disabled:opacity-50">
@@ -1508,11 +1714,11 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 										<button
 											// Deliberately NOT disabled on missing terms. A dead button explains
 											// nothing; letting the click through is what triggers the banner.
-											disabled={isLoading}
+											disabled={isLoading || verifyBusy}
 											type="submit"
 											className="w-full bg-jetzy text-black font-bold px-6 py-3 rounded-xl transition-all transform hover:scale-105 shadow-lg disabled:opacity-50"
 										>
-											{isLoading ? <Spinner /> : ((liveEventData?.questions || []).length > 0 ? "Next" : selectionNeedsApproval ? "Request to Book" : "Submit")}
+											{isLoading || verifyBusy ? <Spinner /> : ((liveEventData?.questions || []).length > 0 ? "Next" : selectionNeedsApproval ? "Request to Book" : "Submit")}
 										</button>
 									)}
 								</div>

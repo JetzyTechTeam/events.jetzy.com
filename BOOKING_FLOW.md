@@ -532,6 +532,17 @@ In this order; the first failure is the reply:
    be booked yet."` (403). (`isPendingAdminApproval`, `src/lib/event-approval.ts`)
 3. `acceptedTerms === true` → `"You must agree to the Terms & Conditions to register."`.
 4. Buyer has `firstName`, `lastName`, `email`.
+4a. **(Web, 2026-11-18) The checkout email is PROVEN.** The request must carry a session signed in
+   **as that email** (case-insensitive), or be from an `admin` / `super admin` (they book for
+   guests). Otherwise → **401** `{ "data": { "needsVerification": true } }`, `"Please confirm your
+   email to book this ticket."` — checked **before** step 5 writes anything. The web modal answers
+   it by emailing a 6-digit code (`POST /api/checkout/send-code` `{ email }`) and spending it
+   (`POST /api/checkout/verify-code` `{ email, otp, via, firstName, lastName }`), which uses the
+   backend's `/v1/accounts/login-code/*` (`purpose: "ticket"`, `source: "web_ticket"`): a correct
+   code **creates the Jetzy account** when the address has none and signs the buyer in. A signed-in
+   buyer who types a DIFFERENT email is switched to the verified account. Rule:
+   `sessionMayBookAs` (`src/lib/checkout-identity.ts`). The app already has an authenticated user,
+   so it books under that user's own email.
 5. Create or update the **Users** account behind the checkout email (case-insensitive match) — its
    id is `checkoutUserId`. Non-fatal if it fails.
 6. **Referral code** (if any): active, not deleted, under `maxUses`, belongs to THIS event, and
@@ -1919,6 +1930,12 @@ from the app (§5.0); then act on them from the app **and** confirm the web show
 ---
 
 ## 18. Changelog
+
+**2026-11-18 (email-verified checkout):** web ticket checkout requires a session signed in as the
+checkout email (admins exempt) — both `api/checkout` and `api/checkout/free-events` answer 401
+`needsVerification` otherwise (§5.1 step 4a). Verifying creates the buyer's Jetzy account through the
+backend login code and signs them in. `createOrUpdateUser` now also fills the account's `phone`
+from checkout when the account has none (never overwrites one). No booking shape change.
 
 **2026-11-17 (check-in QRs):** the booking success screens show the guest's check-in QR (bare
 `bookingRef`, confirmed bookings only), and the web check-in page shows a walk-in "scan to buy" QR

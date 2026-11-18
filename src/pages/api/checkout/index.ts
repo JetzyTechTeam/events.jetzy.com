@@ -28,6 +28,7 @@ import { MEMBERSHIPS, membershipLabelList, membershipsIncluding, type Membership
 import { validateReferralCodeForEvent, type ReferralCodeData } from "@/lib/referral-validation"
 import { REFERRAL_NOT_FOR_SELECTION_MESSAGE, referralCoversTicket, referralEligibleSubtotal } from "@/lib/referral-ticket-scope"
 import Stripe from "stripe"
+import { CHECKOUT_VERIFY_MESSAGE, sessionMayBookAs } from "@/lib/checkout-identity"
 
 type BodyParams = {
 	tickets: Array<{
@@ -194,6 +195,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		}
 		const acceptedTermsAt = new Date()
 
+		// Who is buying. Resolved once and carried into the Stripe metadata so the booking created
+		// at fulfilment can be linked back to the account — without it, every paid booking has no
+		// `bookerUserId` and can only ever be found by whatever email was typed into the form.
+		const buyerSession = await getServerSession(req, res, authOptions)
+		const buyerId = (buyerSession?.user as any)?._id || (buyerSession?.user as any)?.id
+
+		// The checkout email must be PROVEN (CEO, 2026-11-18): only a session signed in as that
+		// address may book under it — the modal's code step is what signs them in and creates their
+		// Jetzy account. Checked before `createOrUpdateUser`, so an unproven address writes nothing.
+		// Admins are exempt (they book for guests). `needsVerification` sends the modal to its code step.
+		if (!sessionMayBookAs(buyerSession?.user as any, user.email)) {
+			return sendResponse(res, { needsVerification: true }, CHECKOUT_VERIFY_MESSAGE, false, ResCode.UNAUTHORIZED)
+		}
+
 		// create jetzy user
 		// Resolves (or creates) the Users account behind the CHECKOUT EMAIL, independent of
 		// whether anyone is logged in. Carried into Stripe metadata as `checkoutUserId` so a
@@ -266,13 +281,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		}
 
 		// Private events are unlisted rather than invite-only — no access code required.
-
-		// Who is buying, if anyone is logged in. Resolved once and carried into the Stripe
-		// metadata so the booking created at fulfilment can be linked back to the account —
-		// without it, every paid booking has no `bookerUserId` and can only ever be found by
-		// whatever email was typed into the form.
-		const buyerSession = await getServerSession(req, res, authOptions)
-		const buyerId = (buyerSession?.user as any)?._id || (buyerSession?.user as any)?.id
 
 		// Does this order sell memberships?
 		//

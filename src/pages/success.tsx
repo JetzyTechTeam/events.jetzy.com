@@ -9,6 +9,7 @@ import { formatMembershipDate, membershipIncludesLine } from "@/lib/booking-memb
 import ReturnToAppButton from "@Jetzy/components/misc/ReturnToAppButton"
 import CheckInQR from "@Jetzy/components/bookings/CheckInQR"
 import { isCancelledBooking, isPendingBooking } from "@/lib/booking-status"
+import { useHoldProfileGate } from "@/components/profile/ProfileGate"
 import axios from "axios"
 import { useRouter } from "next/router"
 import React, { useMemo } from "react"
@@ -47,6 +48,10 @@ type IEvent = {
 const CheckoutSuccessPage: React.FC = () => {
 	const router = useRouter()
 	const query = router.query
+	// A ticket buyer is signed in by checkout's email code moments before arriving here, often as a
+	// brand-new account with an empty profile. The profile form must not cover their receipt and
+	// check-in QR; it shows on the next page they visit.
+	useHoldProfileGate(true)
 	const [orderItems, setOrderItems] = React.useState<Array<OrderItem>>([])
 	const [sessionData, setSessionData] = React.useState<any>(null)
 	const [isLoading, setIsLoading] = React.useState(true)

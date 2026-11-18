@@ -66,12 +66,22 @@ export async function createOrUpdateUser(userData: UserData) {
 
         if (userExists) {
             userId = userExists._id
+            const set: Record<string, unknown> = {}
             // Record latest T&C consent on the existing user when provided
             if (userData.acceptedTerms) {
-                await db.collection("users").updateOne(
-                    { _id: userId },
-                    { $set: { acceptedTerms: true, acceptedTermsAt: userData.acceptedTermsAt || new Date() } }
-                )
+                set.acceptedTerms = true
+                set.acceptedTermsAt = userData.acceptedTermsAt || new Date()
+            }
+            // The phone typed at ticket checkout (CEO, 2026-11-18: the booking step takes name, email
+            // and phone). An account created by the backend's login code has none, so it is filled
+            // in here — but ONLY when the account has no phone yet. One the person already set, in the
+            // app or an earlier booking, is never overwritten by whatever was typed into a form.
+            const phone = typeof userData.phone === "string" ? userData.phone.trim() : ""
+            if (phone && !(typeof userExists.phone === "string" && userExists.phone.trim())) {
+                set.phone = phone
+            }
+            if (Object.keys(set).length > 0) {
+                await db.collection("users").updateOne({ _id: userId }, { $set: set })
             }
         } else {
             const newUser = await db.collection("users").insertOne(userData)
