@@ -3155,6 +3155,12 @@ stale one opening the dialog on an unrelated later arrival.
 
 **Fails open** on any read failure. **Ungated paths:** `/login`, `/signup`, `/auth/*`, `/post-signup`, `/terms`, `/privacy`, `/manage-membership`, `/jetzyqrsignup`.
 
+### City pick always sticks + pinned buttons (2026-11-18)
+- **A tapped city used to get lost.** On a phone the tap also drops the keyboard: the input blurs, the viewport resizes, and the `click` arrived after the 150ms blur-close, so the list was gone. `ProfileCityInput` now sets `pointerInListRef` on the list's `pointerdown` and the blur won't close while it is set (`mousedown` preventDefault keeps desktop focus; a document `pointerdown` outside closes the list). The list scrolls into view on OPEN only — it used to re-scroll on every predictions batch, moving under the finger.
+- **Optimistic city.** A tap sets `{ city: prediction.main }` at once, then upgrades it with Google's details (coordinates, region) — `pickIdRef` drops a late answer after the person typed or picked again. A failed lookup KEEPS the name-only city (it used to clear it, so a real pick read as "Please pick your city"). Complete is disabled and reads "Getting your city…" while the lookup runs (`onResolvingChange`), so it can't save without the coordinates.
+- "Pick your city" shows under the City field and focuses it.
+- **Layout:** fixed header (title + steps) / scrolling body / PINNED footer — Next, or Back + Complete (48px, "Saving…"), plus "Signed in as <email> · Log out" (logout-safety rule unchanged). Footer hidden while the photo cropper is open.
+
 ### Premium: profile asked AFTER payment (2026-09-22)
 - **CEO:** on the standalone Premium purchase the profile is asked right after a confirmed payment, not before. `/premium` and `/subscribe` are now in `isUngatedPath`; `usePostPurchaseProfile()` (`src/components/profile/PostPurchaseProfile.tsx`) runs on the confirmed `?premium_session_id` return on `/premium`, `/subscribe` (then `goToApp`, so the app return waits for the form) and in `PremiumPaywallModal` (the navbar "Buy Jetzy Premium" door). Opens only when something is missing; fails open like the gate.
 - **`useHoldProfileGate(active)`** (`ProfileGate.tsx`) stands the page gate down while the Premium pop-up or its post-purchase form is on screen — the pop-up opens on gated pages, and without the hold the gate would block a buyer who signed in mid-purchase and stack a second form after payment.
