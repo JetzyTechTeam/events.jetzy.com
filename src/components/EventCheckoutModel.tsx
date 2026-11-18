@@ -134,7 +134,19 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 	const { data: session } = useSession()
 	// Verifying the email can sign in a brand-new account whose profile is empty; the profile form
 	// must not pop up over checkout. It shows once the buyer is done (next page they visit).
-	useHoldProfileGate(showCheckout)
+	// Also held while the browser is on its way to Stripe: the pop-up closes a moment before the
+	// page leaves, and releasing the hold there flashed the profile form for a second (QA, 2026-11-18).
+	const [leavingForPayment, setLeavingForPayment] = useState(false)
+	useHoldProfileGate(showCheckout || leavingForPayment)
+	// Back from Stripe restores this page from the back/forward cache with the flag still set —
+	// release it, or the profile form would stay suppressed for the rest of the visit.
+	useEffect(() => {
+		const onPageShow = (e: PageTransitionEvent) => {
+			if (e.persisted) setLeavingForPayment(false)
+		}
+		window.addEventListener("pageshow", onPageShow)
+		return () => window.removeEventListener("pageshow", onPageShow)
+	}, [])
 	const { isPremium: sessionIsPremium } = usePremiumStatus()
 	const sessionEmail = session?.user?.email || ""
 	// Which memberships does the CURRENT selection sell? One ticket may sell both.
@@ -695,7 +707,8 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 			setShowWaitingList(true)
 			return
 		}
-		// redirect user to payment page
+		// redirect user to payment page — keep the profile-gate hold across the navigation
+		setLeavingForPayment(true)
 		dispatch(toggleCheckoutForm(false))
 		window.location.href = res?.payload?.data?.url
 	}
@@ -1137,7 +1150,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 															handleValidateReferralCode(formData.referralCode)
 														}
 													}}
-													className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600 text-white"
+													className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600 text-white [color-scheme:dark]"
 												/>
 												{validatingReferralCode && (
 													<div className="absolute right-3 top-1/2 -translate-y-1/2">
@@ -1175,7 +1188,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 												placeholder="First Name"
 												value={formData.firstName}
 												onChange={handleInputChange}
-												className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
+												className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600 [color-scheme:dark]"
 												required
 											/>
 											<input
@@ -1184,7 +1197,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 												placeholder="Last Name"
 												value={formData.lastName}
 												onChange={handleInputChange}
-												className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
+												className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600 [color-scheme:dark]"
 												required
 											/>
 										</div>
@@ -1196,7 +1209,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 													placeholder="Email"
 													value={formData.email}
 													onChange={handleInputChange}
-													className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
+													className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600 [color-scheme:dark]"
 													required
 												/>
 												{checkingPremiumEmail && (
@@ -1393,7 +1406,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 											placeholder="Phone Number"
 											value={formData.phone}
 											onChange={handleInputChange}
-											className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
+											className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600 [color-scheme:dark]"
 											required
 											pattern="^\+?[0-9]{7,15}$"
 											title="Enter a valid phone number (e.g., +1234567890)"
@@ -1456,7 +1469,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 												value={verifyOtp}
 												onChange={(e) => setVerifyOtp(e.target.value.replace(/\D/g, ""))}
 												placeholder="123456"
-												className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg text-center text-xl tracking-[0.5em] placeholder:tracking-normal placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-600"
+												className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg text-center text-xl [color-scheme:dark] tracking-[0.5em] placeholder:tracking-normal placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-600"
 											/>
 											{verifyError && <p className="text-sm text-red-400">{verifyError}</p>}
 											<div className="flex items-center justify-between text-xs pt-1">
