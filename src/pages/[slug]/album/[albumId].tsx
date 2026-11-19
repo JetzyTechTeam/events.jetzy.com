@@ -216,7 +216,26 @@ function AlbumPhotoTourPage({ album: albumJson, event: eventJson }: { album: str
 	const toast = useToast()
 	const { data: session } = useSession()
 
-	const { ready, hasAccess, probeSettled, recordAlbumAccess, openGate, gateUi, viewer, trackAlbumLanding } = useAlbumViewerGate(event._id)
+	// `?email=` from the album-published email: a PREFILL for the gate, never proof of who this
+	// is (the code still has to be passed). Read once, then dropped from the address bar so the
+	// address isn't left in history, a shared screenshot or a copied link.
+	const [linkEmail, setLinkEmail] = useState<string | undefined>(undefined)
+	useEffect(() => {
+		if (!router.isReady) return
+		const raw = router.query.email
+		if (typeof raw !== "string") return
+		const value = raw.trim()
+		if (value.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) setLinkEmail(value)
+		const { email: _e, ...rest } = router.query
+		router.replace({ pathname: router.pathname, query: rest }, undefined, { shallow: true })
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [router.isReady, router.query.email])
+
+	// Signed in already (any account) → the gate never opens and the prefill is unused.
+	const { ready, hasAccess, probeSettled, recordAlbumAccess, openGate, gateUi, viewer, trackAlbumLanding } = useAlbumViewerGate(
+		event._id,
+		{ initialEmail: linkEmail },
+	)
 
 	// State rather than a memo: an admin editing the album has to see the result immediately,
 	// without a page reload throwing them back to the top of a long album.

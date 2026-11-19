@@ -914,7 +914,6 @@ export const sendAlbumPublishedNotification = async ({
   albumTitle,
   albumId,
   coverUrl,
-  magicToken,
 }: {
   recipientEmail: string
   recipientName: string
@@ -923,7 +922,6 @@ export const sendAlbumPublishedNotification = async ({
   albumTitle: string
   albumId: string
   coverUrl?: string
-  magicToken?: string
 }) => {
   const baseUrl = process.env.NEXT_PUBLIC_URL
   if (baseUrl?.includes("localhost")) {
@@ -933,12 +931,12 @@ export const sendAlbumPublishedNotification = async ({
   const cleanEventName = decodeHTMLEntities(eventName)
   const root = baseUrl || "https://events.jetzy.com"
   const albumPath = eventAlbumPath(eventSlug, albumId)
-  // Recipients are known event participants and the link lands in their own inbox, so
-  // sign them straight in rather than making them fill in the name+email gate. Same
-  // one-click pattern the discussion emails use.
-  const albumUrl = magicToken
-    ? `${root}/login?magicToken=${magicToken}&_cb=${encodeURIComponent(albumPath)}`
-    : `${root}${albumPath}`
+  // A PLAIN link — no sign-in inside it. It used to carry a magic token that logged whoever
+  // opened it in as the recipient, forever, so a forwarded email or a pasted link handed over
+  // the account. Now: already signed in → straight into the album; otherwise the album gate opens
+  // with this address already filled in and asks for the emailed code. `email` is only a
+  // prefill, never proof — anyone holding the link still needs the code from that inbox.
+  const albumUrl = `${root}${albumPath}?email=${encodeURIComponent(recipientEmail)}`
   try {
     await sgMail.send({
       to: recipientEmail,
