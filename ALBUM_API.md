@@ -576,8 +576,16 @@ The gate (`useAlbumViewerGate`) runs on the album page:
    Submitting runs the two-step gate: `send-code`, then `guest-access` with the 6-digit code.
    If `magicToken` came back (new account only) the client also signs in for real.
 3. Identified but `hasInterests` is false → the **interests-only dialog**. This is how
-   publish-email arrivals — signed in by the magic link, so they never see the name+email
-   dialog — still get asked. It posts to `my-interests`.
+   viewers who arrive already signed in — so they never see the name+email dialog — still get
+   asked. It posts to `my-interests`.
+
+**The album-published email link carries NO sign-in** (changed 2026-11-20). It used to be
+`/login?magicToken=…&_cb=<album>`: a token with no expiry that logged whoever opened it in as
+the recipient, so a forwarded email or a pasted link handed over the account. It is now the
+plain album path plus `?email=<recipient>`. Signed in as that address → straight in. Signed in (or holding a guest cookie) as a DIFFERENT address → the dialog opens anyway with the link's address prefilled and a notice naming both; passing the code signs them in as the link's address. Not signed in →
+the name+email dialog opens with that address prefilled, and the code step still applies. The
+page drops `email` from the address bar after reading it. `email` is a prefill, never proof —
+mobile must not treat it as identity either.
 4. Only once both are satisfied is the media revealed, and `POST /albums/:albumId/access`
    fires once (skipped when `from=event`).
 5. A viewer who dismisses a dialog must have a way to re-open it, or they are stuck on a page

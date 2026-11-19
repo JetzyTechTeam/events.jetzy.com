@@ -11,15 +11,18 @@ import { useAnalytics } from "@/hooks/useAnalytics"
  *  - covers/metadata are public, but opening an album needs an identified viewer
  *  - unidentified  -> name + email dialog (creates/matches the account silently)
  *  - identified but never asked for interests on this event -> interests-only dialog
- *    (this is how publish-email arrivals, who are signed in by the magic link and so
- *    never see the name+email gate, still get asked)
+ *    (how a viewer who arrives already signed in, and so never sees the name+email gate,
+ *    still gets asked)
+ *  - a publish-email arrival who is NOT signed in gets the name+email gate with the
+ *    address prefilled from `?email=` (`options.initialEmail`); one who IS signed in goes
+ *    straight in — the email link carries no sign-in of its own any more
  *  - once through, the view is recorded once per person per album
  *
  * Render `gateUi` somewhere in the page, and only reveal media when `ready` is true.
  */
 type Stage = "landed" | "gate_shown" | "code_sent" | "identified"
 
-export function useAlbumViewerGate(eventId: string) {
+export function useAlbumViewerGate(eventId: string, options: { initialEmail?: string } = {}) {
 	const { data: session, status } = useSession()
 	const { anonId, sessionId } = useAnalytics()
 
@@ -80,7 +83,17 @@ export function useAlbumViewerGate(eventId: string) {
 	const [guestOpen, setGuestOpen] = useState(false)
 	const [interestsOpen, setInterestsOpen] = useState(false)
 
-	const hasAccess = !!session || hasGuestAccess
+	// The album-published email names who it was sent to (`?email=`). Signed in — or holding a
+	// guest cookie — as SOMEONE ELSE: ask them to confirm the link's address with a code first
+	// (decided 2026-11-20). Passing the code signs them in as that address, which clears this on
+	// its own; `linkSatisfied` covers the case where the sign-in itself couldn't happen (backend
+	// down, existing account → cookie access only).
+	const linkEmail = options.initialEmail?.trim().toLowerCase() || ""
+	const currentEmail = String((session?.user as any)?.email || viewer?.email || "").trim().toLowerCase()
+	const [linkSatisfied, setLinkSatisfied] = useState(false)
+	const linkMismatch = !!linkEmail && !!currentEmail && currentEmail !== linkEmail && !linkSatisfied
+
+	const hasAccess = (!!session || hasGuestAccess) && !linkMismatch
 
 	// Who is this, and do we already have their interests for this event?
 	useEffect(() => {
@@ -151,9 +164,16 @@ export function useAlbumViewerGate(eventId: string) {
 				isOpen={guestOpen}
 				onClose={() => setGuestOpen(false)}
 				eventId={eventId}
+				initialEmail={options.initialEmail}
+				notice={
+					linkMismatch
+						? `This link was sent to ${linkEmail}, but you're signed in as ${currentEmail}. Confirm ${linkEmail} with a code to view the album.`
+						: undefined
+				}
 				onCodeSent={(email) => trackStage("code_sent", email)}
 				onGranted={(granted?: { email?: string; name?: string }) => {
 					setHasGuestAccess(true)
+					setLinkSatisfied(true)
 					// The name+email gate collects interests too.
 					setNeedsInterests(false)
 					setGuestOpen(false)
