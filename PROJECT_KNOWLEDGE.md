@@ -4046,6 +4046,12 @@ An admin scanning a list of events could see tickets and guests on each card but
 - Rendered in `EventListingCard` (`👁 N` beside guests/tickets, in the existing admin-only row — so `previewAsGuest` hides it for free) and My Events' `ListingCard` (`👁 N views`, gated on `props.isAdmin`). `toLocaleString("en-US")` with an explicit locale: My Events is server-rendered.
 - **Hosts don't get it on their cards**, by request. They still read Views on Manage Event for their own events. To extend it, drop the `isAdmin` condition in the console `getServerSideProps` — that list is already narrowed to `ownerId`.
 
+### Event creator on the console events list, admin only (IMPLEMENTED 2026-11-19)
+
+- `/console/events` rows show **"👤 Created by <name> (<email>)"** for an admin, under the location. **Console list only, by request — NOT the event detail page**, and not the public home listing.
+- **`src/lib/event-creators.ts`** (server only): `getEventCreators(ownerIds)` = TWO batched `$in` queries (`EventUsers` + `Users`, since `ownerId` may point at either — `Users` wins a tie, `findUserRecord`'s order); `attachEventCreators(events)` stamps `creator`. Not `resolveEventOwner` per row — that is 40 round trips a page.
+- Same gate as `totalViews`: stamped only inside the console `getServerSideProps`' `isAdmin`. Three states: **absent** = lookup failed (render nothing), **`null`** = no `ownerId` (the ~20 events predating ownership) or the account is gone ("Creator unknown"), object = name + email.
+
 ### Check-in portal on a phone (IMPLEMENTED 2026-10-13)
 
 `/console/events/[eventId]/check-in` is the one console screen used almost entirely on a phone, at the door, and it had no phone work at all. Below `md` only; six before/after captures (the page, a validated booking with guest details open, the scanner window - at 1280px and 820px) diff to 0 pixels. No handler changed: validate, check-in, guest details, scanning and the 30-second stats refresh are untouched.
