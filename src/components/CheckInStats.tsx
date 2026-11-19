@@ -1,17 +1,39 @@
-import React from "react"
-import { Box, SimpleGrid, Stat, StatLabel, StatNumber, StatHelpText, Card, CardBody, Spinner, Text } from "@chakra-ui/react"
+import React, { useState } from "react"
+import { Box, SimpleGrid, Stat, StatLabel, StatNumber, StatHelpText, Card, CardBody, Spinner, Text, useDisclosure } from "@chakra-ui/react"
 import { useQuery } from "@tanstack/react-query"
 import axios from "axios"
+import CheckInListModal, { type CheckInListTab } from "@/components/checkin/CheckInListModal"
 
 // Phones only (below Chakra's `md`, 768px). Every rule that uses this sits inside the media
 // query, so nothing here can reach a tablet or a desktop.
 const PHONE = "@media screen and (max-width: 47.99em)"
+
+// Each tile opens the list behind its number (`CheckInListModal`), on the matching tab.
+const TILES: Array<{
+	label: string
+	color: string
+	tab: CheckInListTab
+	value: (d: any) => number | string
+	help: (d: any) => string
+}> = [
+	{ label: "Total Bookings", color: "gray.100", tab: "all", value: (d) => d?.totalBookings || 0, help: () => "Total reservations" },
+	{ label: "Total Tickets", color: "gray.100", tab: "all", value: (d) => d?.totalTicketsBooked || 0, help: () => "All purchased tickets" },
+	{ label: "Checked In", color: "green.400", tab: "in", value: (d) => d?.totalGuestsCheckedIn || 0, help: (d) => `${d?.checkInPercentage || 0}% of total` },
+	{ label: "Remaining", color: "orange.400", tab: "remaining", value: (d) => d?.remainingGuests || 0, help: () => "Yet to check in" },
+]
 
 interface CheckInStatsProps {
 	eventId: string
 }
 
 const CheckInStats: React.FC<CheckInStatsProps> = ({ eventId }) => {
+	const list = useDisclosure()
+	const [listTab, setListTab] = useState<CheckInListTab>("in")
+	const openList = (tab: CheckInListTab) => {
+		setListTab(tab)
+		list.onOpen()
+	}
+
 	const { data, isLoading, error } = useQuery({
 		queryKey: ["checkInStats", eventId],
 		queryFn: async () => {
@@ -45,6 +67,7 @@ const CheckInStats: React.FC<CheckInStatsProps> = ({ eventId }) => {
 		// were about 500px tall, and this page is used at the door - the email box and the
 		// Scan button started below the first screen. The helper line under each number is
 		// dropped there; the label already says what the number is.
+		<>
 		<SimpleGrid
 			columns={{ base: 4, md: 2, lg: 4 }}
 			spacing={{ base: 2, md: 6 }}
@@ -56,54 +79,36 @@ const CheckInStats: React.FC<CheckInStatsProps> = ({ eventId }) => {
 				"& .chakra-stat__help-text": { display: "none" },
 			} }}
 		>
-			<Card bg="#1E1E1E" border="1px solid #434343">
-				<CardBody>
-					<Stat>
-						<StatLabel color="gray.400">Total Bookings</StatLabel>
-						<StatNumber fontSize="3xl" color="gray.100">
-							{data?.totalBookings || 0}
-						</StatNumber>
-						<StatHelpText color="gray.500">Total reservations</StatHelpText>
-					</Stat>
-				</CardBody>
-			</Card>
-
-			<Card bg="#1E1E1E" border="1px solid #434343">
-				<CardBody>
-					<Stat>
-						<StatLabel color="gray.400">Total Tickets</StatLabel>
-						<StatNumber fontSize="3xl" color="gray.100">
-							{data?.totalTicketsBooked || 0}
-						</StatNumber>
-						<StatHelpText color="gray.500">All purchased tickets</StatHelpText>
-					</Stat>
-				</CardBody>
-			</Card>
-
-			<Card bg="#1E1E1E" border="1px solid #434343">
-				<CardBody>
-					<Stat>
-						<StatLabel color="gray.400">Checked In</StatLabel>
-						<StatNumber fontSize="3xl" color="green.400">
-							{data?.totalGuestsCheckedIn || 0}
-						</StatNumber>
-						<StatHelpText color="gray.500">{data?.checkInPercentage || 0}% of total</StatHelpText>
-					</Stat>
-				</CardBody>
-			</Card>
-
-			<Card bg="#1E1E1E" border="1px solid #434343">
-				<CardBody>
-					<Stat>
-						<StatLabel color="gray.400">Remaining</StatLabel>
-						<StatNumber fontSize="3xl" color="orange.400">
-							{data?.remainingGuests || 0}
-						</StatNumber>
-						<StatHelpText color="gray.500">Yet to check in</StatHelpText>
-					</Stat>
-				</CardBody>
-			</Card>
+			{TILES.map((tile) => (
+				<Card
+					key={tile.label}
+					as="button"
+					type="button"
+					onClick={() => openList(tile.tab)}
+					aria-label={`${tile.label}: show the list`}
+					title="Show the list"
+					textAlign="left"
+					bg="#1E1E1E"
+					border="1px solid #434343"
+					cursor="pointer"
+					transition="border-color 0.15s"
+					_hover={{ borderColor: "#F79432" }}
+					_focusVisible={{ outline: "2px solid #F79432", outlineOffset: "2px" }}
+				>
+					<CardBody w="full">
+						<Stat>
+							<StatLabel color="gray.400">{tile.label}</StatLabel>
+							<StatNumber fontSize="3xl" color={tile.color}>
+								{tile.value(data)}
+							</StatNumber>
+							<StatHelpText color="gray.500">{tile.help(data)}</StatHelpText>
+						</Stat>
+					</CardBody>
+				</Card>
+			))}
 		</SimpleGrid>
+		<CheckInListModal eventId={eventId} isOpen={list.isOpen} onClose={list.onClose} initialTab={listTab} />
+		</>
 	)
 }
 

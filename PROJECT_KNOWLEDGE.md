@@ -217,6 +217,7 @@ if (!isAdmin && event.ownerId?.toString() !== userId) {
 | POST | `/api/check-in/record` | admin OR owner |
 | GET | `/api/check-in/guests` | admin OR owner |
 | GET | `/api/check-in/stats` | admin OR owner |
+| GET | `/api/check-in/list` | admin OR owner |
 | GET | `/api/check-in/booking-status` | — |
 
 ### Analytics
@@ -1573,6 +1574,13 @@ Admin OR owner access on all check-in APIs
 - **Only a QR deliberately shown counts** (fix after a 2026-11-18 staging incident: the host scanned one ticket and a second booking whose QR was merely in view on the same screen was checked in 2.4s later — every test booking goes to one inbox). A code must be read in `STEADY_HITS` (3) consecutive decodes (~0.4s); EVERY code acted on is remembered in `seenRef` until out of view for `REARM_MS` (it used to remember only the last one, so two QRs in view could take turns re-triggering); a frame with 2+ distinct codes (BarcodeDetector) checks in nothing and shows "Two QR codes in view"; new codes are ignored for `RESULT_PAUSE_MS` (1.2s) after each result.
 - **No undo** — by decision (2026-11-18).
 - `record.ts` (manual path) is still read-modify-write; a manual check-in racing a scan on the same booking at the same instant could clobber the count. Accepted — not the door's normal path.
+
+### Check-in tiles open the list behind them (2026-11-20)
+- **Each stat tile on `/console/events/[eventId]/check-in` is a button** (`CheckInStats.tsx`) that opens `src/components/checkin/CheckInListModal.tsx` on its own tab: Checked In → **Checked in**, Remaining → **Not checked in**, Total Bookings / Total Tickets → **All bookings**. Tabs carry GUEST counts (bookings for All), search by name / email / booking ref, one card per booking with a "2 of 3 in" badge, ticket names, last check-in time + who did it, and the ref. Full-screen on phones.
+- **`GET /api/check-in/list?eventId=`** — admin OR owner. One row per booking from `Bookings` + `CheckIn` (ticket names off the event's embedded `tickets`). No payment fields.
+- **Stats and list share ONE population: `liveCheckInBookingsFilter` in `src/lib/check-in-bookings.ts`** — `isDeleted: { $ne: true }` + status NOT pending / cancelled / rejected / failed / refunded, i.e. exactly what the door (`scan.ts` / `record.ts` / `validate.ts`) accepts. `stats.ts` used to count `status: confirmed` only, which left out `checked_in` bookings (mobile app) that the door lets in, and summed `checkedInCount` over EVERY `CheckIn` doc for the event, including bookings later cancelled. On staging one event read 8 bookings / 13 checked in, where the true figures are 12 / 8. `remainingGuests` is now summed per booking (never below 0), the same sum as the "Not checked in" tab.
+- **The old bottom card is renamed "Guest details collected"** — it reads `EventGuest` (`/api/check-in/guests`), written only by `record.ts`'s "collect guest details" option, so scan check-ins never appeared in it. Logic unchanged.
+- A manual check-in now invalidates `["checkInStats", eventId]` too (it used to wait for the 30s poll); both check-in paths invalidate `["checkInList", eventId]`.
 
 ### Walk-in "scan to buy" QR + guest check-in QR on the success screens (2026-11-17, CEO ask)
 - **Walk-in QR** — `src/components/WalkInTicketQR.tsx`, under `CheckInPortal` on `/console/events/[eventId]/check-in`. Shown to an admin / super admin or the event's owner. Encodes `eventUrl(window.location.origin, slug) + "?buy=1"`; Show full screen (large QR to turn toward the guest) + Copy link. While the event can't sell (`isPendingAdminApproval`, `status === "draft"`, or `getEventStatus === "past"`) the card shows a note instead of a QR.

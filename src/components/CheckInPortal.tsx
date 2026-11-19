@@ -242,7 +242,10 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 				setGuestCount(1)
 				setCollectGuestDetails(false)
 				setGuestDetails([])
-				// Refresh guest list
+				// Refresh the tiles, the list behind them, and the guest-details card. The tiles
+				// used to wait for their 30s poll after a manual check-in.
+				queryClient.invalidateQueries({ queryKey: ["checkInStats", eventId] })
+				queryClient.invalidateQueries({ queryKey: ["checkInList", eventId] })
 				fetchGuestList()
 			} else {
 				toast({
@@ -279,6 +282,7 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 	// After each scan check-in: refresh the stats tiles (react-query) and the checked-in list.
 	const handleScannerCheckIn = useCallback(() => {
 		queryClient.invalidateQueries({ queryKey: ["checkInStats", eventId] })
+		queryClient.invalidateQueries({ queryKey: ["checkInList", eventId] })
 		fetchGuestList()
 	}, [queryClient, eventId, fetchGuestList])
 
@@ -591,14 +595,15 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 					</Card>
 				)}
 
-				{/* Guest List Section */}
+				{/* Guest details collected at the door ("collect guest details" in record.ts) — NOT the
+				    full checked-in list: scan check-ins never write here. Tap a stat tile for that. */}
 				{guestList.length > 0 && (
 					<Card bg="#1E1E1E" border="1px solid #434343">
 						<CardBody>
 							<VStack spacing={4} align="stretch">
 								<HStack justify="space-between">
 									<Text fontSize="xl" fontWeight="bold" color="white">
-										Checked-In Guests
+										Guest details collected
 									</Text>
 									<Badge colorScheme="blue" fontSize="sm" px={3} py={1}>
 										{guestList.length} Guest{guestList.length > 1 ? "s" : ""}
