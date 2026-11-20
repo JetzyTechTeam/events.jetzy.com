@@ -97,7 +97,7 @@ Fields: eventId, albumId, anonId, sessionId, views, landedAt, gateShownAt, codeS
 Fields: eventId, albumId, mediaUrl, mediaType, userId?, requesterEmail, requesterName, verified, status (`pending`/`handled`), handledAt, handledBy. Collection `event-album-photo-requests`. One row per person per photo asking for the unwatermarked original. Index `{eventId, createdAt:-1}` built by `scripts/create-album-photo-request-index.ts` (`autoIndex: false`), **non-unique on purpose** — asking again after being ignored is legitimate, and a failed unique build would throw 11000 at a visitor.
 
 ### `src/models/events/album-tags.ts` — IAlbumTag
-Fields: eventId, albumId, mediaUrl, personEmail, personName, taggedByEmail, taggedByName, notifiedAt. Collection `event-album-tags`. Index `{albumId,mediaUrl,personEmail}` is a **plain lookup index, not unique** — tagging is unrestricted, so the same person can be tagged repeatedly on one photo and is emailed each time. (Was unique in an earlier build; `scripts/migrate-album-tags-index.ts` drops it.)
+Fields: eventId, albumId, mediaUrl, personEmail, personName, taggedByEmail, taggedByName, notifiedAt. Collection `event-album-tags`. **Never return a row raw** — GET goes through `tagForViewer` (`src/lib/album-tag-visibility.ts`): non-hosts get `personEmail` masked, no `taggedByEmail`, and `isMe`/`addedByMe`/`canRemove` (the × renders only on `canRemove`). Index `{albumId,mediaUrl,personEmail}` is a **plain lookup index, not unique** — tagging is unrestricted, so the same person can be tagged repeatedly on one photo and is emailed each time. (Was unique in an earlier build; `scripts/migrate-album-tags-index.ts` drops it.)
 
 ### `src/models/events/discussion-posts.ts` — IDiscussionPost
 Fields: eventId, userId, title, content, images[], attachments[], isPinned, isLocked, tags[], reactions (like/helpful arrays), viewCount, viewedBy[], commentCount, lastActivityAt, isReported
@@ -205,7 +205,7 @@ if (!isAdmin && event.ownerId?.toString() !== userId) {
 | POST | `/api/events/[eventId]/albums/guest-access` | public — `{name,email,code}`, matches or auto-creates account, sets `album_guest` cookie |
 | GET | `/api/events/[eventId]/albums/participants` | admin OR owner — attendee suggestions for tagging (empty for others by design) |
 | POST | `/api/events/[eventId]/albums/[albumId]/access` | any viewer — records access + notify email (once per person/album) |
-| GET/POST | `/api/events/[eventId]/albums/[albumId]/tags` | any viewer — list / create tag (emails the tagged person) |
+| GET/POST | `/api/events/[eventId]/albums/[albumId]/tags` | GET any viewer (emails MASKED unless admin/owner or your own — `album-tag-visibility.ts`); POST signed-in only, guest cookie refused (emails the tagged person) |
 | DELETE | `/api/events/[eventId]/albums/[albumId]/tags/[tagId]` | tagger, tagged person, or admin/owner |
 | POST | `/api/events/[eventId]/albums/[albumId]/publish` | admin OR owner — emails all attendees; `{resend:true}` required to re-send |
 | GET | `/api/events/[eventId]/albums/access-log` | admin OR owner — per-viewer access log (name/email/action/date) for the Albums analytics tab + CSV export |

@@ -15,8 +15,9 @@ Everything a mobile client needs is in this doc: data model, viewer identity, ev
 | View an album | **any identified viewer** — a logged-in user, *or* anyone who supplies name + email **and confirms a 6-digit code sent to that address** |
 | Say what they want to attend next | any identified viewer (asked once per event) |
 | Share an album link | any viewer |
-| Tag people in a photo | any viewer |
+| Tag people in a photo | any **signed-in** viewer (the guest cookie alone is refused) |
 | Remove a tag | the tagger, the tagged person, or admin/owner |
+| See the full email address on a tag | admin/owner, or the tagged person themselves — everyone else gets it masked |
 | Attendee suggestions for tagging | admin/owner only (privacy) |
 | Album analytics + access log | admin/owner only |
 | **Reorder photos in an album** | event **admin** or **owner**, from the album page itself |
@@ -277,8 +278,8 @@ All responses use the standard envelope from the `sendResponse` helper:
 | POST | `/albums/:albumId/access` | any viewer | `{ isNewAccount? }` | `{ firstAccess, action }` |
 | GET | `/albums/:albumId/download?url=` | **public** | — | the file itself, `Content-Disposition: attachment` |
 | GET | `/albums/participants` | admin OR owner | — | `[{ email, name }]` |
-| GET | `/albums/:albumId/tags` | any viewer | — | `AlbumTag[]` for the whole album, oldest first |
-| POST | `/albums/:albumId/tags` | any viewer | `{ mediaUrl, personEmail, personName? }` | `{ tag, isNew: true }` |
+| GET | `/albums/:albumId/tags` | any viewer | — | `VisibleAlbumTag[]` for the whole album, oldest first — emails masked for non-hosts, §4.8-a |
+| POST | `/albums/:albumId/tags` | signed-in viewer | `{ mediaUrl, personEmail, personName? }` | `{ tag, isNew: true }` |
 | DELETE | `/albums/:albumId/tags/:tagId` | tagger, tagged person, or admin/owner | — | `null` |
 | POST | `/albums/:albumId/publish` | admin OR owner | `{ resend?: boolean }` | `{ notifiedCount, recipientCount, publishedAt, publishNotifiedAt }` |
 | GET | `/albums/access-log?dateFrom&dateTo` | admin OR owner | — | `{ items: AccessRow[], total }` |
@@ -443,9 +444,23 @@ Attendee suggestions powering the `@`-mention picker when tagging. Backed by `ge
 
 **Admin/owner only, on purpose.** Anyone with a share link can view and tag, but the attendee email list must not leak to them. Non-hosts get **`200` with an empty array** — not a 403 — so the client just falls back to manual name + email entry without showing an error.
 
+### 4.8-a `GET /albums/:albumId/tags` — what a viewer may see
+
+Tags carry email addresses the tagged person never shared with the album's audience — somebody else typed them — and album links travel far. So the stored row is **not** returned as is (changed 2026-11-20; it used to be). Each row goes through `tagForViewer` in `src/lib/album-tag-visibility.ts` (pure — port it verbatim):
+
+| Field | Admin / owner | Everyone else |
+|---|---|---|
+| `_id`, `albumId`, `mediaUrl`, `personName?`, `taggedByName?`, `createdAt` | ✅ | ✅ |
+| `personEmail` | full | **masked** `s***@gmail.com` — full only when it is the viewer's own address |
+| `taggedByEmail` | ✅ | **omitted** |
+| `isMe` / `addedByMe` | ✅ | ✅ — compared case-insensitively with the viewer's email |
+| `canRemove` | `true` | `isMe \|\| addedByMe` — the DELETE rule (§4.10); draw the remove control only when true |
+
+`personEmail` keeps its KEY on every row, masked, so `personName || personEmail` still renders and never shows a full address. `eventId`, `notifiedAt` and `updatedAt` are not returned to anyone.
+
 ### 4.9 `POST /albums/:albumId/tags`
 
-1. `resolveAlbumViewer` → 401 if null.
+1. `resolveAlbumViewer` → 401 if null. **A guest-cookie viewer (`isGuest`) → 401** `"Please sign in to tag people in photos."` — a tag emails somebody in the viewer's name, so it takes a real session (2026-11-20; the web page always hid the button, the route now enforces it).
 2. Validate `{ mediaUrl: url, personEmail: email, personName?: ≤120 }`.
 3. **Verify `mediaUrl` actually belongs to this album** (`album.media.some(m => m.url === mediaUrl)`) → else 400 `"That photo is not part of this album."` Prevents tagging arbitrary URLs.
 4. Create the tag with `taggedByEmail` / `taggedByName` from the viewer and `notifiedAt: now`. **No duplicate check** — re-tagging is allowed.
@@ -621,7 +636,7 @@ This is deliberate: emails go out on every successful tag, so a misclick must ne
 
 Additional rules:
 - Staged tags must be **scoped to the current photo** — swiping to a different photo has to clear or re-key them, or they get applied to the wrong image.
-- Existing tags render as removable chips showing `personName || personEmail`.
+- Existing tags render as chips showing `personName || personEmail` (the email arrives masked for non-hosts), with a remove control **only when `canRemove`** — a control the viewer may not use only ends in a 403.
 
 ### 5.4 Publishing
 
