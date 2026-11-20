@@ -596,6 +596,22 @@ function AlbumPhotoTourPage({ album: albumJson, event: eventJson }: { album: str
 		return { promoSlotByRow: byRow, promoSlotCount: slot }
 	}, [rows])
 
+	// Which event goes in which slot. Each event appears ONCE — the old `slot % length` cycled,
+	// so with two events the same two cards alternated every couple of photos down to the last
+	// image. Fewer events than slots: spread evenly (first one early, the rest down the album).
+	// More events than slots: one per slot, and the leftovers go in the block under the grid.
+	const promoEventBySlot = useMemo(() => {
+		const map = new Map<number, number>()
+		const n = promotedEvents.length
+		if (!n || !promoSlotCount) return map
+		if (n >= promoSlotCount) {
+			for (let s = 0; s < promoSlotCount; s++) map.set(s, s)
+			return map
+		}
+		for (let k = 0; k < n; k++) map.set(Math.floor((k * promoSlotCount) / n), k)
+		return map
+	}, [promotedEvents.length, promoSlotCount])
+
 	// Infinite scroll: keep the initial DOM small on large albums, reveal more rows as the
 	// sentinel nears the viewport. The lightbox always indexes the full `media` array, so
 	// not-yet-rendered items stay reachable once a photo is open.
@@ -948,14 +964,15 @@ function AlbumPhotoTourPage({ album: albumJson, event: eventJson }: { album: str
 								<Flex direction="column" gap={3}>
 									{rows.slice(0, visibleRows).map((row, ri) => {
 										const offset = rows.slice(0, ri).reduce((n, r) => n + r.length, 0)
-										// One promoted event after roughly every 2 photos, on mobile only.
+										// A promoted-event SLOT after roughly every 2 photos, on mobile only;
+										// `promoEventBySlot` decides which slots carry a card (each event once).
 										// Inserted at ROW boundaries, never inside a row: a 2-up row is a
 										// flex row from `sm` up, and splitting it would drop a card between
 										// two side-by-side photos. Rows run 1,2,1,2 …, so crossing a new
-										// multiple of 2 lands a card at about every second image.
+										// multiple of 2 lands a slot at about every second image.
 										const slot = promoSlotByRow[ri] ?? -1
-										// Cycle so a long album keeps showing cards instead of running dry.
-										const promo = slot >= 0 && promotedEvents.length > 0 ? promotedEvents[slot % promotedEvents.length] : null
+										const eventIndex = promoEventBySlot.get(slot)
+										const promo = eventIndex !== undefined ? promotedEvents[eventIndex] : null
 										return (
 											<React.Fragment key={ri}>
 												<Flex gap={3} direction={{ base: "column", sm: row.length > 1 ? "row" : "column" }}>

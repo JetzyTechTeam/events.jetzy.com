@@ -582,7 +582,7 @@ The gate (`useAlbumViewerGate`) runs on the album page:
 **The album-published email link carries NO sign-in** (changed 2026-11-20). It used to be
 `/login?magicToken=…&_cb=<album>`: a token with no expiry that logged whoever opened it in as
 the recipient, so a forwarded email or a pasted link handed over the account. It is now the
-plain album path plus `?email=<recipient>`. Signed in as that address → straight in. Signed in (or holding a guest cookie) as a DIFFERENT address → the dialog opens anyway with the link's address prefilled and a notice naming both; passing the code signs them in as the link's address. Not signed in →
+plain album path plus `?email=<recipient>`. Signed in as that address → straight in. Signed in (or holding a guest cookie) as a DIFFERENT address → the dialog opens anyway with the link's address prefilled (no message naming the two addresses); passing the code signs them in as the link's address. Not signed in →
 the name+email dialog opens with that address prefilled, and the code step still applies. The
 page drops `email` from the address bar after reading it. `email` is a prefill, never proof —
 mobile must not treat it as identity either.

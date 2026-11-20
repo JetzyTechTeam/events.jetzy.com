@@ -165,11 +165,6 @@ export function useAlbumViewerGate(eventId: string, options: { initialEmail?: st
 				onClose={() => setGuestOpen(false)}
 				eventId={eventId}
 				initialEmail={options.initialEmail}
-				notice={
-					linkMismatch
-						? `This link was sent to ${linkEmail}, but you're signed in as ${currentEmail}. Confirm ${linkEmail} with a code to view the album.`
-						: undefined
-				}
 				onCodeSent={(email) => trackStage("code_sent", email)}
 				onGranted={(granted?: { email?: string; name?: string }) => {
 					setHasGuestAccess(true)

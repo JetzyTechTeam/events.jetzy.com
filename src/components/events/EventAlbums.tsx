@@ -726,7 +726,6 @@ export function GuestAccessModal({
 	onGranted,
 	onCodeSent,
 	initialEmail,
-	notice,
 }: {
 	isOpen: boolean
 	onClose: () => void
@@ -734,9 +733,6 @@ export function GuestAccessModal({
 	// Prefill from the album-published email link (`?email=`). A convenience, never proof —
 	// the code step still has to be passed for this address.
 	initialEmail?: string
-	// Shown above the form — the album page uses it when the visitor is signed in as a different
-	// address than the email link was sent to.
-	notice?: string
 	// Carries who was just verified, so callers don't have to re-probe /albums/viewer to learn
 	// the address they already proved here.
 	onGranted: (granted?: { email?: string; name?: string }) => void
@@ -914,11 +910,6 @@ export function GuestAccessModal({
 				<ModalHeader>View the photos</ModalHeader>
 				<ModalCloseButton />
 				<ModalBody>
-					{notice && (
-						<Box bg="rgba(247, 148, 50, 0.12)" border="1px solid #F79432" borderRadius="10px" px={3} py={2} mb={4}>
-							<Text fontSize="sm" color="#F7C08A" overflowWrap="anywhere">{notice}</Text>
-						</Box>
-					)}
 					{step === "FORM" ? (
 					<>
 					<Text color="#bbbbbb" fontSize="sm" mb={4}>Just your name and email — we&apos;ll send a code to confirm it.</Text>
