@@ -156,7 +156,10 @@ export default function AttendeeMailingDetail({
 									),
 								)}
 								{label("People from", (record.sourceEvents || []).length ? record.sourceEvents.map((e: any) => e.name).join(", ") : "No events — typed or imported only")}
-								{label("Groups", (record.groups || []).length ? record.groups.map((g: string) => GROUP_LABEL[g] || g).join(", ") : "—")}
+								{/* Groups only apply to people pulled from events. Older sends to typed addresses
+								    alone stored the checkboxes' default, so this is gated on events, not on groups. */}
+								{(record.sourceEvents || []).length > 0 &&
+									label("Groups", (record.groups || []).length ? record.groups.map((g: string) => GROUP_LABEL[g] || g).join(", ") : "—")}
 								{(record.attachments || []).length > 0 && label("Files", record.attachments.map((a: any) => a.filename).join(", "))}
 								{label(
 									"Delivery",

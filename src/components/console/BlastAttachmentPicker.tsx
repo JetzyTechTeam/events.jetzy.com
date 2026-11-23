@@ -74,14 +74,53 @@ export default function BlastAttachmentPicker({
 		const modeFor = (f: File): "attach" | "link" =>
 			attachBlockedReason({ filename: f.name, contentType: f.type, size: f.size }) ? "link" : "attach"
 
-		// Judged against what is ALREADY here, not just this batch — otherwise three files twice
-		// slips past a cap of five.
-		const refusal = blastAttachmentRefusal([
-			...attachments.map(asRule),
-			...picked.map((f) => ({ filename: f.name, contentType: f.type, size: f.size, mode: modeFor(f) })),
-		])
-		if (refusal) {
-			setNotice({ tone: "error", text: refusal })
+		// File by file, judged against what is ALREADY here plus what this batch has accepted so far —
+		// otherwise three files twice slips past a cap of five. A file that no longer fits IN the email
+		// (the image cap is full) goes as a download link instead, the same "attach when it can, link
+		// when it can't" rule as above. Only a file that fits neither way is skipped, and only that
+		// file: one image too many used to throw the whole batch away (QA, 2026-11-23).
+		const accepted: { file: File; mode: "attach" | "link" }[] = []
+		const skipped: { name: string; reason: string }[] = []
+		let movedToLink = 0
+		for (const f of picked) {
+			const base = [
+				...attachments.map(asRule),
+				...accepted.map((a) => ({ filename: a.file.name, contentType: a.file.type, size: a.file.size, mode: a.mode })),
+			]
+			const preferred = modeFor(f)
+			const tries: ("attach" | "link")[] = preferred === "attach" ? ["attach", "link"] : ["link"]
+			let chosen: "attach" | "link" | null = null
+			let reason = ""
+			for (const mode of tries) {
+				const r = blastAttachmentRefusal([...base, { filename: f.name, contentType: f.type, size: f.size, mode }])
+				if (!r) {
+					chosen = mode
+					break
+				}
+				if (!reason) reason = r
+			}
+			if (chosen) {
+				if (chosen !== preferred) movedToLink++
+				accepted.push({ file: f, mode: chosen })
+			} else {
+				skipped.push({ name: f.name, reason })
+			}
+		}
+		const batchNotice = (): { tone: "error" | "muted"; text: string } | null => {
+			if (skipped.length > 0) {
+				const names = skipped.map((s) => s.name).join(", ")
+				return { tone: "error", text: `Not added: ${names}. ${skipped[0].reason}` }
+			}
+			if (movedToLink > 0) {
+				return {
+					tone: "muted",
+					text: `${movedToLink} image${movedToLink === 1 ? " was" : "s were"} added as a download link — the email can show at most ${BLAST_ATTACHMENT_MAX_COUNT} images.`,
+				}
+			}
+			return null
+		}
+		if (accepted.length === 0) {
+			setNotice(batchNotice())
 			if (inputRef.current) inputRef.current.value = ""
 			return
 		}
@@ -92,7 +131,7 @@ export default function BlastAttachmentPicker({
 		setProgress(0)
 		const added: BlastAttachment[] = []
 		try {
-			for (const file of picked) {
+			for (const { file, mode } of accepted) {
 				// Aborting only kills the request in flight; without this the loop would carry on to
 				// files 3, 4 and 5 after a cancel during file 2.
 				if (controller.signal.aborted) break
@@ -104,12 +143,13 @@ export default function BlastAttachmentPicker({
 					onProgressChange: (p) => setProgress(p),
 					signal: controller.signal,
 				})
-				added.push({ url, filename: file.name, contentType: file.type, size: file.size, mode: modeFor(file) })
+				added.push({ url, filename: file.name, contentType: file.type, size: file.size, mode })
 			}
 			onChange([...attachments, ...added])
 			// The abort can also land BETWEEN files, in which case nothing rejected and the loop just
 			// broke - say so, or the host clicks Cancel and sees no acknowledgement at all.
 			if (controller.signal.aborted) setNotice({ tone: "muted", text: "Upload cancelled." })
+			else setNotice(batchNotice())
 		} catch (err: any) {
 			// Anything that did upload is kept: making the host re-pick five files because the
 			// fourth failed is worse than showing them four and the reason.

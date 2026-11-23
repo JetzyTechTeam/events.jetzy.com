@@ -23,6 +23,7 @@ import {
 	Input,
 	InputGroup,
 	InputLeftElement,
+	Radio,
 	Spinner,
 	Text,
 	VStack,
@@ -159,6 +160,12 @@ const EMPTY_SNAPSHOT = composerSnapshot({
 	attachments: [],
 })
 
+/**
+ * A name worth showing: ". ." or "-" (typed to get past a required field) reads as broken, so a name
+ * with no letter or digit shows as the address instead. Same rule as the server's `cleanPersonName`.
+ */
+const shownName = (name: string) => (/[\p{L}\p{N}]/u.test(name || "") ? name : "")
+
 /** Debounced event search shared by both pickers. */
 function useEventSearch(search: string) {
 	const [debounced, setDebounced] = useState(search)
@@ -177,10 +184,13 @@ function EventPicker({
 	selectedIds,
 	onToggle,
 	placeholder,
+	single = false,
 }: {
 	selectedIds: string[]
 	onToggle: (e: EventOption) => void
 	placeholder: string
+	/** One choice only (the linked event — the email has ONE button): radio dots, not checkboxes. */
+	single?: boolean
 }) {
 	const [search, setSearch] = useState("")
 	const { data: events = [], isFetching } = useEventSearch(search)
@@ -203,7 +213,11 @@ function EventPicker({
 						const when = eventShortDate(e)
 						return (
 							<Flex key={e._id} as="button" type="button" w="100%" textAlign="left" align="center" gap={3} px={3} py={2} borderBottom="1px solid #2a2a2a" bg={checked ? "rgba(247,148,50,0.10)" : "transparent"} _hover={{ bg: "whiteAlpha.50" }} onClick={() => onToggle(e)}>
-								<Checkbox isChecked={checked} pointerEvents="none" colorScheme="orange" />
+								{single ? (
+									<Radio isChecked={checked} pointerEvents="none" colorScheme="orange" aria-hidden />
+								) : (
+									<Checkbox isChecked={checked} pointerEvents="none" colorScheme="orange" aria-hidden />
+								)}
 								<Box minW={0} flex="1">
 									<Text fontSize="sm" color="white" noOfLines={1}>{e.name}</Text>
 									<Text fontSize="xs" color="gray.500">
@@ -248,29 +262,47 @@ export default function EmailAttendeesPage() {
 	const [listSearch, setListSearch] = useState("")
 
 	const rows: Row[] = useMemo(() => {
-		const out: Row[] = []
-		const seen = new Set<string>()
 		const activeAttendees = sourceIds.length > 0 && groups.length > 0 ? attendees : []
-		for (const a of activeAttendees) {
-			seen.add(a.email)
-			out.push({ email: a.email, name: a.name, source: "attendee", labels: a.sources.map(sourceLabel) })
-		}
-		for (const x of extras) {
+		const attendeeEmails = new Set(activeAttendees.map((a) => a.email))
+		// People the admin ADDED go first, newest first — they were landing at the bottom of a long
+		// list, out of sight, so it looked as if Add had done nothing (QA, 2026-11-23). Someone typed
+		// who is also an attendee keeps the attendee row, which carries the event labels.
+		const added: Row[] = []
+		const seen = new Set<string>()
+		for (const x of [...extras].reverse()) {
 			const key = guestEmailKey(x.email)
-			if (seen.has(key)) continue
+			if (attendeeEmails.has(key) || seen.has(key)) continue
 			seen.add(key)
-			out.push({ email: key, name: x.name, source: x.source, labels: [x.source === "added" ? "Added" : "Imported"] })
+			added.push({ email: key, name: shownName(x.name), source: x.source, labels: [x.source === "added" ? "Added" : "Imported"] })
 		}
-		return out
+		const fromEvents: Row[] = activeAttendees.map((a) => ({ email: a.email, name: shownName(a.name), source: "attendee", labels: a.sources.map(sourceLabel) }))
+		return [...added, ...fromEvents]
 	}, [attendees, extras, sourceIds.length, groups.length])
 
 	const selectedRows = rows.filter((r) => !excluded.has(r.email))
+	const searching = listSearch.trim().length > 0
 	const visibleRows = useMemo(() => {
 		const q = listSearch.trim().toLowerCase()
 		if (!q) return rows
 		return rows.filter((r) => r.email.includes(q) || r.name.toLowerCase().includes(q) || r.labels.some((l) => l.toLowerCase().includes(q)))
 	}, [rows, listSearch])
 	const ROW_LIMIT = 300
+
+	// While a search is on, Select all / none act on the people SHOWN, not on everyone — with 4
+	// showing they used to change all 31 (QA, 2026-11-23).
+	const selectAll = () =>
+		setExcluded((prev) => {
+			if (!searching) return new Set()
+			const next = new Set(prev)
+			visibleRows.forEach((r) => next.delete(r.email))
+			return next
+		})
+	const selectNone = () =>
+		setExcluded((prev) => {
+			const next = new Set(searching ? prev : [])
+			;(searching ? visibleRows : rows).forEach((r) => next.add(r.email))
+			return next
+		})
 
 	const toggleRow = (email: string) =>
 		setExcluded((prev) => {
@@ -280,20 +312,39 @@ export default function EmailAttendeesPage() {
 			return next
 		})
 
+	// What the last Add did — "3 added · 1 was already on the list". Re-adding used to say nothing.
+	const [addNote, setAddNote] = useState("")
+	const typedParsed = parseEmailList(typed)
+
 	const addTyped = () => {
-		const { emails, invalid } = parseEmailList(typed)
+		const { emails, invalid } = typedParsed
 		if (invalid.length > 0 || emails.length === 0) return
-		setExtras((prev) => [...prev, ...emails.map((email) => ({ email, name: "", source: "added" as const }))])
+		const onList = new Set(rows.map((r) => r.email))
+		const fresh = emails.filter((e) => !onList.has(e))
+		const already = emails.filter((e) => onList.has(e))
+		const reTicked = already.filter((e) => excluded.has(e))
+		if (fresh.length) setExtras((prev) => [...prev, ...fresh.map((email) => ({ email, name: "", source: "added" as const }))])
 		// A re-added address is wanted: take it back out of the unticked set.
 		setExcluded((prev) => {
 			const next = new Set(prev)
 			emails.forEach((e) => next.delete(e))
 			return next
 		})
+		setAddNote(
+			[
+				fresh.length ? `${fresh.length} added` : "",
+				already.length ? `${already.length} already on the list${reTicked.length ? ` (${reTicked.length} ticked again)` : ""}` : "",
+			]
+				.filter(Boolean)
+				.join(" · "),
+		)
 		setTyped("")
 	}
 
 	const addImported = (guests: ImportedGuest[]) => {
+		const onList = new Set(rows.map((r) => r.email))
+		const already = guests.filter((g) => onList.has(guestEmailKey(g.email))).length
+		setAddNote([`${guests.length - already} imported`, already ? `${already} already on the list` : ""].filter(Boolean).join(" · "))
 		setExtras((prev) => [...prev, ...guests.map((g) => ({ email: guestEmailKey(g.email), name: g.name, source: "imported" as const }))])
 		setExcluded((prev) => {
 			const next = new Set(prev)
@@ -309,25 +360,67 @@ export default function EmailAttendeesPage() {
 	const [greetByName, setGreetByName] = useState(true)
 	const [attachments, setAttachments] = useState<BlastAttachment[]>([])
 	const [uploading, setUploading] = useState(false)
-	// What the last prefill wrote. Picking another event replaces the text only while it is still
-	// exactly that (compared as plain text — the editor normalises the HTML it is given), so an
-	// admin's own edits are never silently thrown away.
-	const lastPrefill = useRef<{ subject: string; text: string } | null>(null)
+	// What the last prefill wrote into the subject and into the message — tracked SEPARATELY. Each is
+	// replaced (or cleared on Remove) only while it is still exactly what was filled in (the message
+	// compared as plain text — the editor normalises the HTML it is given), so an admin's own edits
+	// are never silently thrown away. It used to be both-or-nothing: edit the subject, switch the
+	// event, and the message kept the OLD event's name, date and address (QA, 2026-11-23).
+	const prefilledSubject = useRef<string | null>(null)
+	const prefilledText = useRef<string | null>(null)
+	// Every event whose details went into the text (by prefill, or a loaded draft's linked event).
+	// Drives the "your text still mentions X" warning below.
+	const textEvents = useRef<Map<string, string>>(new Map())
+	const forgetPrefill = () => {
+		prefilledSubject.current = null
+		prefilledText.current = null
+		textEvents.current = new Map()
+	}
 
-	const pickPromoted = (e: EventOption) => {
-		const isSame = promoted?._id === e._id
-		setPromoted(isSame ? null : e)
-		if (isSame) return
-		const untouched =
-			(!subject.trim() && !stripHtml(message).trim()) ||
-			(!!lastPrefill.current && subject === lastPrefill.current.subject && stripHtml(message).trim() === lastPrefill.current.text)
-		if (untouched) {
-			const next = prefillFor(e)
-			setSubject(next.subject)
-			setMessage(next.message)
-			lastPrefill.current = { subject: next.subject, text: stripHtml(next.message).trim() }
+	const subjectIsPrefill = () => !subject.trim() || subject === prefilledSubject.current
+	const messageIsPrefill = () => !stripHtml(message).trim() || stripHtml(message).trim() === prefilledText.current
+
+	const unlinkEvent = () => {
+		setPromoted(null)
+		// Text that is still exactly what the event filled in goes with it; anything edited stays
+		// (and the warning below names what it still mentions).
+		if (subject.trim() && subjectIsPrefill()) {
+			setSubject("")
+			prefilledSubject.current = null
+		}
+		if (stripHtml(message).trim() && messageIsPrefill()) {
+			setMessage("")
+			prefilledText.current = null
 		}
 	}
+
+	const pickPromoted = (e: EventOption) => {
+		if (promoted?._id === e._id) {
+			unlinkEvent()
+			return
+		}
+		setPromoted(e)
+		const next = prefillFor(e)
+		if (subjectIsPrefill()) {
+			setSubject(next.subject)
+			prefilledSubject.current = next.subject
+		}
+		if (messageIsPrefill()) {
+			setMessage(next.message)
+			prefilledText.current = stripHtml(next.message).trim()
+		}
+		textEvents.current.set(e._id, e.name)
+	}
+
+	// Names of OTHER events still written in the subject or message — after a switch or a Remove the
+	// admin had edited. Shown as a warning and in the Send confirmation; not a blocker (it may be
+	// deliberate), but never silent.
+	const plainText = `${subject}\n${stripHtml(message)}`.toLowerCase()
+	const staleEventNames = Array.from(textEvents.current.entries())
+		.filter(([id, name]) => id !== promoted?._id && name.trim().length > 2 && plainText.includes(name.trim().toLowerCase()))
+		.map(([, name]) => name)
+	const staleWarning = staleEventNames.length
+		? `Your subject or message still mentions “${staleEventNames.join("”, “")}”, but ${promoted ? `the button now links to “${promoted.name}”` : "no event is linked any more"}. Update the text before sending.`
+		: ""
 
 	// ---- 5: preview + send ----
 	const [previewOpen, setPreviewOpen] = useState(false)
@@ -393,7 +486,8 @@ export default function EmailAttendeesPage() {
 		setSavedAt(null)
 		setLoadedFrom(null)
 		setSavedSnapshot(EMPTY_SNAPSHOT)
-		lastPrefill.current = null
+		forgetPrefill()
+		setAddNote("")
 	}
 
 	const refreshLists = () => queryClient.invalidateQueries({ queryKey: ["attendee-mailings"] })
@@ -503,7 +597,9 @@ export default function EmailAttendeesPage() {
 			setMessage(nextMessage)
 			setGreetByName(nextGreet)
 			setAttachments(nextAttachments)
-			lastPrefill.current = null
+			forgetPrefill()
+			// The loaded text was written for its linked event — switching away should warn.
+			if (nextPromoted) textEvents.current.set(nextPromoted._id, nextPromoted.name)
 			setDraftId(mode === "draft" ? id : null)
 			setSavedAt(mode === "draft" ? rec.updatedAt || null : null)
 			setLoadedFrom(mode === "reuse" ? nextSubject || "an earlier email" : null)
@@ -606,8 +702,15 @@ export default function EmailAttendeesPage() {
 					<Box {...card}>
 						<Text fontWeight="bold" mb={1}>1. Pull people from these events</Text>
 						<Text fontSize="xs" color="gray.400" mb={3}>Pick one or more. Someone who was at several gets one email.</Text>
+						<EventPicker
+							selectedIds={sourceIds}
+							placeholder="Search events…"
+							onToggle={(e) => setSourceEvents((p) => (p.some((x) => x._id === e._id) ? p.filter((x) => x._id !== e._id) : [...p, e]))}
+						/>
+						{/* BELOW the list, not above it: chips appearing above pushed the list down under the
+						    cursor on the first pick, and the next click landed on the wrong event (QA). */}
 						{sourceEvents.length > 0 && (
-							<Flex gap={2} wrap="wrap" mb={3}>
+							<Flex gap={2} wrap="wrap" mt={3}>
 								{sourceEvents.map((e) => (
 									<Badge key={e._id} colorScheme="orange" variant="subtle" px={2} py={1} borderRadius="md" display="flex" alignItems="center" gap={1} textTransform="none" maxW="100%">
 										<Text as="span" noOfLines={1}>{e.name}</Text>
@@ -616,11 +719,6 @@ export default function EmailAttendeesPage() {
 								))}
 							</Flex>
 						)}
-						<EventPicker
-							selectedIds={sourceIds}
-							placeholder="Search events…"
-							onToggle={(e) => setSourceEvents((p) => (p.some((x) => x._id === e._id) ? p.filter((x) => x._id !== e._id) : [...p, e]))}
-						/>
 					</Box>
 
 					{/* 2 */}
@@ -657,8 +755,12 @@ export default function EmailAttendeesPage() {
 									<Input value={listSearch} onChange={(e) => setListSearch(e.target.value)} placeholder="Search the list" bg="#090C10" borderColor="#444444" color="white" _placeholder={{ color: "gray.500" }} sx={inputSx} />
 								</InputGroup>
 								<HStack>
-									<Button size="sm" variant="outline" borderColor="#444" color="white" _hover={{ bg: "#2A2A2A" }} onClick={() => setExcluded(new Set())}>Select all</Button>
-									<Button size="sm" variant="outline" borderColor="#444" color="white" _hover={{ bg: "#2A2A2A" }} onClick={() => setExcluded(new Set(rows.map((r) => r.email)))}>Select none</Button>
+									<Button size="sm" variant="outline" borderColor="#444" color="white" _hover={{ bg: "#2A2A2A" }} onClick={selectAll} isDisabled={searching && visibleRows.length === 0}>
+										{searching ? `Select ${visibleRows.length} shown` : "Select all"}
+									</Button>
+									<Button size="sm" variant="outline" borderColor="#444" color="white" _hover={{ bg: "#2A2A2A" }} onClick={selectNone} isDisabled={searching && visibleRows.length === 0}>
+										{searching ? `Unselect ${visibleRows.length} shown` : "Select none"}
+									</Button>
 								</HStack>
 							</Flex>
 						)}
@@ -693,9 +795,19 @@ export default function EmailAttendeesPage() {
 
 						<Text fontWeight="bold" fontSize="sm" mb={2}>Add more people</Text>
 						<EmailListInput value={typed} onChange={setTyped} label="Type addresses" help="Separate addresses with commas, then press Add." />
-						<Button mt={2} mb={4} size="sm" bg="#F79432" color="black" _hover={{ bg: "#E68422" }} isDisabled={!parseEmailList(typed).emails.length || emailListHasProblem(typed)} onClick={addTyped}>
-							Add {parseEmailList(typed).emails.length || ""}
+						{/* The label says WHY it is disabled — it used to read "Add 2" while greyed out (QA). */}
+						<Button mt={2} mb={addNote ? 1 : 4} size="sm" bg="#F79432" color="black" _hover={{ bg: "#E68422" }} isDisabled={!typedParsed.emails.length || emailListHasProblem(typed)} onClick={addTyped}>
+							{typedParsed.invalid.length > 0
+								? `Fix ${typedParsed.invalid.length === 1 ? "the invalid address" : `${typedParsed.invalid.length} invalid addresses`} to add`
+								: typedParsed.emails.length
+									? `Add ${typedParsed.emails.length}`
+									: "Add"}
 						</Button>
+						{addNote && (
+							<Text fontSize="xs" color="gray.400" mb={4}>
+								{addNote}
+							</Text>
+						)}
 						<GuestImportPanel onAdd={addImported} />
 					</Box>
 
@@ -705,22 +817,30 @@ export default function EmailAttendeesPage() {
 						<Text fontSize="xs" color="gray.400" mb={3}>
 							Linking an event adds a &quot;View Event Details&quot; button to it and fills in the subject and message — edit them freely. Skip this to send a plain email of your own.
 						</Text>
+						<EventPicker single selectedIds={promoted ? [promoted._id] : []} placeholder="Search for an event to link…" onToggle={pickPromoted} />
+						{/* Below the list for the same reason as step 1: appearing above it shifted the list. */}
 						{promoted && (
-							<Flex bg="rgba(247,148,50,0.10)" border="1px solid #F79432" borderRadius="lg" px={3} py={2} mb={3} align="center" gap={3}>
+							<Flex bg="rgba(247,148,50,0.10)" border="1px solid #F79432" borderRadius="lg" px={3} py={2} mt={3} align="center" gap={3}>
 								<Box minW={0} flex="1">
+									<Text fontSize="xs" color="#F79432" fontWeight="semibold">Linked event</Text>
 									<Text fontSize="sm" fontWeight="semibold" noOfLines={1}>{promoted.name}</Text>
 									<Text fontSize="xs" color="gray.400" overflowWrap="anywhere">{eventDateLine(promoted) || "No date set"}</Text>
 								</Box>
-								{/* Removing the link keeps whatever text is in the subject and message. */}
-								<Button size="xs" variant="outline" borderColor="#F79432" color="#F79432" _hover={{ bg: "rgba(247,148,50,0.15)" }} onClick={() => setPromoted(null)} flexShrink={0}>
+								{/* Text still exactly as the event filled it is removed too; edited text stays, and the
+								    warning under the subject names what it still mentions. */}
+								<Button size="xs" variant="outline" borderColor="#F79432" color="#F79432" _hover={{ bg: "rgba(247,148,50,0.15)" }} onClick={unlinkEvent} flexShrink={0}>
 									Remove
 								</Button>
 							</Flex>
 						)}
-						<EventPicker selectedIds={promoted ? [promoted._id] : []} placeholder="Search for an event to link…" onToggle={pickPromoted} />
 
 						<Text fontWeight="bold" mt={5} mb={1}>Subject</Text>
-						<Input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Subject" bg="#090C10" borderColor="#444444" color="white" _placeholder={{ color: "gray.500" }} mb={4} sx={inputSx} />
+						<Input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Subject" bg="#090C10" borderColor="#444444" color="white" _placeholder={{ color: "gray.500" }} mb={staleWarning ? 2 : 4} sx={inputSx} />
+						{staleWarning && (
+							<Text fontSize="sm" color="#F6AD55" bg="rgba(246,173,85,0.10)" border="1px solid rgba(246,173,85,0.4)" borderRadius="md" px={3} py={2} mb={4}>
+								{staleWarning}
+							</Text>
+						)}
 						<Text fontWeight="bold" mb={1}>Message</Text>
 						<Box mb={3} sx={{ ".ql-container": { minHeight: "180px" } }}>
 							<RichTextEditor hideImageButton value={message} onChange={(val) => setMessage(val)} placeholder="Write your message…" />
@@ -874,6 +994,11 @@ export default function EmailAttendeesPage() {
 								<Text fontSize="sm" color="gray.300">
 									&ldquo;{subject}&rdquo;{promoted ? <> about <strong>{promoted.name}</strong></> : null} goes out now, from Jetzy. This can&apos;t be undone.
 								</Text>
+								{staleWarning && (
+									<Text fontSize="sm" color="#F6AD55" mt={3}>
+										⚠ {staleWarning}
+									</Text>
+								)}
 							</AlertDialogBody>
 							<AlertDialogFooter gap={3}>
 								<Button ref={cancelRef} variant="outline" borderColor="#444" color="white" _hover={{ bg: "#2A2A2A" }} onClick={() => setConfirmOpen(false)} isDisabled={sending}>

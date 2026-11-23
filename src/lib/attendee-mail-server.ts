@@ -44,6 +44,16 @@ export const parseEventIds = (raw: unknown): Types.ObjectId[] => {
 	return Array.from(new Set(ids)).map((id) => new Types.ObjectId(id))
 }
 
+/**
+ * A stored name worth showing. Rows exist with names like ". ." or "-" (typed to get past a required
+ * field); those read as broken on screen and in "Hi . .,", so anything with no letter or digit
+ * counts as no name and the address is shown instead.
+ */
+export const cleanPersonName = (raw: unknown): string => {
+	const name = String(raw ?? "").replace(/\s+/g, " ").trim().slice(0, 100)
+	return /[\p{L}\p{N}]/u.test(name) ? name : ""
+}
+
 export type AttendeeSource = {
 	eventId: string
 	eventName: string
@@ -82,19 +92,32 @@ export async function collectAttendees(eventIds: Types.ObjectId[], groups: Atten
 	const events = await Events.find({ _id: { $in: eventIds } }).select("name").lean()
 	const eventName = new Map((events as any[]).map((e) => [String(e._id), stripHtml(e.name || "") || "Untitled event"]))
 
-	const byKey = new Map<string, Attendee & { nameFromBooking: boolean }>()
+	// Booking names for EVERY live or pending booking on these events, whichever groups are ticked.
+	// A person's name used to depend on the filters — their booking name with "Booked" ticked, their
+	// invitation name without it (QA, 2026-11-23). The booking name is what they typed themselves,
+	// so it always wins when there is one.
+	const bookings = await Bookings.find({ eventId: { $in: eventIds }, isDeleted: { $ne: true }, status: { $nin: DEAD_BOOKING_STATUSES } })
+		.select("eventId customerEmail customerName status")
+		.lean()
+	const bookingName = new Map<string, string>()
+	for (const b of bookings as any[]) {
+		const email = String(b.customerEmail ?? "").trim()
+		const name = cleanPersonName(b.customerName)
+		if (email && name && !bookingName.has(guestEmailKey(email))) bookingName.set(guestEmailKey(email), name)
+	}
+
+	const byKey = new Map<string, Attendee>()
 	const add = (
 		rawEmail: unknown,
 		rawName: unknown,
 		eventId: unknown,
 		group: AttendeeMailingGroup,
-		fromBooking: boolean,
 		invite?: { status: string; via: "email" | "app" },
 	) => {
 		const email = String(rawEmail ?? "").trim()
 		if (!email || !isTypedEmail(email)) return
 		const key = guestEmailKey(email)
-		const name = String(rawName ?? "").replace(/\s+/g, " ").trim()
+		const name = bookingName.get(key) || cleanPersonName(rawName)
 		const source: AttendeeSource = {
 			eventId: String(eventId),
 			eventName: eventName.get(String(eventId)) || "Event",
@@ -104,7 +127,7 @@ export async function collectAttendees(eventIds: Types.ObjectId[], groups: Atten
 
 		const existing = byKey.get(key)
 		if (!existing) {
-			byKey.set(key, { email: key, name, sources: [source], nameFromBooking: fromBooking && !!name })
+			byKey.set(key, { email: key, name, sources: [source] })
 			return
 		}
 		// One label per event + group + (for an invitation) answer and channel — invited by email AND
@@ -112,27 +135,14 @@ export async function collectAttendees(eventIds: Types.ObjectId[], groups: Atten
 		const same = (s: AttendeeSource) =>
 			s.eventId === source.eventId && s.group === source.group && s.inviteStatus === source.inviteStatus && s.inviteVia === source.inviteVia
 		if (!existing.sources.some(same)) existing.sources.push(source)
-		if (name && (!existing.name || (fromBooking && !existing.nameFromBooking))) {
-			existing.name = name
-			existing.nameFromBooking = fromBooking
-		}
+		if (!existing.name && name) existing.name = name
 	}
 
 	const wantBooked = groups.includes("booked")
 	const wantPending = groups.includes("pending")
-	if (wantBooked || wantPending) {
-		const statusFilter =
-			wantBooked && wantPending
-				? { $nin: DEAD_BOOKING_STATUSES }
-				: wantPending
-					? "pending"
-					: { $nin: [...DEAD_BOOKING_STATUSES, "pending"] }
-		const bookings = await Bookings.find({ eventId: { $in: eventIds }, isDeleted: { $ne: true }, status: statusFilter })
-			.select("eventId customerEmail customerName status")
-			.lean()
-		for (const b of bookings as any[]) {
-			add(b.customerEmail, b.customerName, b.eventId, b.status === "pending" ? "pending" : "booked", true)
-		}
+	for (const b of bookings as any[]) {
+		const group: AttendeeMailingGroup = b.status === "pending" ? "pending" : "booked"
+		if ((group === "booked" && wantBooked) || (group === "pending" && wantPending)) add(b.customerEmail, b.customerName, b.eventId, group)
 	}
 
 	if (groups.includes("invited")) {
@@ -141,13 +151,11 @@ export async function collectAttendees(eventIds: Types.ObjectId[], groups: Atten
 		const perEvent = await Promise.all(eventIds.map((id) => fetchEventInvitations(String(id))))
 		perEvent.forEach((invites, i) => {
 			const eventId = String(eventIds[i])
-			for (const inv of invites) add(inv.email, inv.name, eventId, "invited", false, { status: inv.status || "pending", via: inv.source })
+			for (const inv of invites) add(inv.email, inv.name, eventId, "invited", { status: inv.status || "pending", via: inv.source })
 		})
 	}
 
-	return Array.from(byKey.values())
-		.map(({ nameFromBooking: _n, ...a }) => a)
-		.sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email))
+	return Array.from(byKey.values()).sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email))
 }
 
 /** An event in the shape the page's pickers use. One mapping for the list and the detail route. */

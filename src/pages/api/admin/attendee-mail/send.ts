@@ -4,7 +4,7 @@ import { Types } from "mongoose"
 import { ensureDbConnected } from "@/configs/database"
 import { Events } from "@/models/events"
 import { AttendeeMailings, type IAttendeeMailingRecipient } from "@/models/admin/attendee-mailings"
-import { parseEventIds, parseGroups, requireAdminSession } from "@/lib/attendee-mail-server"
+import { cleanPersonName, parseEventIds, parseGroups, requireAdminSession } from "@/lib/attendee-mail-server"
 import { ATTENDEE_MAIL_MAX, isTypedEmail } from "@/lib/email-list"
 import { guestEmailKey } from "@/lib/guest-import"
 import { mailFrom, blastSenderName } from "@/lib/send-grid"
@@ -92,7 +92,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			seen.add(key)
 			people.push({
 				email: key,
-				name: String(r?.name ?? "").replace(/\s+/g, " ").trim().slice(0, 100),
+				// ". ." and the like greet nobody — the email falls back to the address's name part.
+				name: cleanPersonName(r?.name),
 				source: typeof r?.source === "string" ? r.source.slice(0, 20) : undefined,
 			})
 		}
@@ -174,8 +175,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// admin most needs to be able to look back at.
 		let recorded = false
 		try {
-			const validGroups = parseGroups(groups)
 			const validSources = parseEventIds(sourceEventIds)
+			// Groups only mean something when events were picked. A send to typed addresses alone used
+			// to record "Booked, Pending approval, Invited" — the checkboxes' default (QA, 2026-11-23).
+			const validGroups = validSources.length > 0 ? parseGroups(groups) : []
 			await AttendeeMailings.create({
 				subject: mailSubject,
 				message: mailMessage,
