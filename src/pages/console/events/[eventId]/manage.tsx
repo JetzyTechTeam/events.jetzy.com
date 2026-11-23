@@ -82,6 +82,8 @@ import { usePlacesWidget } from "react-google-autocomplete"
 import LocationValuePreview from "@/components/events/fields/LocationValuePreview"
 import BlastAttachmentPicker from "@/components/console/BlastAttachmentPicker"
 import BlastPreviewModal from "@/components/console/BlastPreviewModal"
+import EmailListInput, { emailListHasProblem } from "@/components/console/EmailListInput"
+import { BLAST_EXTRA_MAX, parseEmailList } from "@/lib/email-list"
 import type { BlastAttachment } from "@/lib/blast-attachments"
 import DatePicker from "@/components/form/DatePicker"
 import TimePicker from "@/components/form/TimePicker"
@@ -2475,12 +2477,16 @@ function SendBlastModal({ sendBlastModal, setSendBlastModal, event }: { sendBlas
 	const [uploading, setUploading] = useState(false)
 	const [previewOpen, setPreviewOpen] = useState(false)
 	const [greetByName, setGreetByName] = useState(true)
+	// The "To" field: extra addresses typed on top of the audience above, kept exactly as typed.
+	const [extraTo, setExtraTo] = useState("")
+	const extraProblem = emailListHasProblem(extraTo, BLAST_EXTRA_MAX)
 	const { data: session } = useSession()
 
 	const toast = useToast({ position: "top" })
 
 	useEffect(() => {
 		if (!sendBlastModal) {
+			setExtraTo("")
 			setSubject("")
 			setMessage("")
 			setStatus(["all"])
@@ -2514,6 +2520,7 @@ function SendBlastModal({ sendBlastModal, setSendBlastModal, event }: { sendBlas
 				eventLink: eventUrl(process.env.NEXT_PUBLIC_URL || "", event.slug),
 				attachments,
 				greetByName,
+				extraRecipients: parseEmailList(extraTo).emails,
 			})
 
 			if (res.status === 207) {
@@ -2609,6 +2616,9 @@ function SendBlastModal({ sendBlastModal, setSendBlastModal, event }: { sendBlas
 								))}
 							</ChakraStack>
 						</CheckboxGroup>
+						<Box mb={2}>
+							<EmailListInput value={extraTo} onChange={setExtraTo} max={BLAST_EXTRA_MAX} help="Extra people to send this to, on top of the audience above — separate addresses with commas." />
+						</Box>
 						<h3 className="font-bold">Subject</h3>
 						<Input
 							type="text"
@@ -2651,7 +2661,7 @@ function SendBlastModal({ sendBlastModal, setSendBlastModal, event }: { sendBlas
 								Preview
 							</Button>
 							{/* Uploads in flight would be sent as urls the server cannot fetch yet. */}
-							<Button size="lg" bg="#F79432" color="black" _hover={{ bg: "#f78c22" }} _active={{ bg: "#e67a10" }} isLoading={loading} isDisabled={uploading} onClick={onSendBlast}>
+							<Button size="lg" bg="#F79432" color="black" _hover={{ bg: "#f78c22" }} _active={{ bg: "#e67a10" }} isLoading={loading} isDisabled={uploading || extraProblem} onClick={onSendBlast}>
 								Send Blast
 							</Button>
 						</Flex>
@@ -2778,6 +2788,9 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 	const [uploading, setUploading] = useState(false)
 	const [previewOpen, setPreviewOpen] = useState(false)
 	const [greetByName, setGreetByName] = useState(true)
+	// The "To" field: extra addresses typed on top of the guest list, kept exactly as typed.
+	const [extraTo, setExtraTo] = useState("")
+	const extraProblem = emailListHasProblem(extraTo, BLAST_EXTRA_MAX)
 	const { data: session } = useSession()
 
 	const [editing, setEditing] = useState<any | null>(null)
@@ -2846,6 +2859,7 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 				eventLink: eventUrl(process.env.NEXT_PUBLIC_URL || "", event.slug),
 				attachments,
 				greetByName,
+				extraRecipients: parseEmailList(extraTo).emails,
 			})
 			toast({
 				title: res.status === 207 ? "Partially sent" : "Blast sent!",
@@ -2856,6 +2870,7 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 			setSubject("")
 			setMessage("")
 			setAttachments([])
+			setExtraTo("")
 			refresh()
 		} catch (error: any) {
 			toast({ title: "Failed to send blast.", description: error.response?.data?.error || "An unexpected error occurred.", status: "error", duration: 5000 })
@@ -2914,6 +2929,10 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 				// Carried forward from the stored blast. Without this a resend silently drops the
 				// pictures, and the host has no way to tell from the confirmation that it did.
 				attachments: rAttachments || blast.attachments || [],
+				// Typed addresses are part of who this blast went to; a resend without them would
+				// silently leave those people out.
+				extraRecipients: blast.extraRecipients || [],
+				greetByName: blast.greetByName !== false,
 			})
 			toast({ title: res.status === 207 ? "Partially sent" : "Blast re-sent!", description: res.data?.message, status: res.status === 207 ? "warning" : "success", duration: 4000 })
 			refresh()
@@ -2964,6 +2983,9 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 				<Box mb={3} sx={{ ".ql-container": { minHeight: "140px" } }}>
 					<RichTextEditor hideImageButton value={message} onChange={(val) => setMessage(val)} placeholder="Send a blast to your guests…" />
 				</Box>
+				<Box mb={3}>
+					<EmailListInput value={extraTo} onChange={setExtraTo} max={BLAST_EXTRA_MAX} help="Extra people to send this to, on top of your guests — separate addresses with commas." />
+				</Box>
 				{sendResult && (
 					<Text fontSize="sm" mb={3} color={sendResult.type === "success" ? "#48BB78" : sendResult.type === "warning" ? "#F79432" : "#FC8181"}>
 						{sendResult.text}
@@ -2992,7 +3014,7 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 							Preview
 						</Button>
 						{/* Uploads in flight would be sent as urls the server cannot fetch yet. */}
-						<Button bg="#F79432" color="black" _hover={{ bg: "#E68422" }} isLoading={sending} isDisabled={uploading} onClick={onSend}>
+						<Button bg="#F79432" color="black" _hover={{ bg: "#E68422" }} isLoading={sending} isDisabled={uploading || extraProblem} onClick={onSend}>
 							Send to all
 						</Button>
 					</Flex>
@@ -3047,6 +3069,11 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 										<Text color="#9C9C9C" fontSize="xs">
 											{b.succeededCount}/{b.recipientCount} delivered
 										</Text>
+										{b.extraRecipients?.length > 0 && (
+											<Text color="#9C9C9C" fontSize="xs" title={b.extraRecipients.join(", ")}>
+												+ {b.extraRecipients.length} typed address{b.extraRecipients.length === 1 ? "" : "es"}
+											</Text>
+										)}
 										{/* No count when there were none: the field has no default, so a blast
 										    predating attachments is indistinguishable from one sent without any,
 										    and "0 images" would assert something about both that we do not know. */}

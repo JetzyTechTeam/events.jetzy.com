@@ -121,6 +121,14 @@ const blastSchema = new Schema<IBlast>(
 			type: Boolean,
 			required: false,
 		},
+		// Addresses typed into the composer's "To" field, beside the chosen audience. NO DEFAULT
+		// (mongoose would otherwise write `[]`): absent = none, or a blast from before the field.
+		// Kept so a resend reaches the same people - `recipients` mixes them in with the guests.
+		extraRecipients: {
+			type: [String],
+			required: false,
+			default: undefined,
+		},
 		sentAt: {
 			type: Date,
 			default: Date.now,

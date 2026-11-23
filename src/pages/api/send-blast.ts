@@ -24,6 +24,7 @@ import {
   normalizeTestAddress,
 } from "@/lib/blast-test-send";
 import { isRateLimited } from "@/lib/rate-limit";
+import { BLAST_EXTRA_MAX, BLAST_EXTRA_SENDS_PER_HOUR, parseEmailList } from "@/lib/email-list";
 
 sendgrid.setApiKey((process.env.SENDGRID_API_KEY as string)?.trim());
 
@@ -43,7 +44,7 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
   const userId = (session.user as any)?._id?.toString();
   const isAdmin = userRole === "admin" || userRole === "super admin";
 
-  const { status, subject, message, eventLink, event, targetType, emailType, attachments, testTo, greetByName } = req.body;
+  const { status, subject, message, eventLink, event, targetType, emailType, attachments, testTo, greetByName, extraRecipients } = req.body;
 
   // Trimmed at the ENDS only. A pasted subject routinely carries a trailing newline, which lands
   // both in the <h1> and in the SendGrid `subject` header; a message often carries leading blank
@@ -68,6 +69,18 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
   if (attachmentRefusal) {
     return res.status(400).json({ error: attachmentRefusal });
   }
+
+  // The composer's "To" field: addresses typed on top of the chosen audience. Re-parsed with the
+  // same function the field uses, so the count the host saw is the count that gets sent. A bad
+  // token is refused by name rather than dropped - the host believes they mailed that person.
+  const extra = parseEmailList(extraRecipients ?? []);
+  if (extra.invalid.length > 0) {
+    return res.status(400).json({ error: `Not a valid email address: ${extra.invalid.slice(0, 5).join(", ")}` });
+  }
+  if (extra.emails.length > BLAST_EXTRA_MAX) {
+    return res.status(400).json({ error: `At most ${BLAST_EXTRA_MAX} extra addresses per blast.` });
+  }
+  const extraEmails = extra.emails;
 
   // A test send is ONE email, to an address the host types, and writes no `Blasts` record.
   //
@@ -113,6 +126,18 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
   // "not yet approved" page.
   if (isPendingAdminApproval(eventDoc as any)) {
     return res.status(403).json({ error: PENDING_APPROVAL_MESSAGE });
+  }
+
+  // Hosts can type addresses too, which makes this route able to mail people who never touched
+  // the event, from Jetzy's one shared sending domain. The per-blast cap bounds one send; this
+  // bounds how often. Checked after the owner check so a stranger cannot burn a host's allowance,
+  // and never on a test send (that has its own limit above).
+  if (!isTestSend && !isAdmin && extraEmails.length > 0) {
+    if (isRateLimited(`blast-extra:${userId}`, BLAST_EXTRA_SENDS_PER_HOUR, 60 * 60 * 1000)) {
+      return res.status(429).json({
+        error: `That's ${BLAST_EXTRA_SENDS_PER_HOUR} blasts with extra addresses in an hour. Try again a little later.`,
+      });
+    }
   }
 
   // ---- Who is this blast FROM? ----
@@ -161,10 +186,14 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
       findPeople = await EventInvitation.find(inviteFilter)
     }
 
+    // Typed addresses join the audience BEFORE the de-dupe below, so a guest whose address was
+    // also typed still gets one email - and keeps their booking record (it comes first).
+    findPeople = [...((findPeople || []) as any[]), ...extraEmails.map((email) => ({ email }))];
+
     // A test send has one recipient of its own and does not care who is on the guest list -
     // the whole point is to rehearse the email BEFORE anyone has booked, which is exactly when
-    // this query legitimately returns nothing.
-    if (!isTestSend && (!findPeople || findPeople.length === 0)) {
+    // this query legitimately returns nothing. A blast to typed addresses only is fine too.
+    if (!isTestSend && findPeople.length === 0) {
       return res.status(404).json({ error: "No people found" });
     }
 
@@ -321,6 +350,8 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
           // is the honest reading of both.
           ...(attachmentList.length > 0 ? { attachments: attachmentList } : {}),
           greetByName: greetByName !== false,
+          // Written only when there were some (no default on the field).
+          ...(extraEmails.length > 0 ? { extraRecipients: extraEmails } : {}),
           sentAt: new Date(),
         })
       } catch (persistErr) {

@@ -76,7 +76,7 @@ Fields: bookingRef (unique), eventId, bookerUserId?, tickets[], status (pending/
 Fields: eventId, code (unique, uppercase), discountPercentage (0-100), commissionPercentage (0-100), isActive, usageCount, maxUses, createdBy, isDeleted
 
 ### `src/models/events/blast.ts` — IBlast
-Blast email history (Luma-style Blasts tab). Fields: eventId, subject, message, targetType (all/bookings/invitations), status, emailType (custom/availability), recipientCount, succeededCount, failedCount, sentBy, sentFromName, sentReplyTo, recipients[], attachments[], sentAt, isDeleted. Created automatically by `/api/send-blast` after a successful send.
+Blast email history (Luma-style Blasts tab). Fields: eventId, subject, message, targetType (all/bookings/invitations), status, emailType (custom/availability), recipientCount, succeededCount, failedCount, sentBy, sentFromName, sentReplyTo, recipients[], attachments[], extraRecipients[] (typed "To" addresses, no default), sentAt, isDeleted. Created automatically by `/api/send-blast` after a successful send.
 
 ### `src/models/events/albums.ts` — IEventAlbum
 Fields: eventId, title, description, media[] (`{url, type:'image'|'video'}`), createdBy, isDeleted. Collection `event-albums`. Multiple named albums per event.
@@ -240,7 +240,11 @@ if (!isAdmin && event.ownerId?.toString() !== userId) {
 ### Messaging
 | Method | Route | Access |
 |--------|-------|--------|
-| POST | `/api/send-blast` | admin OR owner | (persists a Blast history record on success) |
+| POST | `/api/send-blast` | admin OR owner | (persists a Blast history record on success); `extraRecipients` = typed "To" addresses (max 50; hosts rate-limited) |
+| GET | `/api/admin/attendee-mail/events` | admin only — event picker for Email Attendees |
+| GET | `/api/admin/attendee-mail/recipients` | admin only — people behind picked events, by group (booked / pending / invited) |
+| POST | `/api/admin/attendee-mail/send` | admin only — email a list about a new event (or `testTo`); records `admin-attendee-mailings` |
+| GET | `/api/admin/attendee-mail` | admin only — last 20 attendee mailings |
 | GET | `/api/events/[eventId]/blasts` | admin OR owner |
 | PATCH/DELETE | `/api/events/[eventId]/blasts/[blastId]` | admin OR owner | (PATCH edits stored record; DELETE soft-deletes) |
 | POST | `/api/send-invites` | admin OR owner — `invitees[{email,name?}]` (or legacy `emails[]`), cap 500 |
@@ -3321,6 +3325,21 @@ CEO ask: change the number of tickets a request is for, and the name on it, with
 - **The blast record is now written even when every send failed.** It was `if (succeeded > 0)`, which threw the record away exactly when the host most needed it.
 - **`recipients` is excluded from the blast LIST query** (`.select("-recipients")`) and served by a new `GET /api/events/[eventId]/blasts/[blastId]`. A 2,000-guest blast is a 2,000-entry array and the history renders five rows of counts.
 - **Copy must not claim suppression that doesn't exist.** The spam-report line states the consequence, not that we removed the address — there is no opt-out list yet (see below).
+
+## Blast "To" field — extra typed addresses (IMPLEMENTED 2026-11-23)
+- **Both blast composers (quick box + Advanced) have a "To" field**: addresses separated by commas that receive the REAL blast on top of the chosen audience. CEO ask. **Admins AND hosts**, by decision.
+- **Use `src/lib/email-list.ts`** (`parseEmailList`, `isTypedEmail`, `BLAST_EXTRA_MAX` 50, `BLAST_EXTRA_SENDS_PER_HOUR` 10, `ATTENDEE_MAIL_MAX` 2000) — pure, shared by `EmailListInput` (`src/components/console/EmailListInput.tsx`, `emailListHasProblem`) and the routes. Splits on `, ; newline space`, judges every token alone (so a pasted line break plus `Bcc:` is just an invalid token), lowercases, de-dupes. An invalid token is REPORTED, never dropped — Send is disabled and the route 400s naming it.
+- `send-blast.ts` merges typed addresses into `findPeople` BEFORE its de-dupe (a guest also typed gets one email, with their booking record). The "No people found" 404 no longer fires when typed addresses exist — a blast can go to typed people only.
+- **Host guard:** `isRateLimited("blast-extra:<userId>", 10, 1h)` on blasts carrying typed addresses, after the owner check, never on a test send. Admins exempt. Hosts can now mail people who never touched the event from Jetzy's ONE sending domain — the cap + limit are what bound that.
+- **`Blasts.extraRecipients: [String]`**, NO DEFAULT (`default: undefined`), written only when non-empty. `doResend` carries it forward (and now `greetByName` too — a resend used to re-greet a blast sent without the greeting). History row shows "+ N typed addresses".
+
+## Admin "Email Attendees" page (IMPLEMENTED 2026-11-23)
+- **`/console/admin/email-attendees`** (`adminOnly`, "Email Attendees" in the admin Manage menu). CEO ask: tell people from past events about a NEW event. Pick source events (several, merged) → groups **Booked / Pending approval / Invited** (all ticked by default) → everyone found is ticked → add more by typing (`EmailListInput`) or Excel/CSV (`GuestImportPanel`, `eventId` now optional = no "already invited" check) → pick the NEW event (prefills subject + body from its name/date/location/summary, all editable; re-picking re-prefills only while the text is still the last prefill, compared as plain text since Quill normalises HTML) → Preview & test → confirm dialog naming the count → send.
+- **Server: `src/lib/attendee-mail-server.ts`** (`requireAdminSession`, `collectAttendees`, `parseGroups`, `parseEventIds`). Booked = live booking by EXCLUSION (not pending/cancelled/rejected/failed/refunded, so `checked_in` counts); pending = `pending`; invited = any `EventInvitation`. `isDeleted: { $ne: true }`. Merged by `guestEmailKey`; a booking's name beats an invitation's. Verified on staging: 80 + 6 + 3 across two events → 85 unique.
+- **APIs `src/pages/api/admin/attendee-mail/`**, all admin-only + method-guarded: `events.ts` (picker, 50 newest, past included), `recipients.ts`, `send.ts`, `index.ts` (last 20 sends with outcomes). `send.ts` re-validates the page's list (every address, de-dupe, cap 2000, `blastAttachmentRefusal`), sends `buildBlastHtml` (same layout as a blast, button → the promoted event) as "Jetzy" in **chunks of 50 with `allSettled`**, `testTo` = one copy via `normalizeTestAddress` + the shared `blast-test:` limit, no record.
+- **Recorded in `admin-attendee-mailings` (`src/models/admin/attendee-mailings.ts`), NEVER `Blasts`** — a blast belongs to one event and shows on its Blasts tab as the host's; these are Jetzy's and span events. No index script (tiny collection, read latest 20).
+- `BlastPreviewModal` gained optional `onSendTest(testTo)` — absent = `/api/send-blast` exactly as before.
+- **Not done:** no unsubscribe link (same open gap as blasts — these are marketing emails, so this one matters more); bounces are not attributed back to a mailing by the SendGrid webhook.
 
 ## Blast gaps still open (NOT addressed 2026-09-23)
 Deliberately out of scope; all pre-existing, none introduced by the identity work.

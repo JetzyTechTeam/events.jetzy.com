@@ -66,6 +66,7 @@ export default function BlastPreviewModal({
 	hostEmail,
 	senderLabel,
 	greetByName = true,
+	onSendTest,
 }: {
 	isOpen: boolean
 	onClose: () => void
@@ -86,6 +87,12 @@ export default function BlastPreviewModal({
 	senderLabel?: string
 	/** Mirrors the composer toggle so the preview opens the same way the email will. */
 	greetByName?: boolean
+	/**
+	 * Sends the test somewhere other than `/api/send-blast` (the admin Email Attendees page has its
+	 * own route). Receives the checked address; resolves with the server's reply data. Absent = the
+	 * event blast route, exactly as before.
+	 */
+	onSendTest?: (testTo: string) => Promise<{ sentTo?: string; skippedAttachments?: unknown[] } | undefined>
 }) {
 	const toast = useToast({ position: "top" })
 	const [testing, setTesting] = useState(false)
@@ -140,28 +147,33 @@ export default function BlastPreviewModal({
 	const addressCheck = normalizeTestAddress(testTo)
 
 	const sendTest = async () => {
-		if (addressCheck.error) {
-			setTestResult({ type: "error", text: addressCheck.error })
+		// Narrowed on `email` (the arm that carries the address) so it is a string below.
+		if (!addressCheck.email) {
+			setTestResult({ type: "error", text: addressCheck.error || "Enter an address to send the test to." })
 			return
 		}
 		setTesting(true)
 		setTestResult(null)
 		try {
-			const res = await axios.post("/api/send-blast", {
-				event,
-				subject,
-				message,
-				status,
-				targetType,
-				emailType,
-				eventLink,
-				attachments,
-				greetByName,
-				testTo: addressCheck.email,
-			})
-			const skipped = res.data?.skippedAttachments?.length || 0
+			const data = onSendTest
+				? await onSendTest(addressCheck.email)
+				: (
+						await axios.post("/api/send-blast", {
+							event,
+							subject,
+							message,
+							status,
+							targetType,
+							emailType,
+							eventLink,
+							attachments,
+							greetByName,
+							testTo: addressCheck.email,
+						})
+					).data
+			const skipped = data?.skippedAttachments?.length || 0
 			// Names the address actually used, which may not be the one they logged in with.
-			const sentTo = res.data?.sentTo || addressCheck.email
+			const sentTo = data?.sentTo || addressCheck.email
 			setTestResult({
 				type: "success",
 				text: skipped

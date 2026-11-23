@@ -27,7 +27,11 @@ export default function GuestImportPanel({
 	eventId,
 	onAdd,
 }: {
-	eventId: string
+	/**
+	 * The event being invited to — used to flag (and untick) people already invited. Optional: the
+	 * admin Email Attendees page imports a list that belongs to no single event, and skips the check.
+	 */
+	eventId?: string
 	onAdd: (guests: ImportedGuest[]) => void
 }) {
 	const inputRef = useRef<HTMLInputElement>(null)
@@ -57,6 +61,7 @@ export default function GuestImportPanel({
 
 	/** Addresses already invited to this event. A failed lookup flags nobody rather than blocking the import. */
 	const loadInvited = async (): Promise<Set<string>> => {
+		if (!eventId) return new Set()
 		try {
 			const res = await axios.get("/api/guests-list", { params: { eventId } })
 			const list: any[] = Array.isArray(res.data) ? res.data : []

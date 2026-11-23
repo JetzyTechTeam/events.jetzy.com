@@ -83,6 +83,7 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 		{ name: "Bookings", href: ROUTES.dashboard.bookings.index },
 		{ name: "Analytics", href: "/console/analytics" },
 		{ name: "Premium Applications", href: "/console/admin/premium-applications" },
+		{ name: "Email Attendees", href: "/console/admin/email-attendees" },
 		{ name: "Jetzy User Signup", href: "/jetzyqrsignup" },
 		{ name: "Create Event", href: ROUTES.dashboard.events.create },
 		{ name: "Support", href: ROUTES.support },
@@ -105,7 +106,7 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 	// Admin-only tools live under one "Manage" menu on desktop. Nine inline links didn't fit the
 	// row: the long labels wrapped onto two lines and the bar lost its alignment. Same links, same
 	// targets — the mobile panel still lists everything flat.
-	const ADMIN_MENU_NAMES = ["Premium Applications", "Support Requests", "Jetzy User Signup"]
+	const ADMIN_MENU_NAMES = ["Premium Applications", "Email Attendees", "Support Requests", "Jetzy User Signup"]
 	const inlineNavigation = filteredNavigation.filter((item) => !ADMIN_MENU_NAMES.includes(item.name))
 	const adminMenuItems = ADMIN_MENU_NAMES.map((name) => filteredNavigation.find((item) => item.name === name)).filter(
 		(item): item is { name: string; href: string } => !!item,
