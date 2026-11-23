@@ -83,6 +83,7 @@ import LocationValuePreview from "@/components/events/fields/LocationValuePrevie
 import BlastAttachmentPicker from "@/components/console/BlastAttachmentPicker"
 import BlastPreviewModal from "@/components/console/BlastPreviewModal"
 import EmailListInput, { emailListHasProblem } from "@/components/console/EmailListInput"
+import EmailBodyNotice from "@/components/console/EmailBodyNotice"
 import { BLAST_EXTRA_MAX, parseEmailList } from "@/lib/email-list"
 import type { BlastAttachment } from "@/lib/blast-attachments"
 import DatePicker from "@/components/form/DatePicker"
@@ -2639,6 +2640,7 @@ function SendBlastModal({ sendBlastModal, setSendBlastModal, event }: { sendBlas
 						<Box mb={3} sx={{ ".ql-container": { minHeight: "140px" } }}>
 							<RichTextEditor hideImageButton value={message} onChange={(val) => setMessage(val)} placeholder="Write your message…" />
 						</Box>
+						<EmailBodyNotice html={message} />
 						{error && <Text color="red.500">{error}</Text>}
 
 						{/* Off when the host's own message already opens with a greeting - otherwise the guest
@@ -2983,6 +2985,7 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 				<Box mb={3} sx={{ ".ql-container": { minHeight: "140px" } }}>
 					<RichTextEditor hideImageButton value={message} onChange={(val) => setMessage(val)} placeholder="Send a blast to your guests…" />
 				</Box>
+				<EmailBodyNotice html={message} />
 				<Box mb={3}>
 					<EmailListInput value={extraTo} onChange={setExtraTo} max={BLAST_EXTRA_MAX} help="Extra people to send this to, on top of your guests — separate addresses with commas." />
 				</Box>
@@ -3182,6 +3185,7 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 						<Box mb={3} sx={{ ".ql-container": { minHeight: "140px" } }}>
 							<RichTextEditor hideImageButton value={editMessage} onChange={(val) => setEditMessage(val)} placeholder="Write your message…" />
 						</Box>
+						<EmailBodyNotice html={editMessage} />
 						<Text fontWeight="bold" mb={2}>
 							Images
 						</Text>

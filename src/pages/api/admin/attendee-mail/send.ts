@@ -29,8 +29,9 @@ const CHUNK_SIZE = 50
 /**
  * POST /api/admin/attendee-mail/send — admin only.
  *
- * Emails a list of people about a NEW event: the same layout as an event blast (greeting, the
- * admin's message, a "View Event Details" button to the promoted event), sent as "Jetzy".
+ * Emails a list of people: the same layout as an event blast (greeting, the admin's message), sent
+ * as "Jetzy". Linking an event is OPTIONAL — with `promotedEventId` the email carries a "View Event
+ * Details" button to it; without, it is a plain custom email.
  *
  * The recipient list comes from the page — attendees of the picked events plus typed and imported
  * addresses, after the admin unticked whoever they chose. It is the admin's list, so it is not
@@ -45,7 +46,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	if (!session) return
 
 	const userId = (session.user as any)?._id?.toString()
-	const { promotedEventId, subject, message, greetByName, attachments, recipients, sourceEventIds, groups, testTo } = req.body || {}
+	const { promotedEventId, subject, message, greetByName, attachments, recipients, sourceEventIds, groups, testTo, draftId } = req.body || {}
 
 	// Trimmed at the ENDS only, as for blasts: inner blank lines are the admin's paragraphs.
 	const mailSubject = typeof subject === "string" ? subject.trim() : ""
@@ -54,14 +55,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	// The rich-text editor's empty state is `<p><br></p>`, which is truthy.
 	if (!stripHtml(mailMessage).trim()) return res.status(400).json({ error: "Write a message." })
 
-	if (typeof promotedEventId !== "string" || !Types.ObjectId.isValid(promotedEventId)) {
-		return res.status(400).json({ error: "Pick the event this email is about." })
-	}
-	const promoted = await Events.findOne({ _id: new Types.ObjectId(promotedEventId), isDeleted: false }).select("name slug").lean()
-	if (!promoted) return res.status(404).json({ error: "That event no longer exists." })
-	const promotedName = stripHtml((promoted as any).name || "") || "Jetzy event"
+	// Optional: absent / empty = no event linked, no button. Present = it must exist.
 	const baseUrl = process.env.NEXT_PUBLIC_URL || ""
-	const promotedLink = (promoted as any).slug ? eventUrl(baseUrl, (promoted as any).slug) : `${baseUrl}/${promotedEventId}`
+	const hasPromoted = typeof promotedEventId === "string" && promotedEventId.trim().length > 0
+	let promotedName = ""
+	let promotedLink = ""
+	if (hasPromoted) {
+		if (!Types.ObjectId.isValid(promotedEventId)) return res.status(400).json({ error: "That event link isn't valid." })
+		const promoted = await Events.findOne({ _id: new Types.ObjectId(promotedEventId), isDeleted: false }).select("name slug").lean()
+		if (!promoted) return res.status(404).json({ error: "The linked event no longer exists. Remove it or pick another." })
+		promotedName = stripHtml((promoted as any).name || "") || "Jetzy event"
+		promotedLink = (promoted as any).slug ? eventUrl(baseUrl, (promoted as any).slug) : `${baseUrl}/${promotedEventId}`
+	}
 
 	const attachmentList: BlastAttachment[] = Array.isArray(attachments) ? attachments : []
 	const attachmentRefusal = blastAttachmentRefusal(attachmentList)
@@ -167,14 +172,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		// Recorded even when nothing went out — a send where every address failed is the one the
 		// admin most needs to be able to look back at.
+		let recorded = false
 		try {
 			const validGroups = parseGroups(groups)
 			const validSources = parseEventIds(sourceEventIds)
 			await AttendeeMailings.create({
 				subject: mailSubject,
 				message: mailMessage,
-				promotedEventId: new Types.ObjectId(promotedEventId),
-				promotedEventName: promotedName,
+				...(hasPromoted ? { promotedEventId: new Types.ObjectId(promotedEventId), promotedEventName: promotedName } : {}),
 				...(validSources.length > 0 ? { sourceEventIds: validSources } : {}),
 				...(validGroups.length > 0 ? { groups: validGroups } : {}),
 				recipients: rows,
@@ -187,8 +192,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				sentByEmail: (session.user as any)?.email,
 				sentAt: new Date(),
 			})
+			recorded = true
 		} catch (persistErr) {
 			console.error("Failed to record attendee mailing:", persistErr)
+		}
+
+		// Sent from a draft → the draft goes, or it would sit in Drafts looking unsent. Only once the
+		// sent record exists and something actually went out; a failed send keeps the draft to retry.
+		if (recorded && succeeded > 0 && typeof draftId === "string" && Types.ObjectId.isValid(draftId)) {
+			await AttendeeMailings.deleteOne({ _id: new Types.ObjectId(draftId), status: "draft" }).catch((e) =>
+				console.error("Failed to remove the sent draft:", e),
+			)
 		}
 
 		if (succeeded === 0) {

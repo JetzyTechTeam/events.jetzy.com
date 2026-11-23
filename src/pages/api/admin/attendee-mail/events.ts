@@ -1,8 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from "next"
 import { ensureDbConnected } from "@/configs/database"
 import { Events } from "@/models/events"
-import { requireAdminSession } from "@/lib/attendee-mail-server"
-import { escapeRegExp, stripHtml } from "@/utils/text"
+import { EVENT_OPTION_FIELDS, requireAdminSession, toEventOption } from "@/lib/attendee-mail-server"
+import { escapeRegExp } from "@/utils/text"
 
 /**
  * GET /api/admin/attendee-mail/events?search= — admin only.
@@ -18,29 +18,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	if (!session) return
 
 	const search = typeof req.query.search === "string" ? req.query.search.trim().slice(0, 100) : ""
-	const query: any = { isDeleted: false }
+	// No DRAFT events in either picker — a draft isn't live, so it has no attendees worth mailing
+	// and nothing to link to. `$ne`, not `"published"`: events from before the field have no status.
+	const query: any = { isDeleted: false, status: { $ne: "draft" } }
 	if (search) query.name = { $regex: escapeRegExp(search), $options: "i" }
 
-	const events = await Events.find(query)
-		.select("name slug startsOn endsOn timezone location venueName description privacy status datePoll.isActive")
-		.sort({ startsOn: -1, createdAt: -1 })
-		.limit(50)
-		.lean()
-
-	const items = (events as any[]).map((e) => ({
-		_id: String(e._id),
-		name: stripHtml(e.name || "") || "Untitled event",
-		slug: e.slug || "",
-		startsOn: e.startsOn || null,
-		endsOn: e.endsOn || null,
-		timezone: e.timezone || "",
-		location: e.location || e.venueName || "",
-		// A short plain-text excerpt for the prefilled email body; the admin edits from there.
-		summary: stripHtml(e.description || "").replace(/\s+/g, " ").slice(0, 400),
-		privacy: e.privacy || "public",
-		status: e.status || "",
-		datePoll: !!e.datePoll?.isActive,
-	}))
+	const events = await Events.find(query).select(EVENT_OPTION_FIELDS).sort({ startsOn: -1, createdAt: -1 }).limit(50).lean()
+	const items = (events as any[]).map(toEventOption)
 
 	return res.status(200).json({ data: items })
 }
