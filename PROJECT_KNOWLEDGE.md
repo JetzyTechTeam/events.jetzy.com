@@ -97,7 +97,7 @@ Fields: eventId, albumId, anonId, sessionId, views, landedAt, gateShownAt, codeS
 Fields: eventId, albumId, mediaUrl, mediaType, userId?, requesterEmail, requesterName, verified, status (`pending`/`handled`), handledAt, handledBy. Collection `event-album-photo-requests`. One row per person per photo asking for the unwatermarked original. Index `{eventId, createdAt:-1}` built by `scripts/create-album-photo-request-index.ts` (`autoIndex: false`), **non-unique on purpose** — asking again after being ignored is legitimate, and a failed unique build would throw 11000 at a visitor.
 
 ### `src/models/events/album-tags.ts` — IAlbumTag
-Fields: eventId, albumId, mediaUrl, personEmail, personName, taggedByEmail, taggedByName, notifiedAt. Collection `event-album-tags`. Index `{albumId,mediaUrl,personEmail}` is a **plain lookup index, not unique** — tagging is unrestricted, so the same person can be tagged repeatedly on one photo and is emailed each time. (Was unique in an earlier build; `scripts/migrate-album-tags-index.ts` drops it.)
+Fields: eventId, albumId, mediaUrl, personEmail, personName, taggedByEmail, taggedByName, notifiedAt. Collection `event-album-tags`. **Never return a row raw** — GET goes through `tagForViewer` (`src/lib/album-tag-visibility.ts`): non-hosts get `personEmail` masked, no `taggedByEmail`, and `isMe`/`addedByMe`/`canRemove` (the × renders only on `canRemove`). Index `{albumId,mediaUrl,personEmail}` is a **plain lookup index, not unique** — tagging is unrestricted, so the same person can be tagged repeatedly on one photo and is emailed each time. (Was unique in an earlier build; `scripts/migrate-album-tags-index.ts` drops it.)
 
 ### `src/models/events/discussion-posts.ts` — IDiscussionPost
 Fields: eventId, userId, title, content, images[], attachments[], isPinned, isLocked, tags[], reactions (like/helpful arrays), viewCount, viewedBy[], commentCount, lastActivityAt, isReported
@@ -205,7 +205,7 @@ if (!isAdmin && event.ownerId?.toString() !== userId) {
 | POST | `/api/events/[eventId]/albums/guest-access` | public — `{name,email,code}`, matches or auto-creates account, sets `album_guest` cookie |
 | GET | `/api/events/[eventId]/albums/participants` | admin OR owner — attendee suggestions for tagging (empty for others by design) |
 | POST | `/api/events/[eventId]/albums/[albumId]/access` | any viewer — records access + notify email (once per person/album) |
-| GET/POST | `/api/events/[eventId]/albums/[albumId]/tags` | any viewer — list / create tag (emails the tagged person) |
+| GET/POST | `/api/events/[eventId]/albums/[albumId]/tags` | GET any viewer (emails MASKED unless admin/owner or your own — `album-tag-visibility.ts`); POST signed-in only, guest cookie refused (emails the tagged person) |
 | DELETE | `/api/events/[eventId]/albums/[albumId]/tags/[tagId]` | tagger, tagged person, or admin/owner |
 | POST | `/api/events/[eventId]/albums/[albumId]/publish` | admin OR owner — emails all attendees; `{resend:true}` required to re-send |
 | GET | `/api/events/[eventId]/albums/access-log` | admin OR owner — per-viewer access log (name/email/action/date) for the Albums analytics tab + CSV export |
@@ -217,6 +217,7 @@ if (!isAdmin && event.ownerId?.toString() !== userId) {
 | POST | `/api/check-in/record` | admin OR owner |
 | GET | `/api/check-in/guests` | admin OR owner |
 | GET | `/api/check-in/stats` | admin OR owner |
+| GET | `/api/check-in/list` | admin OR owner |
 | GET | `/api/check-in/booking-status` | — |
 
 ### Analytics
@@ -248,10 +249,12 @@ if (!isAdmin && event.ownerId?.toString() !== userId) {
 | POST | `/api/send-update-event-email` | — |
 
 ### Checkout
-`/api/checkout/index`, `/api/checkout/confirm`, `/api/checkout/free-events`
+`/api/checkout/index`, `/api/checkout/confirm`, `/api/checkout/free-events`, `/api/checkout/send-code`, `/api/checkout/verify-code`
 
 | Method | Route | Access |
 |---|---|---|
+| POST | `/api/checkout/send-code` | public, rate-limited — emails the buyer a 6-digit code (see "Email-verified ticket checkout") |
+| POST | `/api/checkout/verify-code` | public, rate-limited — spends the code, returns a magic token to sign in with |
 | POST | `/api/premium/check-email` | public — preview only, see "Jetzy Premium member discount" |
 
 ### Waiting List
@@ -1030,6 +1033,17 @@ Buyer-facing disclosure needed no change: `buildTicketPricing` already produces 
 recurring line and `dueToday: 20`, and the ticket card already renders "$0.00" above
 "+ Jetzy Premium $20/month — confirmed at checkout".
 
+### Email-verified ticket checkout (2026-11-18)
+
+CEO: booking a ticket verifies the buyer's email with a code, which **creates their Jetzy account and signs them in**; the step takes name, email and phone, and the Terms page §1.1 says "By signing up for this ticket, you create an account at Jetzy." (in the Terms, not on the checkout form — decided 2026-11-18)
+
+- **Server rule (`src/lib/checkout-identity.ts`, `sessionMayBookAs`)**: `api/checkout` and `api/checkout/free-events` accept a booking only from a session signed in AS the checkout email (case-insensitive); **admins / super admins are exempt** so they can book for a guest. Otherwise 401 `{ data: { needsVerification: true } }`, checked **before** `createOrUpdateUser` writes anything. Before this, `free-events` would register any address for anyone who called it.
+- **Code endpoints** `api/checkout/send-code` / `verify-code` mirror `api/premium/*-code`: the backend login code (`purpose: "ticket"`, `source: "web_ticket"` — the backend stores `signupSource` as a free string and maps an unknown purpose to its neutral "login" email, checked in `jetzy-nodejs-backend`), our own code store (`purpose: "ticket"`, `eventId: null`) only on a backend outage. A correct backend code creates the account through `AuthLib.createUser()` with the typed name and returns a real accessToken inside the magic token.
+- **Modal (`EventCheckoutModel.tsx`)**: `checkoutStep` is `details → verify → questions`. Verification runs after the details checks; skipped when `sessionMayBookAs` already holds. `confirmEmailCode` → `signIn("credentials", { magicToken, redirect: false })` → questions or `placeOrder()` (the old free/Stripe tail, shared). **A signed-in buyer who types another email is switched to the verified account** (decided 2026-11-18). On a switch only `sessionStorage.api_token` is removed — never `destroySession`, which clears ALL sessionStorage and would drop the app-return marker and stored referral code mid-checkout; `SessionSync` writes the new token. A `needsVerification` reply from either endpoint (stale session) drops the buyer into the code step instead of an error; `CreateCheckoutSessionThunk` RESOLVES that one verdict, since a rejection is serialized down to its message and toasted.
+- **Profile gate held** during checkout (`useHoldProfileGate(showCheckout || leavingForPayment)`) and on `/success`. `leavingForPayment` covers the Stripe redirect: `submitStripeOrder` closes the pop-up a moment before `window.location.href` moves, and releasing the hold there flashed the profile form for a second (QA, 2026-11-18). A `pageshow` with `persisted` (Back from Stripe, bfcache) clears it. The checkout's dark text inputs carry `[color-scheme:dark]` so the browser's own autofill icon (Safari contact card, Chrome key) renders light instead of vanishing, so a brand-new account's empty profile doesn't cover the order or the check-in QR; it shows on the next page.
+- **Phone onto the account**: `createOrUpdateUser` sets `phone` on an existing `users` doc only when it has none — never overwrites one.
+- **Known, not changed**: `createOrUpdateUser` still upserts the whole `usersettings` default block on every checkout (pre-existing), so a returning account's settings are reset to those defaults each time it books.
+
 ### `free-events.ts` is a real checkout path, not a shortcut
 
 Two things changed together here:
@@ -1550,6 +1564,23 @@ QR code + manual check-in
 `CheckInPortal.tsx` (28KB) — main component
 Tracks: totalTickets, checkedInCount, checkInHistory[], guests
 Admin OR owner access on all check-in APIs
+
+### Fast QR check-in — live scanner, one scan = one guest (2026-11-18)
+- **📷 Scan opens `src/components/checkin/LiveTicketScanner.tsx`**: a full-screen camera that stays on and checks in every ticket QR it reads. The old Capture & Scan → booking card → Check In flow is gone from the scan path (the manual email/ref search + Validate + Check In is unchanged).
+- **`POST /api/check-in/scan` `{ eventId, bookingRef }`** — admin or owner. One round trip, **+1 guest, atomic**: `$setOnInsert` upsert of the `CheckIn` row (relies on the unique `bookingId` index — present on staging `test-v2`; an 11000 from a racing first scan is ignored), then a conditional `$inc` that only matches while `checkedInCount < total`. Five parallel scans of a 3-guest QR can only ever seat 3. Outcomes: `checked_in` / `already_full` (status true), `pending` / `cancelled` / `not_found` / `not_ticket` (status false, `data.outcome`).
+- **Re-scan rule (user decision)**: the camera sees a held QR many times a second, so the code just acted on is BLOCKED until it has been out of view for `REARM_MS` (1000ms). Holding it up never adds a guest; moving it away and back seats the next one. A different QR is acted on immediately. One request in flight at a time.
+- Decoding: native `BarcodeDetector` (Chrome/Android) when available, else `jsQR` on a frame downscaled to 640px, every ~120ms. Big coloured result banner over the video (green / amber / red), vibration + beep, last 5 scans listed, screen wake lock while open.
+- After each check-in the portal invalidates react-query `["checkInStats", eventId]` and refetches the guest list.
+- **Only a QR deliberately shown counts** (fix after a 2026-11-18 staging incident: the host scanned one ticket and a second booking whose QR was merely in view on the same screen was checked in 2.4s later — every test booking goes to one inbox). A code must be read in `STEADY_HITS` (3) consecutive decodes (~0.4s); EVERY code acted on is remembered in `seenRef` until out of view for `REARM_MS` (it used to remember only the last one, so two QRs in view could take turns re-triggering); a frame with 2+ distinct codes (BarcodeDetector) checks in nothing and shows "Two QR codes in view"; new codes are ignored for `RESULT_PAUSE_MS` (1.2s) after each result.
+- **No undo** — by decision (2026-11-18).
+- `record.ts` (manual path) is still read-modify-write; a manual check-in racing a scan on the same booking at the same instant could clobber the count. Accepted — not the door's normal path.
+
+### Check-in tiles open the list behind them (2026-11-20)
+- **Each stat tile on `/console/events/[eventId]/check-in` is a button** (`CheckInStats.tsx`) that opens `src/components/checkin/CheckInListModal.tsx` on its own tab: Checked In → **Checked in**, Remaining → **Not checked in**, Total Bookings / Total Tickets → **All bookings**. Tabs carry GUEST counts (bookings for All), search by name / email / booking ref, one card per booking with a "2 of 3 in" badge, ticket names, last check-in time + who did it, and the ref. Full-screen on phones.
+- **`GET /api/check-in/list?eventId=`** — admin OR owner. One row per booking from `Bookings` + `CheckIn` (ticket names off the event's embedded `tickets`). No payment fields.
+- **Stats and list share ONE population: `liveCheckInBookingsFilter` in `src/lib/check-in-bookings.ts`** — `isDeleted: { $ne: true }` + status NOT pending / cancelled / rejected / failed / refunded, i.e. exactly what the door (`scan.ts` / `record.ts` / `validate.ts`) accepts. `stats.ts` used to count `status: confirmed` only, which left out `checked_in` bookings (mobile app) that the door lets in, and summed `checkedInCount` over EVERY `CheckIn` doc for the event, including bookings later cancelled. On staging one event read 8 bookings / 13 checked in, where the true figures are 12 / 8. `remainingGuests` is now summed per booking (never below 0), the same sum as the "Not checked in" tab.
+- **The old bottom card is renamed "Guest details collected"** — it reads `EventGuest` (`/api/check-in/guests`), written only by `record.ts`'s "collect guest details" option, so scan check-ins never appeared in it. Logic unchanged.
+- A manual check-in now invalidates `["checkInStats", eventId]` too (it used to wait for the 30s poll); both check-in paths invalidate `["checkInList", eventId]`.
 
 ### Walk-in "scan to buy" QR + guest check-in QR on the success screens (2026-11-17, CEO ask)
 - **Walk-in QR** — `src/components/WalkInTicketQR.tsx`, under `CheckInPortal` on `/console/events/[eventId]/check-in`. Shown to an admin / super admin or the event's owner. Encodes `eventUrl(window.location.origin, slug) + "?buy=1"`; Show full screen (large QR to turn toward the guest) + Copy link. While the event can't sell (`isPendingAdminApproval`, `status === "draft"`, or `getEventStatus === "past"`) the card shows a note instead of a QR.
@@ -3132,6 +3163,12 @@ stale one opening the dialog on an unrelated later arrival.
 
 **Fails open** on any read failure. **Ungated paths:** `/login`, `/signup`, `/auth/*`, `/post-signup`, `/terms`, `/privacy`, `/manage-membership`, `/jetzyqrsignup`.
 
+### City pick always sticks + pinned buttons (2026-11-18)
+- **A tapped city used to get lost.** On a phone the tap also drops the keyboard: the input blurs, the viewport resizes, and the `click` arrived after the 150ms blur-close, so the list was gone. `ProfileCityInput` now sets `pointerInListRef` on the list's `pointerdown` and the blur won't close while it is set (`mousedown` preventDefault keeps desktop focus; a document `pointerdown` outside closes the list). The list scrolls into view on OPEN only — it used to re-scroll on every predictions batch, moving under the finger.
+- **Optimistic city.** A tap sets `{ city: prediction.main }` at once, then upgrades it with Google's details (coordinates, region) — `pickIdRef` drops a late answer after the person typed or picked again. A failed lookup KEEPS the name-only city (it used to clear it, so a real pick read as "Please pick your city"). Complete is disabled and reads "Getting your city…" while the lookup runs (`onResolvingChange`), so it can't save without the coordinates.
+- "Pick your city" shows under the City field and focuses it.
+- **Layout:** fixed header (title + steps) / scrolling body / PINNED footer — Next, or Back + Complete (48px, "Saving…"), plus "Signed in as <email> · Log out" (logout-safety rule unchanged). Footer hidden while the photo cropper is open.
+
 ### Premium: profile asked AFTER payment (2026-09-22)
 - **CEO:** on the standalone Premium purchase the profile is asked right after a confirmed payment, not before. `/premium` and `/subscribe` are now in `isUngatedPath`; `usePostPurchaseProfile()` (`src/components/profile/PostPurchaseProfile.tsx`) runs on the confirmed `?premium_session_id` return on `/premium`, `/subscribe` (then `goToApp`, so the app return waits for the form) and in `PremiumPaywallModal` (the navbar "Buy Jetzy Premium" door). Opens only when something is missing; fails open like the gate.
 - **`useHoldProfileGate(active)`** (`ProfileGate.tsx`) stands the page gate down while the Premium pop-up or its post-purchase form is on screen — the pop-up opens on gated pages, and without the hold the gate would block a buyer who signed in mid-purchase and stack a second form after payment.
@@ -3144,7 +3181,7 @@ stale one opening the dialog on an unrelated later arrival.
 - **All three doors use it for every address:** Premium (`api/premium/send-code` + `verify-code`, `source: web_premium`), the album gate (`albums/send-code` with body `for: "access"` + `guest-access` with `via: "jetzy"`, `source: web_album`), and `/auth/login-otp` (`purpose: login`, `source: web_login`). Each answers `via: "jetzy"`; the client hands it back on verify.
 - **Our own code store is the OUTAGE fallback only** — used when `send` is `unavailable` (network/5xx), never on a 429. The album photo-request email change (`RequestUnwatermarkedDialog`) keeps our code on purpose — it proves an address, it is not a login.
 - **Album sign-in now gives EVERY verified visitor a real session** (new or existing), with the accessToken in the magic token — tagging and other Jetzy-API features no longer bounce to `/login`, and the profile gate works. `createOrUpdateUser` is no longer called on the backend path, so no new password-less stubs. On the fallback path the old rule holds (session only for a brand-new account).
-- **NextAuth** skips the password `authorize` + JIT `/accounts/create` whenever the magic token carries an accessToken. The fixed `123456` fallback still exists for the OTHER magic links (thank-you, discussion emails), which carry no token — retiring it is a follow-up. **The album-published email no longer carries a magic link at all** (2026-11-20): plain album link + `?email=` prefill for the gate; signed in as that email → straight in, signed in as a different email → the gate still asks for the link's email + code and switches the session (see `ALBUM_API.md` §5.1). Links already sent still work — magic tokens have no expiry; revoking them needs an expiry check in `verifyMagicToken` (refuse tokens without `exp`) or a `NEXTAUTH_SECRET` rotation.
+- **NextAuth** skips the password `authorize` + JIT `/accounts/create` whenever the magic token carries an accessToken. The fixed `123456` fallback still exists for the OTHER magic links (thank-you, discussion emails), which carry no token — retiring it is a follow-up. **The album-published email no longer carries a magic link at all** (2026-11-20): plain album link + `?email=` prefill for the gate; signed in as that email → straight in, signed in as a different email → the gate still asks for the link's email + code (plain dialog, no message naming the two addresses) and switches the session. **SendGrid click tracking stays ON by decision** — email links read `url4649.jetzy.com/ls/click…` and redirect to events.jetzy.com; the team uses SendGrid's click counts. **Album promo cards on mobile show each event once**, spread evenly (`promoEventBySlot` in `[slug]/album/[albumId].tsx`); they used to cycle (see `ALBUM_API.md` §5.1). Links already sent still work — magic tokens have no expiry; revoking them needs an expiry check in `verifyMagicToken` (refuse tokens without `exp`) or a `NEXTAUTH_SECRET` rotation.
 - **Backend follow-ups (2026-09-22):** 9e10f0fc pushed to prod-v2 (176a79c7) — confirm the App Runner deploy is live before the web prod deploy. `Users.signupSource` (`web_login|web_album|web_premium`, written only when login-code CREATES the account) is on staging (d30179e4), prod pending our check. `AuthLib.createUser()` sends an in-app welcome only, NO email — so the album welcome email is NOT a duplicate; keep it. Existing album stub accounts are not backfilled (not needed).
 - **`settings.profile.isCompleted` / `hasPicture` are dead flags** — set false once when Settings is created and never written by anything (not PUT /accounts, not sync_location), for every account. The backend's real calculator (`ProfileCompletionService`: name/image/interests/location/gender) only feeds a one-time notification and a reminder cron, and is not in GET /accounts. **Never read those two flags.** The web computes completeness itself (`profileMissingFields`). The mobile app decides its "complete your profile" screen from the USER FIELDS (image, firstName, dob, gender), not these flags (mobile team, 2026-09-22) — so a profile completed on web satisfies the app, and no backend fix is needed.
 - **Post-payment polish (2026-09-23).** `usePostPurchaseProfile` exposes a **"Finishing up…" overlay** while the profile check is in flight, and every door starts that check BESIDE the confirm request rather than after it — the member / "under review" card used to show for about a second before the form covered it. The profile form's **city suggestions are our own list, drawn inside the dialog** (`usePlacesAutocompleteService`, deep-imported; predictions + `getDetails` under one session token) — Google's `.pac-container` is attached to `<body>` and landed off-screen or over the dialog edge in a centred modal. Coordinates still come from `placeToProfileLocation(details)`. `EventLocationField` and the event forms keep `usePlacesWidget` — unchanged.
@@ -4016,6 +4053,12 @@ An admin scanning a list of events could see tickets and guests on each card but
 - **`null` is not zero.** `getEventViewCounts` returns `null` when the count couldn't be read, and `attachEventViewCounts` then returns the events untouched. Both cards render on `typeof totalViews === "number"`, so a failed count shows nothing rather than a false "0 views", and a listing never fails because analytics did.
 - Rendered in `EventListingCard` (`👁 N` beside guests/tickets, in the existing admin-only row — so `previewAsGuest` hides it for free) and My Events' `ListingCard` (`👁 N views`, gated on `props.isAdmin`). `toLocaleString("en-US")` with an explicit locale: My Events is server-rendered.
 - **Hosts don't get it on their cards**, by request. They still read Views on Manage Event for their own events. To extend it, drop the `isAdmin` condition in the console `getServerSideProps` — that list is already narrowed to `ownerId`.
+
+### Event creator on the console events list, admin only (IMPLEMENTED 2026-11-19)
+
+- `/console/events` rows show **"👤 Created by <name> (<email>)"** for an admin, under the location. **Console list only, by request — NOT the event detail page**, and not the public home listing.
+- **`src/lib/event-creators.ts`** (server only): `getEventCreators(ownerIds)` = TWO batched `$in` queries (`EventUsers` + `Users`, since `ownerId` may point at either — `Users` wins a tie, `findUserRecord`'s order); `attachEventCreators(events)` stamps `creator`. Not `resolveEventOwner` per row — that is 40 round trips a page.
+- Same gate as `totalViews`: stamped only inside the console `getServerSideProps`' `isAdmin`. Three states: **absent** = lookup failed (render nothing), **`null`** = no `ownerId` (the ~20 events predating ownership) or the account is gone ("Creator unknown"), object = name + email.
 
 ### Check-in portal on a phone (IMPLEMENTED 2026-10-13)
 

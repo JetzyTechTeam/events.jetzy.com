@@ -512,6 +512,23 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 						)}
 					</div>
 
+					{/* CREATOR — admin only; getServerSideProps stamps `creator` for nobody else.
+					    Absent (undefined) = the lookup failed, so nothing is shown; null = looked up
+					    and there is nobody to name (no ownerId on events predating ownership). */}
+					{props.isAdmin && (event as any).creator !== undefined && (
+						<div className="flex items-center gap-x-2 text-sm text-[#A7A7A7] min-w-0" title={(event as any).creator?.email || undefined}>
+							<span className="shrink-0">👤</span>
+							{(event as any).creator ? (
+								<span className="min-w-0 truncate">
+									Created by <span className="text-white font-medium">{(event as any).creator.name}</span>
+									{(event as any).creator.email && <span className="text-xs text-gray-500 ml-1">({(event as any).creator.email})</span>}
+								</span>
+							) : (
+								<span className="text-gray-500">Creator unknown</span>
+							)}
+						</div>
+					)}
+
 					{/* COUNTS */}
 					<div className="flex items-center gap-x-4 text-xs text-gray-400">
 						<span className="flex items-center gap-1">🎟️ {totalTickets} tickets</span>
@@ -754,8 +771,10 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 
 	// View counts for the rows — admins only, and only for the page being rendered. A host's
 	// list is left exactly as it was: they read Views on Manage Event, for their own events.
+	// Creator name too, same rule: admin only — a host's list is their own events by definition.
 	const { attachEventViewCounts } = await import("@/lib/event-view-counts")
-	const eventsForPage = isAdmin ? await attachEventViewCounts(paginatedEvents) : paginatedEvents
+	const { attachEventCreators } = await import("@/lib/event-creators")
+	const eventsForPage = isAdmin ? await attachEventCreators(await attachEventViewCounts(paginatedEvents)) : paginatedEvents
 
 	return {
 		props: {

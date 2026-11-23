@@ -6,7 +6,16 @@ import { CreateCheckoutSessionApi } from "@Jetzy/services/checkout"
 import { ServerErrors, Success } from "@Jetzy/lib/_toaster"
 
 export const CreateCheckoutSessionThunk = createAsyncThunk("checkouts/create", async (params: RequestParams<CheckoutFormData>) => {
-	return await CreateCheckoutSessionApi(params)
+	try {
+		return await CreateCheckoutSessionApi(params)
+	} catch (err: any) {
+		// `api/checkout` asking the buyer to confirm their email (`needsVerification`, 401) is a
+		// routing verdict for the checkout modal, not a failure. A rejection would be serialized
+		// down to its message — losing the flag — and toasted as "something went wrong", so it is
+		// RESOLVED instead and the modal reads `payload.data.needsVerification`.
+		if (err?.data?.needsVerification) return err
+		throw err
+	}
 })
 
 // Initial state

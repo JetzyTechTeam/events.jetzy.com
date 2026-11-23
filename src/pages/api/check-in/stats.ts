@@ -5,7 +5,7 @@ import { ensureDbConnected } from "@/configs/database"
 import { CheckIn } from "@/models/checkIn"
 import { Bookings } from "@/models/events/bookings"
 import { Events } from "@/models/events"
-import { BookingStatus } from "@/models/events/types"
+import { bookingTicketTotal, liveCheckInBookingsFilter } from "@/lib/check-in-bookings"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 import { Types } from "mongoose"
@@ -45,27 +45,31 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			}
 		}
 
-		// Get all confirmed bookings for the event
-		const bookings = await Bookings.find({
-			eventId: new Types.ObjectId(eventId as string),
-			status: BookingStatus.CONFIRMED,
-			isDeleted: false,
-		}).lean()
+		if (typeof eventId !== "string" || !Types.ObjectId.isValid(eventId)) {
+			return sendResponse(res, null, "Invalid event ID", false, ResCode.BAD_REQUEST)
+		}
 
-		// Get all check-ins for the event
-		const checkIns = await CheckIn.find({ eventId: new Types.ObjectId(eventId as string) }).lean()
+		// Every booking the door accepts — the same population `/api/check-in/list` shows, so a
+		// tile and the list behind it always agree.
+		const bookings = await Bookings.find(liveCheckInBookingsFilter(eventId)).select("_id tickets").lean()
+
+		// Check-ins for THOSE bookings only: one left on a booking later cancelled must not count.
+		const checkIns = await CheckIn.find({ bookingId: { $in: bookings.map((b) => b._id) } }).lean()
 
 		// Create a map of check-ins by bookingId for quick lookup
 		const checkInMap = new Map(checkIns.map((ci) => [ci.bookingId.toString(), ci]))
 
 		// Calculate total tickets from bookings
-		const totalTicketsBooked = bookings.reduce((sum, booking) => {
-			const ticketCount = booking.tickets.reduce((acc, ticket) => acc + ticket.quantity, 0)
-			return sum + ticketCount
-		}, 0)
+		const totalTicketsBooked = bookings.reduce((sum, booking) => sum + bookingTicketTotal(booking as any), 0)
 
 		// Calculate checked-in guests
 		const totalGuestsCheckedIn = checkIns.reduce((sum, ci) => sum + ci.checkedInCount, 0)
+
+		// Per booking, never below zero — the same sum as the list's "Not checked in" rows.
+		const remainingGuests = bookings.reduce((sum, booking) => {
+			const checkedIn = checkInMap.get(booking._id.toString())?.checkedInCount || 0
+			return sum + Math.max(0, bookingTicketTotal(booking as any) - checkedIn)
+		}, 0)
 
 		// Count bookings by check-in status
 		let fullyCheckedInBookings = 0
@@ -91,7 +95,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			totalBookings: bookings.length,
 			totalTicketsBooked,
 			totalGuestsCheckedIn,
-			remainingGuests: totalTicketsBooked - totalGuestsCheckedIn,
+			remainingGuests,
 			fullyCheckedInBookings,
 			partiallyCheckedInBookings,
 			notCheckedInBookings,

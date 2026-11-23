@@ -532,6 +532,17 @@ In this order; the first failure is the reply:
    be booked yet."` (403). (`isPendingAdminApproval`, `src/lib/event-approval.ts`)
 3. `acceptedTerms === true` → `"You must agree to the Terms & Conditions to register."`.
 4. Buyer has `firstName`, `lastName`, `email`.
+4a. **(Web, 2026-11-18) The checkout email is PROVEN.** The request must carry a session signed in
+   **as that email** (case-insensitive), or be from an `admin` / `super admin` (they book for
+   guests). Otherwise → **401** `{ "data": { "needsVerification": true } }`, `"Please confirm your
+   email to book this ticket."` — checked **before** step 5 writes anything. The web modal answers
+   it by emailing a 6-digit code (`POST /api/checkout/send-code` `{ email }`) and spending it
+   (`POST /api/checkout/verify-code` `{ email, otp, via, firstName, lastName }`), which uses the
+   backend's `/v1/accounts/login-code/*` (`purpose: "ticket"`, `source: "web_ticket"`): a correct
+   code **creates the Jetzy account** when the address has none and signs the buyer in. A signed-in
+   buyer who types a DIFFERENT email is switched to the verified account. Rule:
+   `sessionMayBookAs` (`src/lib/checkout-identity.ts`). The app already has an authenticated user,
+   so it books under that user's own email.
 5. Create or update the **Users** account behind the checkout email (case-insensitive match) — its
    id is `checkoutUserId`. Non-fatal if it fails.
 6. **Referral code** (if any): active, not deleted, under `maxUses`, belongs to THIS event, and
@@ -1360,6 +1371,24 @@ Reference: `src/pages/api/check-in/*`. Admin or host.
   confirmation email, the web now shows the same QR on the booking success screens (the free
   registration pop-up and the paid `/success` page) — **confirmed bookings only**; never for a
   pending request, which this section refuses. The app may want the same on its confirmation.
+- **Fast scan: `POST /api/check-in/scan` `{ eventId, bookingRef }` — ONE scan checks in ONE guest**
+  (2026-11-18). No confirm step: the web scanner keeps the camera on and checks in every ticket QR
+  it reads. A booking for three is the same QR scanned three times; a fourth scan answers
+  `already_full`. The +1 is **atomic** — upsert the `CheckIn` row with `$setOnInsert` (unique index
+  on `bookingId`; ignore an 11000 from a racing first scan), then
+  `findOneAndUpdate({ bookingId, checkedInCount: { $lt: total } }, { $inc: { checkedInCount: 1 }, $push: history, $set: { lastCheckInAt, totalTickets } })`
+  — `null` means everyone is in. `isFullyCheckedIn` is then set only by a conditional
+  `{ checkedInCount: { $gte: total } }` update and `firstCheckInAt` only where it is null, so
+  concurrent scans can't overwrite each other. Reply `data.outcome`: `checked_in` / `already_full`
+  (status true) or `pending` / `cancelled` / `not_found` / `not_ticket` (status false; `not_ticket` =
+  the payload doesn't start with `JZ-`). **Re-scan rule on the client:** every QR acted on is ignored
+  until it has been out of the camera's view for ~1s, so holding it up never seats a second guest.
+  **Only a QR deliberately shown counts:** it must be read in 3 consecutive decodes (~0.4s) before
+  acting, a frame containing two or more QRs checks in nothing ("show one at a time"), and new codes
+  are ignored for ~1.2s after each result — a QR merely in view on the same screen was once checked
+  in. An app scanner should copy these rules.
+  The manual path (`validate` + `record`, any count, optional guest details) is unchanged and is
+  still read-modify-write.
 - **Walk-in deep link: `<event url>?buy=1`** — the "No ticket? Scan to buy" QR on the web check-in
   page. The event page decides at scan time: exactly one ticket, not sold out → that ticket is
   selected and checkout opens; a free event with no tickets → the register form opens; otherwise →
@@ -1919,6 +1948,20 @@ from the app (§5.0); then act on them from the app **and** confirm the web show
 ---
 
 ## 18. Changelog
+
+**2026-11-18 (scanner fix):** the web scanner acts only on a QR held steady (3 consecutive reads),
+remembers every code it acted on, refuses a frame with two or more QRs, and pauses 1.2s after each
+result (§11). A second QR glimpsed on the same screen had been checked in. Client-only; no API change.
+
+**2026-11-18 (fast QR check-in):** new `POST /api/check-in/scan` checks in ONE guest per scan,
+atomically (§11). The web check-in page's camera now scans continuously and checks in on read — no
+capture button, no confirm step. `validate` / `record` unchanged.
+
+**2026-11-18 (email-verified checkout):** web ticket checkout requires a session signed in as the
+checkout email (admins exempt) — both `api/checkout` and `api/checkout/free-events` answer 401
+`needsVerification` otherwise (§5.1 step 4a). Verifying creates the buyer's Jetzy account through the
+backend login code and signs them in. `createOrUpdateUser` now also fills the account's `phone`
+from checkout when the account has none (never overwrites one). No booking shape change.
 
 **2026-11-17 (check-in QRs):** the booking success screens show the guest's check-in QR (bare
 `bookingRef`, confirmed bookings only), and the web check-in page shows a walk-in "scan to buy" QR

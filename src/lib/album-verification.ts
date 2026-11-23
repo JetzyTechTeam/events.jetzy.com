@@ -21,7 +21,7 @@ export type ConsumeResult = { ok: true } | { ok: false; reason: "invalid" | "exp
  * `"album"` also matches rows written before this existed, which carry no `purpose` at all. That
  * is a filter, not a backfill: the old rows expire within ten minutes anyway.
  */
-export type CodePurpose = "album" | "premium"
+export type CodePurpose = "album" | "premium" | "ticket"
 
 const purposeFilter = (purpose: CodePurpose) =>
 	purpose === "album" ? { purpose: { $in: ["album", null] } } : { purpose }

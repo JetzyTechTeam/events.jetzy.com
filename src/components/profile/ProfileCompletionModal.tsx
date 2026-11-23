@@ -56,6 +56,7 @@ function ProfileCityInput({
 	onTextChange,
 	onPick,
 	onSearchableChange,
+	onResolvingChange,
 }: {
 	value: string
 	countryCode?: string
@@ -63,6 +64,8 @@ function ProfileCityInput({
 	onPick: (location: ProfileLocation) => void
 	/** False when Google Places can't load — the form then accepts a typed city. */
 	onSearchableChange?: (searchable: boolean) => void
+	/** True while a picked city's coordinates are being fetched — the form holds Complete meanwhile. */
+	onResolvingChange?: (resolving: boolean) => void
 }) {
 	const [open, setOpen] = React.useState(false)
 	const [highlighted, setHighlighted] = React.useState(0)
@@ -70,6 +73,16 @@ function ProfileCityInput({
 	const blurTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null)
 	const listRef = React.useRef<HTMLDivElement>(null)
 	const inputRef = React.useRef<HTMLInputElement>(null)
+	const wrapperRef = React.useRef<HTMLDivElement>(null)
+	/**
+	 * A finger (or mouse) is down on the suggestion list. On a phone, tapping a suggestion also drops
+	 * the keyboard: the input blurs, the viewport resizes, and the tap's `click` can arrive well after
+	 * the old 150ms blur-close — the list was already gone and the pick was lost. While this is set
+	 * the blur does not close the list.
+	 */
+	const pointerInListRef = React.useRef(false)
+	/** Bumped on every pick and every keystroke, so a slow details lookup can't overwrite a newer choice. */
+	const pickIdRef = React.useRef(0)
 	/**
 	 * Open upwards when the space under the field is too small to show the list.
 	 *
@@ -86,16 +99,33 @@ function ProfileCityInput({
 		onSearchableChange?.(searchable)
 	}, [searchable, onSearchableChange])
 
+	React.useEffect(() => {
+		onResolvingChange?.(resolving)
+	}, [resolving, onResolvingChange])
+
+	// With the list open, a tap anywhere outside the field and its list closes it (the blur alone no
+	// longer does while a finger is on the list).
+	React.useEffect(() => {
+		if (!open) return
+		const onDocPointerDown = (e: PointerEvent) => {
+			if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) setOpen(false)
+		}
+		document.addEventListener("pointerdown", onDocPointerDown)
+		return () => document.removeEventListener("pointerdown", onDocPointerDown)
+	}, [open])
+
 	React.useEffect(() => () => {
 		if (blurTimer.current) clearTimeout(blurTimer.current)
 	}, [])
 
 	// A freshly opened list must be visible even when it opens below a field near the dialog's fold.
+	// On OPEN only — re-scrolling on every new batch of predictions moved the list under a finger
+	// that was about to tap it.
 	React.useEffect(() => {
 		if (!open) return
 		const id = setTimeout(() => listRef.current?.scrollIntoView({ block: "nearest" }), 50)
 		return () => clearTimeout(id)
-	}, [open, predictions])
+	}, [open])
 
 	// Keep the highlighted row in view when arrowing through a scrolled list.
 	React.useEffect(() => {
@@ -129,17 +159,19 @@ function ProfileCityInput({
 	}, [open, measureSpace])
 
 	const choose = async (prediction: CityPrediction) => {
+		pointerInListRef.current = false
 		setOpen(false)
+		const id = ++pickIdRef.current
+		// Selected at once, by name: the field shows it and the form has a city before Google answers.
+		onPick({ city: prediction.main })
 		setResolving(true)
 		const picked = await pick(prediction.placeId)
+		// The person typed or picked again meanwhile — this answer is about an old choice.
+		if (id !== pickIdRef.current) return
 		setResolving(false)
-		if (!picked) {
-			// Google couldn't resolve it: keep the name so nothing is lost. Without coordinates the
-			// field is still a typed city, which the form accepts alongside the country.
-			onTextChange(prediction.main)
-			return
-		}
-		onPick(picked)
+		// No answer: the name-only city stands (it saves without coordinates, which `sync_location`
+		// skips — the same as a typed city). It used to be CLEARED here, so a real pick read as none.
+		if (picked) onPick({ ...picked, city: picked.city || prediction.main })
 	}
 
 	const showList = searchable && open && !!countryCode && (predictions.length > 0 || loading || !!value.trim())
@@ -150,6 +182,20 @@ function ProfileCityInput({
 			ref={listRef}
 			role="listbox"
 			className={`${placeAbove ? "mb-2" : "mt-2"} max-h-56 overflow-y-auto rounded-xl border border-[#434343] bg-[#141414]`}
+			onPointerDown={() => {
+				pointerInListRef.current = true
+			}}
+			onPointerUp={() => {
+				// `click` follows pointerup; release the guard just after it has had its chance.
+				setTimeout(() => {
+					pointerInListRef.current = false
+				}, 400)
+			}}
+			onPointerCancel={() => {
+				pointerInListRef.current = false
+			}}
+			// Desktop: keep focus in the input while clicking a suggestion, so no blur happens at all.
+			onMouseDown={(e) => e.preventDefault()}
 		>
 			{predictions.map((p, i) => (
 				<button
@@ -174,7 +220,7 @@ function ProfileCityInput({
 	) : null
 
 	return (
-		<div className="relative">
+		<div className="relative" ref={wrapperRef}>
 			{/* Above the field when the keyboard leaves no room below it — see `placeAbove`. */}
 			{placeAbove && list}
 			<input
@@ -188,6 +234,9 @@ function ProfileCityInput({
 				aria-controls="profile-city-list"
 				aria-autocomplete="list"
 				onChange={(e) => {
+					// Typing replaces any pick, including one whose details are still loading.
+					pickIdRef.current += 1
+					setResolving(false)
 					onTextChange(e.target.value)
 					setHighlighted(0)
 					setOpen(true)
@@ -203,8 +252,11 @@ function ProfileCityInput({
 					}, 300)
 				}}
 				onBlur={() => {
-					// Delayed — a click on a suggestion fires after blur.
-					blurTimer.current = setTimeout(() => setOpen(false), 150)
+					// Delayed — a click on a suggestion fires after blur. Never while a finger is on the
+					// list: that tap is a pick in progress (see `pointerInListRef`).
+					blurTimer.current = setTimeout(() => {
+						if (!pointerInListRef.current) setOpen(false)
+					}, 150)
 				}}
 				onKeyDown={(e) => {
 					if (e.key === "Escape") {
@@ -245,7 +297,7 @@ type Props = {
 }
 
 export default function ProfileCompletionModal({ isOpen, initialProfile, onCompleted, intro }: Props) {
-	const { update } = useSession()
+	const { data: session, update } = useSession()
 	const dispatch = useAppDispatch()
 
 	const [step, setStep] = React.useState<1 | 2>(1)
@@ -267,6 +319,10 @@ export default function ProfileCompletionModal({ isOpen, initialProfile, onCompl
 	const [countryCode, setCountryCode] = React.useState("")
 	/** Google Places reachable? False falls the field back to a plain typed city. */
 	const [citySearchable, setCitySearchable] = React.useState(true)
+	// A picked city's coordinates are on their way — Complete waits so it can't save without them.
+	const [cityResolving, setCityResolving] = React.useState(false)
+	// "Pick your city" is shown under the City field itself, not only at the bottom of the form.
+	const [cityFieldError, setCityFieldError] = React.useState(false)
 	const countries = React.useMemo(() => listCountries(), [])
 	const [error, setError] = React.useState<string | null>(null)
 	const [saving, setSaving] = React.useState(false)
@@ -364,8 +420,14 @@ export default function ProfileCompletionModal({ isOpen, initialProfile, onCompl
 		const coordinatesOnly = !location.city && !location.country && hasLocation(location)
 		if (!coordinatesOnly) {
 			if (!location.country && !countryCode) return setError("Please select your country.")
-			if (!location.city) return setError("Please pick your city from the suggestions.")
+			if (!location.city) {
+				setCityFieldError(true)
+				setError("Please pick your city from the suggestions.")
+				document.getElementById("profile-city")?.focus()
+				return
+			}
 		}
+		if (cityResolving) return
 		if (!month || !day || !year) return setStep(1)
 		setError(null)
 		setSaving(true)
@@ -425,8 +487,20 @@ export default function ProfileCompletionModal({ isOpen, initialProfile, onCompl
 			    through around the card, which on some pages showed as a mismatched sliver above and
 			    below it. */}
 			<ModalOverlay bg="#0A0B0F" />
-			<ModalContent mx={4} borderRadius="2xl" bg="#1E1E1E" color="white" border="1px solid #434343">
-				<div className="p-6">
+			{/* Header / scrolling body / pinned footer: the buttons are always on screen, so nobody has
+			    to scroll past gender, country and city to find Complete on a phone. */}
+			<ModalContent
+				mx={4}
+				borderRadius="2xl"
+				bg="#1E1E1E"
+				color="white"
+				border="1px solid #434343"
+				display="flex"
+				flexDirection="column"
+				overflow="hidden"
+				maxH="calc(100dvh - 32px)"
+			>
+				<div className="shrink-0 px-6 pt-6 pb-4">
 					{intro && <p className="mb-3 rounded-lg bg-app/10 px-3 py-2 text-sm font-medium text-app">{intro}</p>}
 					<h2 className="text-xl font-bold text-white">Complete your profile</h2>
 					<p className="mt-2 text-xs text-gray-400">Step {step} of 2</p>
@@ -434,6 +508,9 @@ export default function ProfileCompletionModal({ isOpen, initialProfile, onCompl
 						<div className="h-1.5 flex-1 rounded-full bg-app" />
 						<div className={`h-1.5 flex-1 rounded-full ${step === 2 ? "bg-app" : "bg-[#343536]"}`} />
 					</div>
+				</div>
+
+				<div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6">
 
 					{cropFile && (
 						<ProfilePhotoCropper
@@ -450,7 +527,7 @@ export default function ProfileCompletionModal({ isOpen, initialProfile, onCompl
 					<div className={cropFile ? "hidden" : undefined}>
 					{step === 1 && (
 						<>
-							<p className="mt-4 text-sm text-gray-400">Add a photo, your name, and date of birth so others can recognize you.</p>
+							<p className="text-sm text-gray-400">Add a photo, your name, and date of birth so others can recognize you.</p>
 
 							<p className="mt-5 text-sm font-semibold text-white">Profile photo</p>
 							<div className="mt-3 flex justify-center">
@@ -533,7 +610,7 @@ export default function ProfileCompletionModal({ isOpen, initialProfile, onCompl
 
 					{step === 2 && (
 						<>
-							<h3 className="mt-5 text-2xl font-bold text-white">How do you identify?</h3>
+							<h3 className="text-2xl font-bold text-white">How do you identify?</h3>
 							<p className="mt-1 text-sm text-gray-400">Select your gender identity to help us personalize your experience.</p>
 							<div className="mt-4 space-y-3" role="radiogroup">
 								{GENDER_OPTIONS.map((option) => (
@@ -589,8 +666,10 @@ export default function ProfileCompletionModal({ isOpen, initialProfile, onCompl
 								value={cityText}
 								countryCode={countryCode || undefined}
 								onSearchableChange={setCitySearchable}
+								onResolvingChange={setCityResolving}
 								onTextChange={(text) => {
 									setCityText(text)
+									setCityFieldError(false)
 									// Normally only a picked suggestion counts as a place. With Places unavailable
 									// there is nothing to pick, so the typed city is taken as written — it saves
 									// without coordinates, which `sync_location` simply skips.
@@ -600,9 +679,11 @@ export default function ProfileCompletionModal({ isOpen, initialProfile, onCompl
 									const countryName = countries.find((c) => c.code === countryCode)?.name
 									setLocation({ ...loc, country: loc.country || countryName })
 									setCityText(loc.city || "")
+									setCityFieldError(false)
 									setError(null)
 								}}
 							/>
+							{cityFieldError && error && <p className="mt-2 text-sm text-red-400">{error}</p>}
 							<p className="mt-2 flex items-start gap-2 text-sm text-gray-400">
 								<span aria-hidden="true">📍</span>
 								{!citySearchable
@@ -614,46 +695,74 @@ export default function ProfileCompletionModal({ isOpen, initialProfile, onCompl
 						</>
 					)}
 
-					{error && <p className="mt-4 text-sm text-red-400">{error}</p>}
-
-					{step === 1 ? (
-						<button
-							type="button"
-							onClick={goNext}
-							disabled={uploading}
-							className="mt-6 w-full rounded-xl bg-app py-3 text-base font-semibold text-black hover:bg-app/80 disabled:opacity-60"
-						>
-							Next
-						</button>
-					) : (
-						<div className="mt-6 grid grid-cols-2 gap-3">
-							<button
-								type="button"
-								onClick={() => {
-									setError(null)
-									setStep(1)
-								}}
-								disabled={saving}
-								className="rounded-xl border border-[#434343] py-3 text-base font-medium text-white hover:bg-white/5"
-							>
-								Back
-							</button>
-							<button
-								type="button"
-								onClick={handleComplete}
-								disabled={saving}
-								className="flex items-center justify-center rounded-xl bg-app py-3 text-base font-semibold text-black hover:bg-app/80 disabled:opacity-60"
-							>
-								{saving ? <Spinner /> : "Complete"}
-							</button>
-						</div>
-					)}
-
-					<button type="button" onClick={logout} data-analytics-ignore="" className="mx-auto mt-4 block text-xs text-gray-500 hover:text-gray-300">
-						Log out
-					</button>
+					{error && !cityFieldError && <p className="mt-4 text-sm text-red-400">{error}</p>}
 					</div>
 				</div>
+
+				{/* Pinned footer. Hidden while a photo is being positioned — the cropper has its own buttons. */}
+				{!cropFile && (
+					<div className="shrink-0 border-t border-[#343536] px-6 pt-4 pb-[calc(16px+env(safe-area-inset-bottom,0px))]">
+						{step === 1 ? (
+							<button
+								type="button"
+								onClick={goNext}
+								disabled={uploading}
+								className="h-12 w-full rounded-xl bg-app text-base font-semibold text-black transition-colors hover:bg-app/80 disabled:opacity-60"
+							>
+								Next
+							</button>
+						) : (
+							<div className="flex gap-3">
+								<button
+									type="button"
+									onClick={() => {
+										setError(null)
+										setCityFieldError(false)
+										setStep(1)
+									}}
+									disabled={saving}
+									className="h-12 w-1/3 rounded-xl border border-[#434343] text-base font-medium text-white transition-colors hover:bg-white/5 disabled:opacity-60"
+								>
+									Back
+								</button>
+								<button
+									type="button"
+									onClick={handleComplete}
+									disabled={saving || cityResolving}
+									className="flex h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-app text-base font-semibold text-black transition-colors hover:bg-app/80 disabled:opacity-60"
+								>
+									{saving ? (
+										<>
+											<Spinner /> Saving…
+										</>
+									) : cityResolving ? (
+										"Getting your city…"
+									) : (
+										"Complete"
+									)}
+								</button>
+							</div>
+						)}
+
+						{/* Which account this is — useful right after checkout signed someone in — and a
+						    readable way out. Logout keeps the targeted-cleanup + data-analytics-ignore rule. */}
+						<p className="mt-3 text-center text-[13px] text-gray-400">
+							{session?.user?.email ? (
+								<>
+									Signed in as <span className="break-all text-gray-200">{session.user.email}</span> ·{" "}
+								</>
+							) : null}
+							<button
+								type="button"
+								onClick={logout}
+								data-analytics-ignore=""
+								className="font-medium text-app underline-offset-2 hover:underline"
+							>
+								Log out
+							</button>
+						</p>
+					</div>
+				)}
 			</ModalContent>
 		</Modal>
 	)

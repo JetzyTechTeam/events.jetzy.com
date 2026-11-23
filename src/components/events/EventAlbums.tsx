@@ -60,6 +60,8 @@ export interface Album {
 	notifiedCount?: number
 }
 
+// Shape of GET /tags — `personEmail` is MASKED unless the viewer is admin/owner or it is their
+// own address (src/lib/album-tag-visibility.ts). `canRemove` mirrors the DELETE route's rule.
 interface AlbumTag {
 	_id: string
 	albumId: string
@@ -67,6 +69,9 @@ interface AlbumTag {
 	personEmail: string
 	personName?: string
 	taggedByName?: string
+	isMe?: boolean
+	addedByMe?: boolean
+	canRemove?: boolean
 }
 
 // A staged media item inside the create/edit modal (may still be uploading).
@@ -726,7 +731,6 @@ export function GuestAccessModal({
 	onGranted,
 	onCodeSent,
 	initialEmail,
-	notice,
 }: {
 	isOpen: boolean
 	onClose: () => void
@@ -734,9 +738,6 @@ export function GuestAccessModal({
 	// Prefill from the album-published email link (`?email=`). A convenience, never proof —
 	// the code step still has to be passed for this address.
 	initialEmail?: string
-	// Shown above the form — the album page uses it when the visitor is signed in as a different
-	// address than the email link was sent to.
-	notice?: string
 	// Carries who was just verified, so callers don't have to re-probe /albums/viewer to learn
 	// the address they already proved here.
 	onGranted: (granted?: { email?: string; name?: string }) => void
@@ -914,11 +915,6 @@ export function GuestAccessModal({
 				<ModalHeader>View the photos</ModalHeader>
 				<ModalCloseButton />
 				<ModalBody>
-					{notice && (
-						<Box bg="rgba(247, 148, 50, 0.12)" border="1px solid #F79432" borderRadius="10px" px={3} py={2} mb={4}>
-							<Text fontSize="sm" color="#F7C08A" overflowWrap="anywhere">{notice}</Text>
-						</Box>
-					)}
 					{step === "FORM" ? (
 					<>
 					<Text color="#bbbbbb" fontSize="sm" mb={4}>Just your name and email — we&apos;ll send a code to confirm it.</Text>
@@ -1278,23 +1274,30 @@ export function PhotoTagging({
 				<Flex gap={2} flexWrap="wrap" mb={3}>
 					{tagsForPhoto.map((t) => (
 						<Flex key={t._id} align="center" gap={1} bg="#1f1f1f" border="1px solid #333" borderRadius="full" pl={3} pr={1} py={1}>
-							<Text fontSize="xs" color="white">{t.personName || t.personEmail}</Text>
-							<Box
-								as="button"
-								type="button"
-								aria-label={`Remove tag for ${t.personName || t.personEmail}`}
-								title="Remove tag"
-								onClick={() => removeTag(t._id)}
-								color="#888"
-								_hover={{ color: "#ff8080", bg: "whiteAlpha.100" }}
-								fontSize="sm"
-								lineHeight="1"
-								borderRadius="full"
-								px={2}
-								py={1}
-							>
-								×
-							</Box>
+							<Text fontSize="xs" color="white" pr={t.canRemove ? 0 : 2}>
+								{t.personName || t.personEmail}
+								{t.isMe ? " (you)" : ""}
+							</Text>
+							{/* Only the admin/owner, the tagger and the tagged person may remove a tag —
+							    a × anyone else could press would only end in a refusal. */}
+							{t.canRemove && (
+								<Box
+									as="button"
+									type="button"
+									aria-label={`Remove tag for ${t.personName || t.personEmail}`}
+									title="Remove tag"
+									onClick={() => removeTag(t._id)}
+									color="#888"
+									_hover={{ color: "#ff8080", bg: "whiteAlpha.100" }}
+									fontSize="sm"
+									lineHeight="1"
+									borderRadius="full"
+									px={2}
+									py={1}
+								>
+									×
+								</Box>
+							)}
 						</Flex>
 					))}
 				</Flex>

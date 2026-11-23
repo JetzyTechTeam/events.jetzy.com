@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from "react"
+import React, { useState, useEffect, useCallback } from "react"
 import {
 	Box,
 	Button,
@@ -22,13 +22,6 @@ import {
 	NumberInputStepper,
 	NumberIncrementStepper,
 	NumberDecrementStepper,
-	Modal,
-	ModalOverlay,
-	ModalContent,
-	ModalHeader,
-	ModalBody,
-	ModalFooter,
-	ModalCloseButton,
 	useDisclosure,
 	Flex,
 	Heading,
@@ -36,7 +29,8 @@ import {
 import { CheckCircleIcon, CloseIcon, SearchIcon } from "@chakra-ui/icons"
 import axios from "axios"
 import dayjs from "dayjs"
-import jsQR from "jsqr"
+import { useQueryClient } from "@tanstack/react-query"
+import LiveTicketScanner from "@/components/checkin/LiveTicketScanner"
 
 interface BookingInfo {
 	bookingId: string
@@ -90,17 +84,15 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 	const [isValidating, setIsValidating] = useState(false)
 	const [isCheckingIn, setIsCheckingIn] = useState(false)
 	const [error, setError] = useState("")
-	const [isCameraActive, setIsCameraActive] = useState(false)
-	const [isScanning, setIsScanning] = useState(false)
 	const [collectGuestDetails, setCollectGuestDetails] = useState(false)
 	const [guestDetails, setGuestDetails] = useState<GuestDetail[]>([])
 	const [guestList, setGuestList] = useState<EventGuest[]>([])
 	const [isLoadingGuests, setIsLoadingGuests] = useState(false)
 
 	const toast = useToast()
-	const { isOpen, onOpen, onClose } = useDisclosure()
-	const videoRef = useRef<HTMLVideoElement>(null)
-	const canvasRef = useRef<HTMLCanvasElement>(null)
+	// The live door scanner: every QR it sees is checked in at once, one guest per scan.
+	const scanner = useDisclosure()
+	const queryClient = useQueryClient()
 
 	const fetchGuestList = useCallback(async () => {
 		setIsLoadingGuests(true)
@@ -141,17 +133,6 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 			})
 		}
 	}, [guestCount, collectGuestDetails, bookingInfo])
-
-	// Cleanup camera on unmount
-	useEffect(() => {
-		const video = videoRef.current
-		return () => {
-			if (video && video.srcObject) {
-				const stream = video.srcObject as MediaStream
-				stream.getTracks().forEach((track) => track.stop())
-			}
-		}
-	}, [])
 
 	const handleValidate = async () => {
 		if (!identifier.trim()) {
@@ -261,7 +242,10 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 				setGuestCount(1)
 				setCollectGuestDetails(false)
 				setGuestDetails([])
-				// Refresh guest list
+				// Refresh the tiles, the list behind them, and the guest-details card. The tiles
+				// used to wait for their 30s poll after a manual check-in.
+				queryClient.invalidateQueries({ queryKey: ["checkInStats", eventId] })
+				queryClient.invalidateQueries({ queryKey: ["checkInList", eventId] })
 				fetchGuestList()
 			} else {
 				toast({
@@ -295,238 +279,12 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 		setGuestDetails([])
 	}
 
-	const startCamera = async () => {
-		try {
-			console.log("Requesting camera access...")
-
-			let stream: MediaStream | null = null
-
-			// Try to get back camera first (environment/rear camera)
-			try {
-				stream = await navigator.mediaDevices.getUserMedia({
-					video: {
-						facingMode: { exact: "environment" },
-						width: { min: 640, ideal: 1280, max: 1920 },
-						height: { min: 480, ideal: 720, max: 1080 },
-					},
-					audio: false,
-				})
-				console.log("Back camera (environment) obtained")
-			} catch (err) {
-				console.warn("Back camera not available, trying with ideal constraint:", err)
-				// Fallback to ideal if exact fails
-				stream = await navigator.mediaDevices.getUserMedia({
-					video: {
-						facingMode: "environment",
-						width: { min: 640, ideal: 1280, max: 1920 },
-						height: { min: 480, ideal: 720, max: 1080 },
-					},
-					audio: false,
-				})
-			}
-
-			console.log("Camera stream obtained:", stream)
-			console.log("Video tracks:", stream.getVideoTracks())
-
-			// Log which camera is being used
-			const videoTrack = stream.getVideoTracks()[0]
-			const settings = videoTrack.getSettings()
-			console.log("Camera settings:", settings)
-			console.log("Facing mode:", settings.facingMode || "unknown")
-
-			// Open modal first to ensure video element is in DOM
-			onOpen()
-
-			// Wait a bit for modal to render
-			await new Promise((resolve) => setTimeout(resolve, 100))
-
-			if (videoRef.current) {
-				console.log("Setting video srcObject...")
-				videoRef.current.srcObject = stream
-
-				// Wait for video to be ready
-				await new Promise<void>((resolve, reject) => {
-					if (!videoRef.current) {
-						reject(new Error("Video ref lost"))
-						return
-					}
-
-					videoRef.current.onloadedmetadata = () => {
-						console.log("Video metadata loaded")
-						console.log("Video dimensions:", videoRef.current?.videoWidth, "x", videoRef.current?.videoHeight)
-						console.log("Video readyState:", videoRef.current?.readyState)
-						resolve()
-					}
-
-					videoRef.current.onerror = (e) => {
-						console.error("Video element error:", e)
-						reject(e)
-					}
-
-					// Timeout fallback
-					setTimeout(() => resolve(), 2000)
-				})
-
-				try {
-					console.log("Attempting to play video...")
-					await videoRef.current.play()
-					console.log("Video playing successfully")
-					console.log("Video paused?", videoRef.current.paused)
-					console.log("Video ended?", videoRef.current.ended)
-					setIsCameraActive(true)
-				} catch (playError) {
-					console.error("Play error:", playError)
-					throw playError
-				}
-			} else {
-				console.error("Video ref is null after modal open")
-				throw new Error("Video element not found")
-			}
-		} catch (err: any) {
-			console.error("Camera error:", err)
-			console.error("Error name:", err.name)
-			console.error("Error message:", err.message)
-
-			let errorMessage = "Unable to access camera. "
-
-			if (err.name === "NotAllowedError") {
-				errorMessage += "Please grant camera permissions."
-			} else if (err.name === "NotFoundError") {
-				errorMessage += "No camera found on device."
-			} else if (err.name === "NotReadableError") {
-				errorMessage += "Camera is already in use."
-			} else {
-				errorMessage += err.message || "Unknown error."
-			}
-
-			toast({
-				title: "Camera Error",
-				description: errorMessage,
-				status: "error",
-				duration: 5000,
-			})
-		}
-	}
-
-	const stopCamera = () => {
-		if (videoRef.current && videoRef.current.srcObject) {
-			const stream = videoRef.current.srcObject as MediaStream
-			stream.getTracks().forEach((track) => track.stop())
-			videoRef.current.srcObject = null
-		}
-		setIsCameraActive(false)
-		onClose()
-	}
-
-	const captureImage = async () => {
-		if (!videoRef.current || !canvasRef.current) return
-
-		const canvas = canvasRef.current
-		const video = videoRef.current
-		const context = canvas.getContext("2d")
-
-		if (!context) return
-
-		canvas.width = video.videoWidth
-		canvas.height = video.videoHeight
-		context.drawImage(video, 0, 0, canvas.width, canvas.height)
-
-		setIsScanning(true)
-
-		const scanningToast = toast({
-			title: "Scanning QR Code...",
-			description: "Processing ticket QR code",
-			status: "loading",
-			duration: null,
-			isClosable: false,
-		})
-
-		try {
-			const imageData = context.getImageData(0, 0, canvas.width, canvas.height)
-			const code = jsQR(imageData.data, imageData.width, imageData.height)
-
-			toast.close(scanningToast)
-			setIsScanning(false)
-			stopCamera()
-
-			if (code && code.data) {
-				const identifier = code.data.trim()
-				console.log("QR code decoded:", identifier)
-
-				setIdentifier(identifier)
-				setBookingInfo(null)
-				setError("")
-
-				toast({
-					title: "QR Code Scanned! ✓",
-					description: `Validating ${identifier}...`,
-					status: "info",
-					duration: 3000,
-					isClosable: true,
-				})
-
-				setIsValidating(true)
-				try {
-					const response = await axios.post("/api/check-in/validate", {
-						eventId,
-						identifier,
-					})
-
-					if (response.data.status) {
-						setBookingInfo(response.data.data)
-						toast({
-							title: "Validation Successful! ✓",
-							description: `Booking found for ${identifier}`,
-							status: "success",
-							duration: 3000,
-							isClosable: true,
-						})
-					} else {
-						setError(response.data.message)
-						toast({
-							title: "Validation Failed",
-							description: response.data.message,
-							status: "error",
-							duration: 5000,
-							isClosable: true,
-						})
-					}
-				} catch (err: any) {
-					const errorMsg = err.response?.data?.message || "Failed to validate booking"
-					setError(errorMsg)
-					toast({
-						title: "Validation Error",
-						description: errorMsg,
-						status: "error",
-						duration: 5000,
-						isClosable: true,
-					})
-				} finally {
-					setIsValidating(false)
-				}
-			} else {
-				toast({
-					title: "No QR Code Found",
-					description: "Could not detect a QR code. Please try again or enter the booking reference manually.",
-					status: "error",
-					duration: 6000,
-					isClosable: true,
-				})
-			}
-		} catch (error: any) {
-			console.error("QR scan error:", error)
-			setIsScanning(false)
-			toast.close(scanningToast)
-			stopCamera()
-			toast({
-				title: "Scan Failed",
-				description: error.message || "Failed to scan QR code. Please try again.",
-				status: "error",
-				duration: 7000,
-				isClosable: true,
-			})
-		}
-	}
+	// After each scan check-in: refresh the stats tiles (react-query) and the checked-in list.
+	const handleScannerCheckIn = useCallback(() => {
+		queryClient.invalidateQueries({ queryKey: ["checkInStats", eventId] })
+		queryClient.invalidateQueries({ queryKey: ["checkInList", eventId] })
+		fetchGuestList()
+	}, [queryClient, eventId, fetchGuestList])
 
 	return (
 		<Box maxW="600px" mx="auto" p={4} sx={{ [PHONE]: { padding: 0 } }}>
@@ -575,7 +333,7 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 								<Button leftIcon={<SearchIcon />} onClick={handleValidate} isLoading={isValidating} colorScheme="orange" flex={1} size="lg">
 									Validate
 								</Button>
-								<Button onClick={startCamera} colorScheme="blue" size="lg">
+								<Button onClick={scanner.onOpen} colorScheme="blue" size="lg">
 									📷 Scan
 								</Button>
 							</HStack>
@@ -837,14 +595,15 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 					</Card>
 				)}
 
-				{/* Guest List Section */}
+				{/* Guest details collected at the door ("collect guest details" in record.ts) — NOT the
+				    full checked-in list: scan check-ins never write here. Tap a stat tile for that. */}
 				{guestList.length > 0 && (
 					<Card bg="#1E1E1E" border="1px solid #434343">
 						<CardBody>
 							<VStack spacing={4} align="stretch">
 								<HStack justify="space-between">
 									<Text fontSize="xl" fontWeight="bold" color="white">
-										Checked-In Guests
+										Guest details collected
 									</Text>
 									<Badge colorScheme="blue" fontSize="sm" px={3} py={1}>
 										{guestList.length} Guest{guestList.length > 1 ? "s" : ""}
@@ -889,60 +648,7 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 				)}
 			</VStack>
 
-			{/* Camera Modal */}
-			<Modal isOpen={isOpen} onClose={stopCamera} size="full">
-				<ModalOverlay />
-				<ModalContent bg="#000">
-					<ModalHeader color="white">Scan Email Address</ModalHeader>
-					<ModalCloseButton color="white" />
-					<ModalBody display="flex" flexDirection="column" alignItems="center" justifyContent="center" p={4}>
-						<VStack spacing={4} width="100%" maxW="600px">
-							<Box position="relative" width="100%" bg="#000" borderRadius="8px" border="2px solid #F79432" overflow="hidden">
-								{!isCameraActive && (
-									<Box position="absolute" top="50%" left="50%" transform="translate(-50%, -50%)" zIndex={2}>
-										<Spinner size="xl" color="#F79432" />
-									</Box>
-								)}
-								<video
-									ref={videoRef}
-									autoPlay
-									playsInline
-									muted
-									style={{
-										display: "block",
-										width: "100%",
-										height: "auto",
-										minHeight: "250px",
-										maxHeight: "400px",
-										objectFit: "cover",
-										aspectRatio: "4/3",
-									}}
-								/>
-								<canvas ref={canvasRef} style={{ display: "none" }} />
-							</Box>
-							<Text color="gray.400" textAlign="center">
-								Position the email address within the camera view
-							</Text>
-							{isCameraActive && (
-								<Text color="green.400" textAlign="center" fontSize="sm">
-									📹 Camera Active - Video dimensions: {videoRef.current?.videoWidth || 0} x {videoRef.current?.videoHeight || 0}
-								</Text>
-							)}
-						</VStack>
-					</ModalBody>
-					{/* Phones: two thumb-sized buttons, clear of the home indicator. Cancel is a ghost
-				    button whose default text colour is near-black - on this black window it could
-				    barely be seen, so it gets white text and an outline there. */}
-				<ModalFooter sx={{ [PHONE]: { paddingBottom: "calc(16px + env(safe-area-inset-bottom, 0px))", "& > button": { flex: "1 1 0", height: "48px" }, "& > button:last-of-type": { color: "white", border: "1px solid #555" } } }}>
-						<Button colorScheme="orange" mr={3} onClick={captureImage} isLoading={isScanning} loadingText="Scanning..." disabled={isScanning}>
-							Capture & Scan
-						</Button>
-						<Button variant="ghost" onClick={stopCamera} disabled={isScanning}>
-							Cancel
-						</Button>
-					</ModalFooter>
-				</ModalContent>
-			</Modal>
+			<LiveTicketScanner isOpen={scanner.isOpen} onClose={scanner.onClose} eventId={eventId} onCheckedIn={handleScannerCheckIn} />
 		</Box>
 	)
 }

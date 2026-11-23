@@ -7,8 +7,11 @@ import { AlbumTags } from "@/models/events/album-tags"
 import { ensureDbConnected } from "@/configs/database"
 import { Types } from "mongoose"
 import zod from "zod"
+import { getServerSession } from "next-auth"
+import { authOptions } from "@/pages/api/auth/[...nextauth]"
 import { resolveAlbumViewer } from "@/lib/album-auth"
 import { sendAlbumTagNotification } from "@/lib/send-grid"
+import { tagForViewer } from "@/lib/album-tag-visibility"
 
 const createTagSchema = zod.object({
 	mediaUrl: zod.string().url(),
@@ -18,7 +21,12 @@ const createTagSchema = zod.object({
 
 // Album covers are public, but the photos themselves are not: opening an album needs an
 // identified viewer (a session, or the name+email guest gate). Tags carry personal email
-// addresses, so both reading and writing them stay behind that gate.
+// addresses, so both reading and writing them stay behind that gate — and even behind it,
+// only the event's admin/owner read the addresses (see album-tag-visibility.ts).
+//
+// Creating a tag emails somebody in the viewer's name, so it needs a real SESSION: the guest
+// cookie is enough to look, not to tag. The page already hid the button from cookie viewers;
+// the route enforces it, or a direct call could still send the email.
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
 	try {
 		await ensureDbConnected()
@@ -39,7 +47,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const eventObjectId = new Types.ObjectId(eventId)
 		const albumObjectId = new Types.ObjectId(albumId)
 
-		const event = await Events.findOne({ _id: eventObjectId, isDeleted: false }).select("_id name slug").lean()
+		const event = await Events.findOne({ _id: eventObjectId, isDeleted: false }).select("_id name slug ownerId").lean()
 		if (!event) {
 			return sendResponse(res, null, "Event not found", false, ResCode.NOT_FOUND)
 		}
@@ -49,14 +57,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return sendResponse(res, null, "Album not found", false, ResCode.NOT_FOUND)
 		}
 
-		// GET — all tags for this album, so the gallery can render them per photo
+		// GET — all tags for this album, so the gallery can render them per photo. Addresses are
+		// masked unless the viewer runs the event (or the address is their own).
 		if (req.method === "GET") {
 			const tags = await AlbumTags.find({ albumId: albumObjectId }).sort({ createdAt: 1 }).lean()
-			return sendResponse(res, tags, "Tags retrieved successfully", true, ResCode.OK)
+			const session = await getServerSession(req, res, authOptions)
+			const userRole = (session?.user as any)?.role
+			const userId = (session?.user as any)?._id?.toString()
+			const canManage =
+				userRole === "admin" || userRole === "super admin" || (!!userId && (event as any).ownerId?.toString() === userId)
+			const visible = tags.map((tag) => tagForViewer(tag as any, viewer.email, canManage))
+			return sendResponse(res, visible, "Tags retrieved successfully", true, ResCode.OK)
 		}
 
 		// POST — tag someone in a photo, then email them
 		if (req.method === "POST") {
+			if (viewer.isGuest) {
+				return sendResponse(res, null, "Please sign in to tag people in photos.", false, ResCode.UNAUTHORIZED)
+			}
+
 			const validation = createTagSchema.safeParse(req.body)
 			if (!validation.success) {
 				return sendResponse(res, validation.error.errors, "Invalid tag data", false, ResCode.BAD_REQUEST)
