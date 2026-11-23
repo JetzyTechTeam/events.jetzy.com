@@ -41,6 +41,7 @@ import { guestEmailKey, type ImportedGuest } from "@/lib/guest-import"
 import { eventUrl } from "@/lib/event-slug"
 import type { BlastAttachment } from "@/lib/blast-attachments"
 import { stripHtml } from "@/utils/text"
+import { formatEventDate, formatEventTime, formatEventZoneLabel } from "@/utils/eventTime"
 
 /**
  * Admin only — email the people from past events about a NEW event.
@@ -88,13 +89,24 @@ const card = { bg: "#1E1E1E", border: "1px solid #434343", borderRadius: "2xl", 
 
 const escapeHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
 
+/**
+ * "November 23, 2026 at 01:00 PM (UTC+05:00) Asia/Karachi" — in the EVENT's zone, through the same
+ * `eventTime.ts` formatters the event page and cards use, so the email states the time guests see.
+ *
+ * Never hand `event.timezone` to a date library raw: most events store the picker LABEL
+ * ("(UTC+05:00) Asia/Karachi"), which luxon/Intl reject — the card used to read "No date set".
+ * `getEventZone` (inside these helpers) extracts the real zone.
+ */
 const eventDateLine = (e: EventOption): string => {
 	if (e.datePoll) return "Date to be decided — vote on the event page"
 	if (!e.startsOn) return ""
-	const start = DateTime.fromISO(e.startsOn, e.timezone ? { zone: e.timezone } : {})
-	if (!start.isValid) return ""
-	return start.toFormat("cccc, LLLL d, yyyy 'at' h:mm a ZZZZ")
+	const tz = e.timezone || "UTC"
+	return `${formatEventDate(e.startsOn, tz)} at ${formatEventTime(e.startsOn, tz)} ${formatEventZoneLabel(tz)}`
 }
+
+/** Short date for the picker rows, also in the event's zone. */
+const eventShortDate = (e: EventOption): string =>
+	e.startsOn ? formatEventDate(e.startsOn, e.timezone || "UTC") : e.datePoll ? "Date poll" : "No date"
 
 const prefillFor = (e: EventOption) => {
 	const when = eventDateLine(e)
@@ -188,7 +200,7 @@ function EventPicker({
 				) : (
 					events.map((e) => {
 						const checked = selectedIds.includes(e._id)
-						const when = e.startsOn ? DateTime.fromISO(e.startsOn).toFormat("LLL d, yyyy") : e.datePoll ? "Date poll" : "No date"
+						const when = eventShortDate(e)
 						return (
 							<Flex key={e._id} as="button" type="button" w="100%" textAlign="left" align="center" gap={3} px={3} py={2} borderBottom="1px solid #2a2a2a" bg={checked ? "rgba(247,148,50,0.10)" : "transparent"} _hover={{ bg: "whiteAlpha.50" }} onClick={() => onToggle(e)}>
 								<Checkbox isChecked={checked} pointerEvents="none" colorScheme="orange" />
