@@ -41,6 +41,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const eventObjectId = new Types.ObjectId(eventId)
 		const timestamp = new Date()
 
+		// The browser remembers a link for 30 days; whether it still COUNTS is decided here — a
+		// link of this event that is ON now. A link switched off (or deleted) stops collecting
+		// visits immediately, even from browsers that opened it earlier. Never throws.
+		const { resolveMarketingLinkForBooking } = await import("@/lib/marketing-link-server")
+		const liveLink = marketingLinkId ? await resolveMarketingLinkForBooking(String(eventId), marketingLinkId) : null
+
 		// Fire and forget - don't block the request
 		EventInteraction.create({
 			eventId: eventObjectId,
@@ -49,13 +55,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			interactionType,
 			timestamp,
 			metadata: metadata || undefined,
-			// Both optional; a malformed link id is dropped rather than failing the row. Whether
-			// the id belongs to THIS event is settled by the report, which only reads this
-			// event's links.
+			// Both optional; a bad or switched-off link id is dropped rather than failing the row.
 			...(typeof anonId === "string" && anonId && anonId.length <= 64 ? { anonId } : {}),
-			...(typeof marketingLinkId === "string" && Types.ObjectId.isValid(marketingLinkId)
-				? { marketingLinkId: new Types.ObjectId(marketingLinkId) }
-				: {}),
+			...(liveLink ? { marketingLinkId: new Types.ObjectId(liveLink.id) } : {}),
 		}).catch((error) => {
 			console.error("[Analytics Track Event Interaction] Error:", error.message)
 		})

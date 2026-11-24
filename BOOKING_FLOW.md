@@ -685,9 +685,9 @@ An event can have several tracked share links, `<event url>?mk=<tag>` (collectio
 optional `referralCodeId`, `isActive`, `isDeleted`). The web remembers the LAST link a browser opened
 for that event for 30 days and sends its id as `marketingLinkId` to both checkout endpoints.
 
-- The server accepts it only if it is a non-deleted link **of that event** (inactive is fine — the
-  click happened while it was live), and **never refuses an order over it**: a bad id just means no
-  attribution.
+- The server accepts it only if it is a link **of that event** that is **ON** (not switched off,
+  not deleted) when checkout opens, and **never refuses an order over it**: a bad or switched-off id
+  just means no attribution. Fulfilment does not re-check on/off — that was decided at checkout.
 - Stripe path: one metadata key `marketingLinkId`; fulfilment re-resolves it and writes
   `marketingLinkId` + `marketingLinkTag` on the booking. Free path writes both directly.
 - `?mk=` is NOT `?ref=` — `ref` is a discount code that checkout refuses when invalid. A link may
@@ -1971,6 +1971,8 @@ from the app (§5.0); then act on them from the app **and** confirm the web show
 **2026-11-24 (marketing links):** bookings gain optional `marketingLinkId` + `marketingLinkTag`
 (no defaults), and Stripe metadata an optional `marketingLinkId` (§5.6). Both checkout endpoints
 accept `marketingLinkId` in the body and never fail on it. No change to any existing field.
+Same day: a link switched OFF stops crediting new visits and bookings immediately, even from a
+browser that remembered it.
 
 **2026-11-18 (scanner fix):** the web scanner acts only on a QR held steady (3 consecutive reads),
 remembers every code it acted on, refuses a frame with two or more QRs, and pauses 1.2s after each

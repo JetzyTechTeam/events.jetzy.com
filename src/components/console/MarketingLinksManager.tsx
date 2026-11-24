@@ -521,7 +521,8 @@ export function MarketingLinksManager({ eventId, eventSlug, readOnly = false, ra
 
 				<Text fontSize="xs" color="#9C9C9C" mt={4}>
 					A booking counts for the last link the person opened in the {MARKETING_ATTRIBUTION_DAYS} days before they booked. Link previews on
-					social apps aren&apos;t counted as visits. Ticket sales don&apos;t include memberships.
+					social apps aren&apos;t counted as visits. A link switched off stops counting straight away; what it counted before stays. Ticket
+					sales don&apos;t include memberships.
 				</Text>
 			</Box>
 

@@ -436,7 +436,8 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 	let marketingLink: { id: string; tag: string } | null = null
 	if (metadata.marketingLinkId) {
 		const { resolveMarketingLinkForBooking } = await import("@/lib/marketing-link-server")
-		marketingLink = await resolveMarketingLinkForBooking(metadata.eventId, metadata.marketingLinkId)
+		// Not re-checked for on/off: that was decided when the session opened (see the helper).
+		marketingLink = await resolveMarketingLinkForBooking(metadata.eventId, metadata.marketingLinkId, { requireActive: false })
 	}
 
 	const now = new Date()

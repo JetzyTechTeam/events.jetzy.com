@@ -76,13 +76,21 @@ export async function resolveMarketingLinkByTag(eventId: string, rawTag: unknown
 }
 
 /**
- * The link to credit a booking to. Any non-deleted link of THIS event, active or not: a click
- * made before the host switched the link off still earned the sale. A link id from another
- * event (a stale or forged body) credits nothing.
+ * The link to credit a visit or booking to — only a link of THIS event that is ON right now.
+ *
+ * OFF STOPS ALL NEW COUNTING, even for a browser that opened the link while it was on and still
+ * remembers it (decided 2026-11-24 — a host switching a link off expects its numbers to freeze).
+ * Checked here on the server because the browser's 30-day memory can't know the link was
+ * switched off. A link id from another event (a stale or forged body) credits nothing.
+ *
+ * `requireActive: false` is for checkout FULFILMENT only: the on/off decision was already made
+ * when the checkout session was opened, and a host switching the link off during the seconds
+ * the buyer spends on Stripe must not un-credit a sale that started while it was on.
  */
 export async function resolveMarketingLinkForBooking(
 	eventId: string | undefined | null,
 	rawLinkId: unknown,
+	{ requireActive = true }: { requireActive?: boolean } = {},
 ): Promise<{ id: string; tag: string } | null> {
 	try {
 		const linkId = typeof rawLinkId === "string" ? rawLinkId.trim() : ""
@@ -92,6 +100,7 @@ export async function resolveMarketingLinkForBooking(
 			_id: new Types.ObjectId(linkId),
 			eventId: new Types.ObjectId(String(eventId)),
 			isDeleted: { $ne: true },
+			...(requireActive ? { isActive: { $ne: false } } : {}),
 		})
 			.select("tag")
 			.lean()
