@@ -1,7 +1,7 @@
 import { IEvent } from "@/models/events/types"
 // Aliased: several functions below declare a local `eventUrl`, which would shadow the import.
 import { eventUrl as buildEventUrl, eventPath, eventAlbumUrl as buildEventAlbumUrl, eventAlbumPath } from "@/lib/event-slug"
-import { ADMIN_SUPPORT_EMAIL } from "@/lib/support"
+import { ADMIN_SUPPORT_EMAIL, EMAIL_FOOTER_CONTACT } from "@/lib/support"
 import { buildTicketPricing, TicketPricing } from "@/lib/ticket-pricing"
 import { LOCATION_TBA, containsLocationLink, locationHtml, locationWasPicked, mapsLinkFor, resolveEntrance, resolveGuestLocation } from "@/lib/event-location"
 import { MoneyState } from "@/lib/booking-cancellation"
@@ -60,7 +60,8 @@ export const blastSenderName = (hostName?: string) => {
 }
 
 
-const CONTACT_EMAIL = (process.env.SENDGRID_EMAIL_SENDER as string)?.trim() || "contact@jetzyapp.com"
+// Footer "Contact us" address — see EMAIL_FOOTER_CONTACT in support.ts.
+const CONTACT_EMAIL = EMAIL_FOOTER_CONTACT
 
 // Helper function to wrap HTML content in proper tags
 const wrapHtml = (html: string) => `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head><body>${html}</body></html>`;

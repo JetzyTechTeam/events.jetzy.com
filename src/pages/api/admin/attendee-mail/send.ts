@@ -19,6 +19,7 @@ import {
 	normalizeTestAddress,
 } from "@/lib/blast-test-send"
 import { isRateLimited } from "@/lib/rate-limit"
+import { emailFooterContactHtml } from "@/lib/support"
 import { stripHtml } from "@/utils/text"
 
 sendgrid.setApiKey((process.env.SENDGRID_API_KEY as string)?.trim())
@@ -121,13 +122,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const fetched = await fetchBlastAttachments(attachmentList)
 		if (fetched.skipped.length > 0) console.warn("Attendee mailing attachments skipped:", fetched.skipped)
 
-		const sender = (process.env.SENDGRID_EMAIL_SENDER as string)?.trim()
 		const html = buildBlastHtml({
 			subject: mailSubject,
 			message: mailMessage,
 			eventName: promotedName,
 			eventLink: promotedLink,
-			footerContact: `Questions? Contact us at <a href="mailto:${sender}" style="color: #F79432; text-decoration: none;">${sender}</a>`,
+			footerContact: emailFooterContactHtml(),
 			emailType: "custom",
 			baseUrl,
 			images: fetched.images,

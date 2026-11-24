@@ -66,6 +66,7 @@ export default function BlastPreviewModal({
 	hostEmail,
 	senderLabel,
 	greetByName = true,
+	footerContact,
 	onSendTest,
 }: {
 	isOpen: boolean
@@ -87,6 +88,8 @@ export default function BlastPreviewModal({
 	senderLabel?: string
 	/** Mirrors the composer toggle so the preview opens the same way the email will. */
 	greetByName?: boolean
+	/** The real footer, when the caller knows it (Email Attendees always sends as Jetzy). */
+	footerContact?: string
 	/**
 	 * Sends the test somewhere other than `/api/send-blast` (the admin Email Attendees page has its
 	 * own route). Receives the checked address; resolves with the server's reply data. Absent = the
@@ -120,7 +123,7 @@ export default function BlastPreviewModal({
 			eventLink,
 			// The real footer is resolved server-side from the event's owner. Rendering a guess
 			// here would be a preview of an email nobody sends, so this states what it is.
-			footerContact: "Questions? (the footer is added when the blast is sent)",
+			footerContact: footerContact || "Questions? (the footer is added when the blast is sent)",
 			emailType,
 			baseUrl: typeof window !== "undefined" ? window.location.origin : "",
 			greetByName,
@@ -140,7 +143,7 @@ export default function BlastPreviewModal({
 			bookingRef: emailType === "availability" ? "SAMPLE-REF" : undefined,
 		})
 		return withPreviewableImages(personalized, attachments)
-	}, [subject, message, eventName, eventLink, emailType, attachments, greetByName, sampleName, sampleEmail])
+	}, [subject, message, eventName, eventLink, emailType, attachments, greetByName, footerContact, sampleName, sampleEmail])
 
 	// Checked as they type so the button can refuse before a round trip. The API runs the same
 	// function and is the authority - this is feedback, not the gate.

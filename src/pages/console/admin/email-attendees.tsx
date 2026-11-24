@@ -43,6 +43,7 @@ import { eventUrl } from "@/lib/event-slug"
 import type { BlastAttachment } from "@/lib/blast-attachments"
 import { stripHtml } from "@/utils/text"
 import { formatEventDate, formatEventTime, formatEventZoneLabel } from "@/utils/eventTime"
+import { emailFooterContactHtml } from "@/lib/support"
 
 /**
  * Admin only — email the people from past events about a NEW event.
@@ -979,6 +980,7 @@ export default function EmailAttendeesPage() {
 					emailType="custom"
 					attachments={attachments}
 					greetByName={greetByName}
+					footerContact={emailFooterContactHtml()}
 					targetType="all"
 					status="all"
 					hostName={(session?.user as any)?.name}
