@@ -39,6 +39,8 @@ import PhoneStatRows from "@/components/analytics/PhoneStatRows"
 import { WINDOW_KEYS, WINDOW_LABELS, type WindowKey } from "@/lib/analytics-windows"
 import SafeHTML from "@/components/misc/SafeHTML"
 import { MarketingLinksManager } from "@/components/console/MarketingLinksManager"
+import CheckoutVerificationPanel from "@/components/analytics/CheckoutVerificationPanel"
+import type { CheckoutVerificationStats } from "@/lib/checkout-verification-events"
 import { stripHTMLAndDecode } from "@/lib/utils"
 
 interface FunnelStage { stage: string; label: string; count: number; dropOffPct: number; conversionPct: number }
@@ -182,6 +184,8 @@ const SNAPSHOT_ROWS: Array<{ key: string; label: string; hint?: string; money?: 
 	{ key: "Page Views", label: "Page views", hint: "Including repeat visits" },
 	{ key: "Ticket Selections", label: "Picked a ticket" },
 	{ key: "Checkout Opened", label: "Opened checkout" },
+	{ key: "Email Code Sent", label: "Got an email code", hint: "Asked to confirm their email", hideWhenEmpty: true },
+	{ key: "Email Verified", label: "Verified their email", hint: "Typed the code correctly", hideWhenEmpty: true },
 	{ key: "Checkout Submitted", label: "Submitted checkout" },
 	{ key: "Bookings Created", label: "Bookings started", hint: "Any status, including pending approval" },
 	{ key: "Bookings Confirmed", label: "Bookings confirmed", emphasis: true },
@@ -213,6 +217,7 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 	// so it loads with the page rather than on tab change.
 	const [behaviourLoading, setBehaviourLoading] = useState(false)
 	const [funnel, setFunnel] = useState<FunnelStage[]>([])
+	const [verification, setVerification] = useState<CheckoutVerificationStats | null>(null)
 	const [topTargets, setTopTargets] = useState<HeatTopTarget[]>([])
 
 	// The CEO's Last 24h / 7 / 30 / 60 day columns, scoped to this event. Deliberately NOT
@@ -300,7 +305,10 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 				fetch(`/api/analytics/journey/funnel?${params.toString()}`, { credentials: "include" }).then((r) => r.json()),
 				fetch(`/api/analytics/journey/heat?${params.toString()}`, { credentials: "include" }).then((r) => r.json()),
 			])
-			if (f?.status) setFunnel(f.data.funnel || [])
+			if (f?.status) {
+				setFunnel(f.data.funnel || [])
+				setVerification(f.data.verification || null)
+			}
 			if (h?.status) setTopTargets(h.data.topTargets || [])
 		} catch (e: any) {
 			toast({ title: "Couldn't load visitor behaviour", description: e.message, status: "error" })
@@ -733,6 +741,9 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 											</>
 										)}
 									</Box>
+
+									{/* The checkout email check, in words — sits right under the funnel step it explains. */}
+									<CheckoutVerificationPanel stats={verification} subtitle="Buyers asked to confirm their email before booking, in the dates above" mb={8} />
 
 									<SimpleGrid columns={{ base: 1, lg: 2 }} spacing={6} mb={8}>
 										{/* What people actually clicked. Replaces the coordinate heatmap, which

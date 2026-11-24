@@ -84,6 +84,11 @@ interface ReportRow {
 	pickedTicket: number
 	openedCheckout: number
 	submittedCheckout: number
+	emailCodeSent: number
+	emailVerified: number
+	emailNeverVerified: number
+	alreadySignedIn: number
+	emailConfirmed: number
 	bookings: number
 	pending: number
 	buyers: number
@@ -712,6 +717,11 @@ function blankRow(link: MarketingLink): ReportRow {
 		pickedTicket: 0,
 		openedCheckout: 0,
 		submittedCheckout: 0,
+		emailCodeSent: 0,
+		emailVerified: 0,
+		emailNeverVerified: 0,
+		alreadySignedIn: 0,
+		emailConfirmed: 0,
 		bookings: 0,
 		pending: 0,
 		buyers: 0,
@@ -747,6 +757,22 @@ function LinkSummary({ row }: { row: ReportRow }) {
 			{line(row.visitors, `${row.visitors === 1 ? "person" : "people"} visited the event page`)}
 			{line(row.pickedTicket, "picked a ticket")}
 			{line(row.openedCheckout, "started checkout")}
+			{/* Only once the email check has been recorded for this link — before 25 Nov 2026 it
+			    wasn't, and a "0 confirmed" line above real bookings would read as broken. */}
+			{row.emailCodeSent + row.alreadySignedIn > 0 && (
+				<>
+					{line(row.emailConfirmed, "confirmed their email")}
+					<Text fontSize="xs" color="#9C9C9C" pl="56px" mt={-1}>
+						{[
+							row.emailVerified > 0 ? `${row.emailVerified} with an email code` : null,
+							row.alreadySignedIn > 0 ? `${row.alreadySignedIn} already signed in` : null,
+							row.emailNeverVerified > 0 ? `${people(row.emailNeverVerified)} got a code but didn't verify` : null,
+						]
+							.filter(Boolean)
+							.join(" · ")}
+					</Text>
+				</>
+			)}
 			{line(row.bookings, `booked — ${row.tickets} ${row.tickets === 1 ? "ticket" : "tickets"}, ${money(row.revenue)}`, true)}
 			{row.pending > 0 && (
 				<Text fontSize="xs" color="#9C9C9C" pl="56px">

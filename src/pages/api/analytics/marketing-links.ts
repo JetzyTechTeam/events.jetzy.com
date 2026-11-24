@@ -9,6 +9,7 @@ import { MarketingLinks } from "@/models/events/marketing-links"
 import { EventInteraction } from "@/models/analytics"
 import { Bookings } from "@/models/events/bookings"
 import { BookingStatus } from "@/models/events/types"
+import { getCheckoutVerificationStats } from "@/lib/checkout-verification-stats"
 
 /**
  * GET /api/analytics/marketing-links?eventId=&dateFrom=&dateTo=&format=csv
@@ -43,6 +44,12 @@ type Row = {
 	pickedTicket: number
 	openedCheckout: number
 	submittedCheckout: number
+	/** Checkout email check — distinct sessions (see checkout-verification-stats.ts). */
+	emailCodeSent: number
+	emailVerified: number
+	emailNeverVerified: number
+	alreadySignedIn: number
+	emailConfirmed: number
 	bookings: number
 	pending: number
 	buyers: number
@@ -116,7 +123,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			...(dateFilter ? { timestamp: dateFilter } : {}),
 		}
 
-		const [interactionFacets, bookingGroups] = await Promise.all([
+		const [interactionFacets, bookingGroups, verificationByLink] = await Promise.all([
 			EventInteraction.aggregate([
 				{ $match: interactionMatch },
 				{
@@ -147,6 +154,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					},
 				},
 			]),
+			// Split by link; "" is the rows with no link (direct).
+			getCheckoutVerificationStats(
+				{ eventId, ...(dateFilter ? { timestamp: dateFilter } : {}) },
+				"marketingLinkId",
+			),
 		])
 
 		const blank = (): Omit<Row, "linkId" | "label" | "tag" | "platform" | "state" | "referralCode"> => ({
@@ -155,6 +167,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			pickedTicket: 0,
 			openedCheckout: 0,
 			submittedCheckout: 0,
+			emailCodeSent: 0,
+			emailVerified: 0,
+			emailNeverVerified: 0,
+			alreadySignedIn: 0,
+			emailConfirmed: 0,
 			bookings: 0,
 			pending: 0,
 			buyers: 0,
@@ -184,6 +201,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			else if (g._id.type === "checkout_submit") s.submittedCheckout += g.sessions
 		}
 		for (const g of facets.visitors) statFor(resolveKey(g._id)).visitors += g.visitors
+		for (const [linkKey, v] of Array.from(verificationByLink.entries())) {
+			const s = statFor(resolveKey(linkKey || null))
+			s.emailCodeSent += v.codeSent
+			s.emailVerified += v.verified
+			s.emailNeverVerified += v.neverVerified
+			s.alreadySignedIn += v.alreadySignedIn
+			s.emailConfirmed += v.confirmed
+		}
 		for (const g of bookingGroups) {
 			const s = statFor(resolveKey(g._id))
 			s.bookings += g.bookings
@@ -218,7 +243,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		for (const r of rows) r.conversion = r.visitors > 0 ? r.bookings / r.visitors : null
 
 		if (format === "csv") {
-			const headers = ["Link", "Platform", "Tag", "Status", "Clicks", "Visitors", "Picked a ticket", "Opened checkout", "Submitted checkout", "Bookings", "Pending approval", "Buyers", "Tickets", "Revenue (tickets)", "Conversion %"]
+			const headers = ["Link", "Platform", "Tag", "Status", "Clicks", "Visitors", "Picked a ticket", "Opened checkout", "Got an email code", "Verified email", "Got a code but did not verify", "Already signed in", "Submitted checkout", "Bookings", "Pending approval", "Buyers", "Tickets", "Revenue (tickets)", "Conversion %"]
 			const lines = [
 				headers.join(","),
 				...rows.map((r) =>
@@ -231,6 +256,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 						r.visitors,
 						r.pickedTicket,
 						r.openedCheckout,
+						r.emailCodeSent,
+						r.emailVerified,
+						r.emailNeverVerified,
+						r.alreadySignedIn,
 						r.submittedCheckout,
 						r.bookings,
 						r.pending,

@@ -25,6 +25,7 @@ import { useRouter } from "next/router"
 import { useAnalytics } from "@/hooks/useAnalytics"
 import { isPreviewQuery } from "@/lib/event-preview"
 import { readMarketingTouch } from "@/lib/marketing-link"
+import { EMAIL_VERIFIED, VERIFY_CODE_FAILED, VERIFY_CODE_SENT, VERIFY_SKIPPED } from "@/lib/checkout-verification-events"
 
 /**
  * "monthly" reads better than "every month" in the billing disclosure, but the interval
@@ -378,6 +379,9 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 			setVerifyVia(result?.data?.via === "jetzy" ? "jetzy" : "portal")
 			setVerifyOtp("")
 			setVerifyCooldown(60)
+			// Analytics: a code went out. Pressing Resend writes another row; reports count
+			// sessions, so a resend never inflates "got a code".
+			trackCheckout(VERIFY_CODE_SENT, { resend: checkoutStep === "verify" })
 			setCheckoutStep("verify")
 		} catch {
 			Error("Couldn't send code", "We couldn't send that code. Please try again.")
@@ -409,6 +413,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 			const result = await response.json().catch(() => ({}))
 			const magicToken = result?.data?.magicToken
 			if (!response.ok || !magicToken) {
+				trackCheckout(VERIFY_CODE_FAILED)
 				setVerifyError(result?.message || "That code didn't work. Check it and try again.")
 				return
 			}
@@ -427,6 +432,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 				setVerifyError("We couldn't sign you in. Please try again.")
 				return
 			}
+			trackCheckout(EMAIL_VERIFIED)
 
 			if ((liveEventData?.questions || []).length > 0) {
 				setCheckoutStep("questions")
@@ -493,6 +499,9 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 				await startEmailVerification()
 				return
 			}
+			// Analytics: passed the email check with no code — already signed in as this address,
+			// or an admin booking for a guest. Without it they'd read as having skipped a step.
+			trackCheckout(VERIFY_SKIPPED, { admin: ["admin", "super admin"].includes((session?.user as any)?.role) })
 
 			if ((liveEventData?.questions || []).length > 0) {
 				setCheckoutStep("questions")

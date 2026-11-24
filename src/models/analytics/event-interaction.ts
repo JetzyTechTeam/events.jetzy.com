@@ -41,7 +41,19 @@ const eventInteractionSchema = new Schema<IEventInteraction>(
 			required: true,
 			// `checkout_submit` was accepted by the track route but missing here, so every such
 			// row failed validation silently and the funnel's "Submitted" stage read 0.
-			enum: ["view", "click", "share", "ticket_select", "booking_start", "checkout_submit"],
+			// The four checkout email-check steps — see src/lib/checkout-verification-events.ts.
+			enum: [
+				"view",
+				"click",
+				"share",
+				"ticket_select",
+				"booking_start",
+				"checkout_submit",
+				"verify_code_sent",
+				"verify_code_failed",
+				"email_verified",
+				"verify_skipped",
+			],
 			index: true,
 		},
 		timestamp: {

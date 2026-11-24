@@ -7,6 +7,7 @@ import { ensureDbConnected } from "@/configs/database"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 import { Types } from "mongoose"
+import { CHECKOUT_VERIFICATION_TYPES } from "@/lib/checkout-verification-events"
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
 	if (req.method !== "POST") {
@@ -30,7 +31,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// browser tells us nothing more about, so without it "started booking" and "paid" had a
 		// silent step between them (filled the form, pressed the button, Stripe or validation
 		// refused). See EventTicketsComponent / EventCheckoutModel for the writers.
-		const validTypes = ["view", "click", "share", "ticket_select", "booking_start", "checkout_submit"]
+		// Plus the checkout email-check steps (src/lib/checkout-verification-events.ts).
+		const validTypes = ["view", "click", "share", "ticket_select", "booking_start", "checkout_submit", ...CHECKOUT_VERIFICATION_TYPES] as string[]
 		if (!validTypes.includes(interactionType)) {
 			return sendResponse(res, null, "Invalid interaction type", false, ResCode.BAD_REQUEST)
 		}
