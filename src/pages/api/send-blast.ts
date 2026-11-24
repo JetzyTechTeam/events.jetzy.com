@@ -17,6 +17,7 @@ import { blastAttachmentRefusal, type BlastAttachment } from "@/lib/blast-attach
 import { fetchBlastAttachments } from "@/lib/blast-attachments-server";
 import { blastFallbackName, buildBlastHtml, personalizeBlastHtml } from "@/lib/blast-template";
 import { blastStatusIsAll, parseBlastStatuses, serializeBlastStatuses } from "@/lib/blast-status";
+import { emailFooterContactHtml } from "@/lib/support";
 import {
   BLAST_TEST_MAX_PER_WINDOW,
   BLAST_TEST_RATE_LIMIT_MESSAGE,
@@ -212,7 +213,7 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
     // host directly (see `replyTo` above), so the footer says so and names them.
     const footerContact = sendAsHost
       ? `Questions? Just reply to this email &mdash; it goes straight to ${owner!.displayName}.<br />Sent by ${owner!.displayName} via Jetzy Events`
-      : `Questions? Contact us at <a href="mailto:${(process.env.SENDGRID_EMAIL_SENDER as string)?.trim()}" style="color: #F79432; text-decoration: none;">${(process.env.SENDGRID_EMAIL_SENDER as string)?.trim()}</a>`
+      : emailFooterContactHtml()
 
     // The attachments are fetched ONCE here, before the recipient loop, and the same array is
     // handed to every send - one CDN round trip per image, not one per guest.

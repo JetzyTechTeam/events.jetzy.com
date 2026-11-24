@@ -27,6 +27,7 @@ import { buildBlastHtml, personalizeBlastHtml } from "@/lib/blast-template"
 import { attachmentMode, blastImageContentId, type BlastAttachment } from "@/lib/blast-attachments"
 import { describeDeliveryFailure, type BlastRecipientStatus } from "@/lib/blast-delivery"
 import { eventUrl } from "@/lib/event-slug"
+import { emailFooterContactHtml } from "@/lib/support"
 
 /**
  * Everything about one SENT Email Attendees email: what it said (rendered through the same
@@ -86,7 +87,7 @@ export default function AttendeeMailingDetail({
 				message: record.message || "",
 				eventName: record.promotedEventName || "",
 				eventLink: record.promotedEventId ? promotedLink || "#" : "",
-				footerContact: "Questions? Contact us at the Jetzy address",
+				footerContact: emailFooterContactHtml(),
 				emailType: "custom",
 				baseUrl: origin,
 				greetByName: record.greetByName !== false,
