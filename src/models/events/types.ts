@@ -269,6 +269,9 @@ export interface IBookings extends IBaseModelProps {
 	tax: number
 	total: number
 	referralCode?: string
+	/** Marketing link credited with this booking (last touch, 30 days). Absent = direct. */
+	marketingLinkId?: Types.ObjectId
+	marketingLinkTag?: string
 	discountAmount?: number
 	premiumMemberDiscountApplied?: boolean
 	/** Rates behind `discountAmount`; undefined on bookings predating the split. */
@@ -387,6 +390,11 @@ export interface IBlast extends IBaseModelProps {
 	}>
 	/** Whether the email opened with "Hi <name>,". Absent reads as true (every pre-toggle blast). */
 	greetByName?: boolean
+	/**
+	 * Addresses typed into the composer's "To" field, on top of the chosen audience. Absent = none
+	 * (or a blast sent before the field existed). Carried forward on a resend.
+	 */
+	extraRecipients?: string[]
 	sentAt: Date
 	isDeleted: boolean
 }

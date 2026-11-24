@@ -1,5 +1,6 @@
 import { useRef, useCallback, useMemo, useEffect, useState, useLayoutEffect } from "react"
 import { uploadFile } from "@/services/upload.service"
+import { normalizeHref } from "@/lib/email-body"
 
 // ─── Custom Image blot — preserves width through Delta round-trips ────────────
 function registerResizableImage(Quill: any) {
@@ -34,6 +35,37 @@ function registerResizableImage(Quill: any) {
   ResizableImage.tagName  = "IMG"
   Quill.register(ResizableImage, true)
 }
+
+// ─── Links typed without a scheme ─────────────────────────────────────────────
+// The link button stores `www.site.com` exactly as typed, which in an email (or anywhere off this
+// site) is a RELATIVE link to nowhere. Same rule as the email-body cleaner (`normalizeHref`):
+// a scheme-less domain gets https://. Quill's own sanitize still runs after, so `javascript:` is
+// still refused. Patched once per Quill instance.
+function registerLinkSchemeFix(Quill: any) {
+  const Link = Quill.import("formats/link")
+  if (Link.__jetzySchemeFix) return
+  const original = Link.sanitize
+  Link.sanitize = function (url: string) {
+    const value = String(url ?? "").trim()
+    return original.call(this, normalizeHref(value) ?? value)
+  }
+  Link.__jetzySchemeFix = true
+}
+
+// Screen-reader names for the toolbar's icon-only buttons (Quill renders them unlabelled).
+const TOOLBAR_LABELS: Array<[string, string]> = [
+  ["button.ql-bold", "Bold"],
+  ["button.ql-italic", "Italic"],
+  ["button.ql-underline", "Underline"],
+  ["button.ql-strike", "Strikethrough"],
+  ['button.ql-list[value="ordered"]', "Numbered list"],
+  ['button.ql-list[value="bullet"]', "Bulleted list"],
+  ["button.ql-blockquote", "Quote"],
+  ["button.ql-link", "Insert link"],
+  ["button.ql-image", "Insert image"],
+  ["button.ql-clean", "Clear formatting"],
+  [".ql-header .ql-picker-label", "Text style"],
+]
 
 // Walk the Delta to find which Quill index corresponds to a given <img> node.
 // Avoids editor.scroll.find() which was removed in Quill v2.
@@ -256,6 +288,7 @@ export default function RichTextEditor({ value, onChange, placeholder, hideImage
     import("react-quill").then((mod) => {
       const Quill = (mod.default as any).Quill
       registerResizableImage(Quill)
+      registerLinkSchemeFix(Quill)
       setQuillComp(() => mod.default)
     })
   }, [])
@@ -266,6 +299,16 @@ export default function RichTextEditor({ value, onChange, placeholder, hideImage
     const trySetup = () => {
       const editor = quillRef.current?.getEditor()
       if (!editor) { setTimeout(trySetup, 200); return }
+
+      const toolbar: HTMLElement | undefined = editor.getModule("toolbar")?.container
+      if (toolbar) {
+        for (const [selector, label] of TOOLBAR_LABELS) {
+          toolbar.querySelectorAll(selector).forEach((el) => {
+            el.setAttribute("aria-label", label)
+            el.setAttribute("title", label)
+          })
+        }
+      }
 
       // Emoji <img> (twemoji / CDN) → Unicode text on paste
       editor.clipboard.addMatcher("IMG", (node: HTMLImageElement, delta: any) => {
@@ -371,6 +414,10 @@ export default function RichTextEditor({ value, onChange, placeholder, hideImage
       )}
 
       <style>{`
+        /* Quill positions the "Enter link" popup centred on the link and lets it run off the LEFT edge
+           when the link is near the start of a line (QA: "the link box sticks out of the card"). Only
+           a popup Quill pushed to a negative left is pulled back in. */
+        .rich-text-editor-wrapper .ql-tooltip[style*="left: -"] { left: 8px !important; }
         .rich-text-editor-wrapper .ql-toolbar {
           background: #1e2124;
           border: 1px solid #3a3d42 !important;

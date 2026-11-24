@@ -599,6 +599,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			metadata.referralSubtotal = referralSubtotal.toFixed(2)
 		}
 
+		// Marketing link (last touch, 30 days) — ONE key, the id only; fulfilment re-resolves it
+		// and snapshots the tag, so the 50-key budget isn't spent twice. Never fails the order.
+		{
+			const { resolveMarketingLinkForBooking } = await import("@/lib/marketing-link-server")
+			const marketingLink = await resolveMarketingLinkForBooking(tickets[0]?.eventId, req.body.marketingLinkId)
+			if (marketingLink) metadata.marketingLinkId = marketingLink.id
+		}
+
 		// The TICKET-ONLY figures. On a bundled session Stripe's `amount_total` is the whole
 		// first invoice (ticket + first month of membership), so fulfilment must never derive
 		// the booking total from it — it reads these instead.

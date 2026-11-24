@@ -327,6 +327,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const { selectionRequiresApproval } = await import("@/lib/ticket-approval")
 		const requiresApproval = selectionRequiresApproval(event as any, tickets as any)
 
+		// Marketing link (last touch, 30 days). Never throws and never refuses the order.
+		const { resolveMarketingLinkForBooking } = await import("@/lib/marketing-link-server")
+		const marketingLink = await resolveMarketingLinkForBooking(String(eventId), req.body?.marketingLinkId)
+
 		// Create the booking record (PENDING when approval is required, otherwise CONFIRMED)
 		const booking = await Bookings.create({
 			status: requiresApproval ? BookingStatus.PENDING : BookingStatus.CONFIRMED,
@@ -347,6 +351,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			// My Bookings can itemise it, exactly as `checkout-fulfillment.ts` does for the
 			// Stripe path. The code itself is kept either way, for attribution.
 			...(referralCodeData ? { referralCode: referralCodeData.code } : {}),
+			...(marketingLink ? { marketingLinkId: marketingLink.id, marketingLinkTag: marketingLink.tag } : {}),
 			discountAmount,
 			...(discountsDidWork && referralCodeData ? { referralDiscountPercentage: referralCodeData.discountPercentage } : {}),
 			// No `payment` sub-doc at all: no money is in play and no membership is created from

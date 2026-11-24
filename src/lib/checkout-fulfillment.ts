@@ -431,6 +431,15 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 		}
 	}
 
+	// Marketing link stamped at checkout — re-resolved here (must still belong to this event)
+	// to snapshot its tag. Never throws; a miss just means "direct".
+	let marketingLink: { id: string; tag: string } | null = null
+	if (metadata.marketingLinkId) {
+		const { resolveMarketingLinkForBooking } = await import("@/lib/marketing-link-server")
+		// Not re-checked for on/off: that was decided when the session opened (see the helper).
+		marketingLink = await resolveMarketingLinkForBooking(metadata.eventId, metadata.marketingLinkId, { requireActive: false })
+	}
+
 	const now = new Date()
 	let booking: IBookings | null = null
 	try {
@@ -459,6 +468,7 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 			subTotal: subtotal,
 			total,
 			referralCode: metadata.referralCode || undefined,
+			...(marketingLink ? { marketingLinkId: marketingLink.id, marketingLinkTag: marketingLink.tag } : {}),
 			discountAmount,
 			premiumMemberDiscountApplied,
 			// Persist the individual rates so a later email can itemise the two discounts.

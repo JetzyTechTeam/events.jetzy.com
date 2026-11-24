@@ -8,6 +8,8 @@ import { ensureDbConnected } from "@/configs/database"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../../auth/[...nextauth]"
 import { Types } from "mongoose"
+import { getCheckoutVerificationTotals } from "@/lib/checkout-verification-stats"
+import { hasCheckoutVerificationData } from "@/lib/checkout-verification-events"
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
 	if (req.method !== "GET") {
@@ -83,10 +85,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		]).catch(() => [] as any[])
 		const bookingComplete = bookingBuyers?.[0]?.n || 0
 
+		// The checkout email check (code sent / verified / gave up / already signed in). Same
+		// match, so it answers for the same event and dates as the stages above.
+		const verification = await getCheckoutVerificationTotals(match)
+
+		// "Confirmed their email" = verified with a code OR already signed in, so it can never be
+		// smaller than "Submitted" for a buyer who needed no code. Shown only when the range holds
+		// email-check data at all — periods before it was recorded would otherwise read as everyone
+		// stopping at a step that didn't exist yet.
 		const funnel = [
 			{ stage: "view", label: "Opened the event page", count: counts.view },
 			{ stage: "ticket_select", label: "Picked a ticket", count: counts.ticket_select },
 			{ stage: "booking_start", label: "Opened checkout", count: counts.booking_start },
+			...(hasCheckoutVerificationData(verification)
+				? [{ stage: "email_confirmed", label: "Confirmed their email", count: verification.confirmed }]
+				: []),
 			{ stage: "checkout_submit", label: "Submitted checkout", count: counts.checkout_submit },
 			{ stage: "booking_complete", label: "Booked", count: bookingComplete },
 		]
@@ -98,7 +111,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return { ...stage, dropOffPct: Math.max(0, Math.round(dropOff * 10) / 10), conversionPct: Math.round(conversionFromTop * 10) / 10 }
 		})
 
-		return sendResponse(res, { funnel: withRates }, "Funnel retrieved", true, ResCode.OK)
+		return sendResponse(res, { funnel: withRates, verification }, "Funnel retrieved", true, ResCode.OK)
 	} catch (error: any) {
 		console.error("[Journey Funnel] Error:", error)
 		return sendResponse(res, null, error.message || "Failed", false, ResCode.INTERNAL_SERVER_ERROR)

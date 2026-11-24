@@ -87,6 +87,8 @@ interface InteractionWindowStats {
 	ticketSelect: number
 	checkoutOpen: number
 	checkoutSubmit: number
+	emailCodeSent: number
+	emailVerified: number
 	shares: number
 }
 
@@ -114,6 +116,9 @@ async function interactionsByWindow(eventObjectId: Types.ObjectId, windows: Repo
 			ticketSelect: byType("ticket_select")?.sessions || 0,
 			checkoutOpen: byType("booking_start")?.sessions || 0,
 			checkoutSubmit: byType("checkout_submit")?.sessions || 0,
+			// Checkout email check — distinct sessions, like every stage here.
+			emailCodeSent: byType("verify_code_sent")?.sessions || 0,
+			emailVerified: byType("email_verified")?.sessions || 0,
 			shares: byType("share")?.rows || 0,
 		}
 	}
@@ -172,6 +177,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				"Ticket Selections": interactions[key].ticketSelect,
 				"Checkout Opened": interactions[key].checkoutOpen,
 				"Checkout Submitted": interactions[key].checkoutSubmit,
+				"Email Code Sent": interactions[key].emailCodeSent,
+				"Email Verified": interactions[key].emailVerified,
 				"Bookings Created": bookings[key].created,
 				"Bookings Confirmed": bookings[key].confirmed,
 				"Tickets Booked": bookings[key].tickets,

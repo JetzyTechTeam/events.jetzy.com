@@ -7,6 +7,7 @@ import { ensureDbConnected } from "@/configs/database"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 import { Types } from "mongoose"
+import { CHECKOUT_VERIFICATION_TYPES } from "@/lib/checkout-verification-events"
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
 	if (req.method !== "POST") {
@@ -16,7 +17,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	try {
 		await ensureDbConnected()
 		const session = await getServerSession(req, res, authOptions)
-		const { eventId, sessionId, interactionType, metadata } = req.body
+		const { eventId, sessionId, interactionType, metadata, anonId, marketingLinkId } = req.body
 
 		if (!eventId || !sessionId || !interactionType) {
 			return sendResponse(res, null, "Event ID, session ID, and interaction type are required", false, ResCode.BAD_REQUEST)
@@ -30,7 +31,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// browser tells us nothing more about, so without it "started booking" and "paid" had a
 		// silent step between them (filled the form, pressed the button, Stripe or validation
 		// refused). See EventTicketsComponent / EventCheckoutModel for the writers.
-		const validTypes = ["view", "click", "share", "ticket_select", "booking_start", "checkout_submit"]
+		// Plus the checkout email-check steps (src/lib/checkout-verification-events.ts).
+		const validTypes = ["view", "click", "share", "ticket_select", "booking_start", "checkout_submit", ...CHECKOUT_VERIFICATION_TYPES] as string[]
 		if (!validTypes.includes(interactionType)) {
 			return sendResponse(res, null, "Invalid interaction type", false, ResCode.BAD_REQUEST)
 		}
@@ -41,6 +43,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const eventObjectId = new Types.ObjectId(eventId)
 		const timestamp = new Date()
 
+		// The browser remembers a link for 30 days; whether it still COUNTS is decided here — a
+		// link of this event that is ON now. A link switched off (or deleted) stops collecting
+		// visits immediately, even from browsers that opened it earlier. Never throws.
+		const { resolveMarketingLinkForBooking } = await import("@/lib/marketing-link-server")
+		const liveLink = marketingLinkId ? await resolveMarketingLinkForBooking(String(eventId), marketingLinkId) : null
+
 		// Fire and forget - don't block the request
 		EventInteraction.create({
 			eventId: eventObjectId,
@@ -49,6 +57,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			interactionType,
 			timestamp,
 			metadata: metadata || undefined,
+			// Both optional; a bad or switched-off link id is dropped rather than failing the row.
+			...(typeof anonId === "string" && anonId && anonId.length <= 64 ? { anonId } : {}),
+			...(liveLink ? { marketingLinkId: new Types.ObjectId(liveLink.id) } : {}),
 		}).catch((error) => {
 			console.error("[Analytics Track Event Interaction] Error:", error.message)
 		})

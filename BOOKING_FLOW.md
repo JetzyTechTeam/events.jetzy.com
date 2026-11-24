@@ -236,6 +236,8 @@ lower-case of these):
   "tax": 0,                             // always 0
   "referralCode": "SPRING",             // optional — the code string used
   "referralDiscountPercentage": 50,     // optional, no default
+  "marketingLinkId": ObjectId,          // optional, no default — event marketing link credited (§5.6)
+  "marketingLinkTag": "instagram",      // optional — snapshot of that link's tag
   "premiumMemberDiscountApplied": false,// legacy, retired feature — write false or leave
   "premiumMemberDiscountPercentage": 0, // legacy — never write for new bookings
   "customAnswers": [ { "questionId": "q1", "answer": "…" } ],
@@ -590,8 +592,8 @@ Every session carries `metadata` (≤ 500 chars per value — Stripe rejects the
 otherwise): `bookingRef`, `eventId`, `firstName`, `lastName`, `email`, `phone`,
 `tickets` (JSON `[{id,name,price,quantity}]`), `requiresApproval` (`"true"`/`"false"`),
 `acceptedTerms`, `acceptedTermsAt`, `ticketSubtotal`, `ticketTotal`, optional `bookerUserId`,
-`checkoutUserId`, `referralCode`, `referralDiscountPercentage`, `referralSubtotal`, `ans_<questionId>`,
-and for memberships `purpose: "ticket+membership"`, `membershipUserId`, `memberships` (JSON lines).
+`checkoutUserId`, `referralCode`, `referralDiscountPercentage`, `referralSubtotal`, `marketingLinkId`,
+`ans_<questionId>`, and for memberships `purpose: "ticket+membership"`, `membershipUserId`, `memberships` (JSON lines).
 
 | Shape | When | Key parameters |
 |---|---|---|
@@ -675,6 +677,23 @@ the discounted total is exactly 0 and no membership is owed (§5.2). Check capac
 booking with **no `payment`**, `total: 0`, `status` `pending` (approval) or `confirmed`. Confirmed →
 tracker, referral usage **only if the code actually discounted something**, event member, ticket
 confirmation, host notice. Pending → request-received email + approver notice.
+
+### 5.6 Marketing-link attribution (web, 2026-11-24)
+
+An event can have several tracked share links, `<event url>?mk=<tag>` (collection
+`event-marketing-links`: `eventId`, `tag` unique per event and immutable, `label`, `platform`,
+optional `referralCodeId`, `isActive`, `isDeleted`). The web remembers the LAST link a browser opened
+for that event for 30 days and sends its id as `marketingLinkId` to both checkout endpoints.
+
+- The server accepts it only if it is a link **of that event** that is **ON** (not switched off,
+  not deleted) when checkout opens, and **never refuses an order over it**: a bad or switched-off id
+  just means no attribution. Fulfilment does not re-check on/off — that was decided at checkout.
+- Stripe path: one metadata key `marketingLinkId`; fulfilment re-resolves it and writes
+  `marketingLinkId` + `marketingLinkTag` on the booking. Free path writes both directly.
+- `?mk=` is NOT `?ref=` — `ref` is a discount code that checkout refuses when invalid. A link may
+  carry a referral code; the landing page then pre-fills it exactly like `?ref=`.
+- The app needs no change to keep working. To credit app-originated sales to a link, send the same
+  `marketingLinkId` (absent = "direct").
 
 ---
 
@@ -1948,6 +1967,12 @@ from the app (§5.0); then act on them from the app **and** confirm the web show
 ---
 
 ## 18. Changelog
+
+**2026-11-24 (marketing links):** bookings gain optional `marketingLinkId` + `marketingLinkTag`
+(no defaults), and Stripe metadata an optional `marketingLinkId` (§5.6). Both checkout endpoints
+accept `marketingLinkId` in the body and never fail on it. No change to any existing field.
+Same day: a link switched OFF stops crediting new visits and bookings immediately, even from a
+browser that remembered it.
 
 **2026-11-18 (scanner fix):** the web scanner acts only on a QR held steady (3 consecutive reads),
 remembers every code it acted on, refuses a frame with two or more QRs, and pauses 1.2s after each

@@ -16,14 +16,18 @@ import { toMetaDescription } from "@/utils/text"
 import { normalizeEventMediaFields } from "@/lib/event-media"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/pages/api/auth/[...nextauth]"
+import { MK_PARAM, rememberMarketingTouch } from "@/lib/marketing-link"
+import type { LandingMarketingLink } from "@/lib/marketing-link-server"
 
 const HostedEvents = dynamic(() => import("@Jetzy/components/HostedEvents"), { ssr: false }) // Import the HostedEvents component dynamically
 
 type Props = {
 	event: string
 	pendingApproval?: boolean
+	/** Resolved from `?mk=` server-side; absent when no tag, unknown, inactive or deleted. */
+	marketingLink?: LandingMarketingLink | null
 }
-export default function EventDetailPage({ event, pendingApproval }: Props) {
+export default function EventDetailPage({ event, pendingApproval, marketingLink }: Props) {
 	const { trackEventInteraction } = useAnalytics()
 	const router = useRouter()
 
@@ -74,6 +78,28 @@ export default function EventDetailPage({ event, pendingApproval }: Props) {
 					sessionStorage.setItem("jetzy_referral_code", referralCode)
 				}
 
+				// Marketing link (`?mk=`). Remembered BEFORE the view is tracked, since
+				// trackEventInteraction reads the stored touch to credit this view. Counted
+				// here on the client, never in getServerSideProps: link-preview scrapers
+				// (Facebook, Instagram, Partiful) fetch the url without running JS.
+				if (marketingLink?.linkId) {
+					rememberMarketingTouch(data._id.toString(), { linkId: marketingLink.linkId, tag: marketingLink.tag })
+					// The link's own code, only when the visitor didn't bring an explicit ?ref=.
+					if (marketingLink.referralCode && !referralCode) {
+						try {
+							sessionStorage.setItem("jetzy_referral_code", marketingLink.referralCode)
+						} catch {
+							// Optional prefill only.
+						}
+					}
+				}
+				// Strip the tag from the address bar either way, so a visitor re-sharing the url
+				// doesn't pass the channel on to whoever they send it to.
+				if (urlParams.has(MK_PARAM)) {
+					const { [MK_PARAM]: _mk, ...restQuery } = router.query
+					router.replace({ pathname: router.pathname, query: restQuery }, undefined, { shallow: true, scroll: false }).catch(() => {})
+				}
+
 				// Track event view using new analytics system
 				if (data?._id) {
 					await trackEventInteraction(data._id.toString(), "view", {
@@ -106,6 +132,9 @@ export default function EventDetailPage({ event, pendingApproval }: Props) {
 		}
 
 		trackView()
+		// `marketingLink` is a page prop (fixed for the page's life) and `router` is only used to
+		// strip the tag; neither should re-run the view tracking.
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [data?._id, trackEventInteraction, isPreview])
 
 	if (pendingApproval) {
@@ -359,9 +388,18 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 		// compress the event data
 		const eventData = JSON.stringify(event.toJSON())
 
+		// Marketing link from `?mk=` — a lookup only, nothing is counted here (see the client).
+		// Never throws; an unknown tag just means no attribution.
+		let marketingLink: LandingMarketingLink | null = null
+		if (context.query[MK_PARAM]) {
+			const { resolveMarketingLinkByTag } = await import("@/lib/marketing-link-server")
+			marketingLink = await resolveMarketingLinkByTag(String(event._id), context.query[MK_PARAM])
+		}
+
 		return {
 			props: {
 				event: eventData,
+				...(marketingLink ? { marketingLink } : {}),
 			},
 		}
 	} catch (error) {

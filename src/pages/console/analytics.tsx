@@ -16,6 +16,8 @@ import EventPerformanceTab from "@/components/analytics/EventPerformanceTab"
 import TablePagination from "@/components/analytics/TablePagination"
 import { AnalyticsPanel, InfoTip, PHONE, StatTable, darkTableSx, downloadCsv } from "@/components/analytics/AnalyticsPanel"
 import PhoneStatRows from "@/components/analytics/PhoneStatRows"
+import CheckoutVerificationPanel from "@/components/analytics/CheckoutVerificationPanel"
+import type { CheckoutVerificationStats } from "@/lib/checkout-verification-events"
 import { usePagedAnalytics } from "@/hooks/usePagedAnalytics"
 
 interface OverviewData {
@@ -417,6 +419,8 @@ export default function AnalyticsPage() {
 	const [deviceData, setDeviceData] = useState<DeviceData | null>(null)
 	const [entryExitData, setEntryExitData] = useState<PageData | null>(null)
 	const [namedEventsData, setNamedEventsData] = useState<NamedEventsData | null>(null)
+	// Checkout email check across every event — the funnel API with no eventId (admin only).
+	const [verificationStats, setVerificationStats] = useState<CheckoutVerificationStats | null>(null)
 	const [namedEventsCategory, setNamedEventsCategory] = useState<string>("all")
 	const [isLoading, setIsLoading] = useState(true)
 	const [hasLoaded, setHasLoaded] = useState(false)
@@ -449,7 +453,7 @@ export default function AnalyticsPage() {
 			const qs = params.toString()
 			const get = (path: string) => fetch(`${path}${path.includes("?") ? "&" : "?"}${qs}`, { method: "GET", credentials: "include", headers: { "Content-Type": "application/json" } })
 
-			const [overviewRes, visitorsRes, bookingsRes, utmRes, devicesRes, entryExitRes, namedEventsRes] = await Promise.all([
+			const [overviewRes, visitorsRes, bookingsRes, utmRes, devicesRes, entryExitRes, namedEventsRes, funnelRes] = await Promise.all([
 				get("/api/analytics/overview"),
 				get("/api/analytics/visitors?groupBy=day"),
 				get("/api/analytics/bookings?groupBy=day"),
@@ -457,6 +461,7 @@ export default function AnalyticsPage() {
 				get("/api/analytics/devices"),
 				get("/api/analytics/pages?limit=10&page=1"),
 				get("/api/analytics/named-events"),
+				get("/api/analytics/journey/funnel"),
 			])
 
 			const read = async (res: Response, set: (d: any) => void) => {
@@ -472,6 +477,7 @@ export default function AnalyticsPage() {
 				read(devicesRes, setDeviceData),
 				read(entryExitRes, setEntryExitData),
 				read(namedEventsRes, setNamedEventsData),
+				read(funnelRes, (d) => setVerificationStats(d?.verification || null)),
 			])
 
 			if (!overviewRes.ok || !visitorsRes.ok || !bookingsRes.ok) {
@@ -663,6 +669,8 @@ export default function AnalyticsPage() {
 													]}
 												/>
 											</AnalyticsPanel>
+
+											<CheckoutVerificationPanel stats={verificationStats} subtitle={`Ticket buyers asked to confirm their email, all events, ${periodLabel}`} mb={0} />
 										</SimpleGrid>
 									</TabPanel>
 

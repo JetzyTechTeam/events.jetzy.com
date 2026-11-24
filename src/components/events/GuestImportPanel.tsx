@@ -27,13 +27,19 @@ export default function GuestImportPanel({
 	eventId,
 	onAdd,
 }: {
-	eventId: string
+	/**
+	 * The event being invited to — used to flag (and untick) people already invited. Optional: the
+	 * admin Email Attendees page imports a list that belongs to no single event, and skips the check.
+	 */
+	eventId?: string
 	onAdd: (guests: ImportedGuest[]) => void
 }) {
 	const inputRef = useRef<HTMLInputElement>(null)
 	const [reading, setReading] = useState(false)
 	const [error, setError] = useState("")
 	const [fileName, setFileName] = useState("")
+	// Which sheet was read, when the workbook has more than one — only one is imported.
+	const [sheetNote, setSheetNote] = useState("")
 	const [rows, setRows] = useState<PreviewRow[] | null>(null)
 	const [problems, setProblems] = useState<GuestImportProblem[]>([])
 	const [showProblems, setShowProblems] = useState(false)
@@ -44,6 +50,7 @@ export default function GuestImportPanel({
 		setShowProblems(false)
 		setFileName("")
 		setError("")
+		setSheetNote("")
 	}
 
 	const downloadTemplate = () => {
@@ -57,6 +64,7 @@ export default function GuestImportPanel({
 
 	/** Addresses already invited to this event. A failed lookup flags nobody rather than blocking the import. */
 	const loadInvited = async (): Promise<Set<string>> => {
+		if (!eventId) return new Set()
 		try {
 			const res = await axios.get("/api/guests-list", { params: { eventId } })
 			const list: any[] = Array.isArray(res.data) ? res.data : []
@@ -68,6 +76,18 @@ export default function GuestImportPanel({
 
 	const handleFile = async (file: File) => {
 		reset()
+		// Each failure gets its OWN sentence (QA, 2026-11-23): an empty file, a .txt and a broken
+		// workbook all used to say "couldn't find an email column", which sent people hunting for a
+		// column that was never the problem.
+		const ext = (file.name.split(".").pop() || "").toLowerCase()
+		if (!["xlsx", "xls", "csv"].includes(ext)) {
+			setError(`${ext ? `A .${ext} file` : "That file"} can't be imported. Use an Excel file (.xlsx or .xls) or a .csv file.`)
+			return
+		}
+		if (file.size === 0) {
+			setError("That file is empty.")
+			return
+		}
 		if (file.size > MAX_FILE_BYTES) {
 			setError("That file is over 5MB. A guest list should be far smaller — check it's the right file.")
 			return
@@ -75,15 +95,32 @@ export default function GuestImportPanel({
 		setReading(true)
 		setFileName(file.name)
 		try {
-			const [XLSX, invited] = await Promise.all([import("xlsx"), loadInvited()])
-			const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" })
-			const sheet = workbook.Sheets[workbook.SheetNames[0]]
-			if (!sheet) {
-				setError("That file has no sheets in it.")
+			const bytes = new Uint8Array(await file.arrayBuffer())
+			// A real .xlsx is a zip ("PK"). SheetJS will happily read anything else as text and find no
+			// email column, so a renamed or damaged file is called what it is. (.xls is NOT checked:
+			// systems export HTML/XML tables named .xls, and SheetJS reads those fine.)
+			const isZip = bytes[0] === 0x50 && bytes[1] === 0x4b
+			if (ext === "xlsx" && !isZip) {
+				setError("That Excel file looks damaged, or isn't really an Excel file. Open it in Excel, save it again as .xlsx, and retry.")
 				return
 			}
-			const raw = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1, raw: false, defval: "" })
-			const result = parseGuestRows(raw.map((r) => (Array.isArray(r) ? r.map((c) => String(c ?? "")) : [])))
+			const [XLSX, invited] = await Promise.all([import("xlsx"), loadInvited()])
+			const workbook = XLSX.read(bytes, { type: "array" })
+			const toRows = (name: string) =>
+				XLSX.utils
+					.sheet_to_json<any[]>(workbook.Sheets[name], { header: 1, raw: false, defval: "" })
+					.map((r) => (Array.isArray(r) ? r.map((c) => String(c ?? "")) : []))
+			const hasData = (rows: string[][]) => rows.some((r) => r.some((c) => c.trim()))
+			// The first sheet that holds anything — a workbook whose first tab is a cover page still imports.
+			const sheetName = workbook.SheetNames.find((n) => hasData(toRows(n)))
+			if (!sheetName) {
+				setError(workbook.SheetNames.length ? "That file has no data in it." : "That file has no sheets in it.")
+				return
+			}
+			if (workbook.SheetNames.length > 1) {
+				setSheetNote(`Read the sheet "${sheetName}". This file has ${workbook.SheetNames.length} sheets — only one is imported.`)
+			}
+			const result = parseGuestRows(toRows(sheetName))
 			if (!result.ok) {
 				setError(result.error)
 				return
@@ -96,7 +133,7 @@ export default function GuestImportPanel({
 			)
 			setProblems(result.problems)
 		} catch {
-			setError("We couldn't read that file. Save it as .xlsx or .csv and try again.")
+			setError("We couldn't read that file — it may be damaged. Save it again as .xlsx or .csv and try again.")
 		} finally {
 			setReading(false)
 		}
@@ -171,6 +208,11 @@ export default function GuestImportPanel({
 							{problems.length > 0 && ` · ${problems.length} skipped`}
 						</Text>
 					</Flex>
+					{sheetNote && (
+						<Text fontSize="xs" color="gray.400" mb={2}>
+							{sheetNote}
+						</Text>
+					)}
 
 					{alreadyCount > 0 && (
 						<Text fontSize="xs" color="orange.300" mb={2}>

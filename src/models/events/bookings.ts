@@ -189,6 +189,19 @@ const bookingSchema = new Schema<IBookings>(
 			type: String,
 			required: false,
 		},
+		// The event's marketing link (`event-marketing-links`) that last brought this buyer to
+		// the event page within the 30-day window — see `src/lib/marketing-link.ts`. No default:
+		// absent means "direct / no link", including every booking made before links existed.
+		// `marketingLinkTag` is a snapshot of the link's tag so a report still reads after the
+		// link is deleted.
+		marketingLinkId: {
+			type: Schema.Types.ObjectId,
+			required: false,
+		},
+		marketingLinkTag: {
+			type: String,
+			required: false,
+		},
 		discountAmount: {
 			type: Number,
 			default: 0,

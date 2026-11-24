@@ -13,7 +13,13 @@
  *
  * The `{{userName}}` / `{{userEmail}}` / `{{bookingRef}}` tokens survive `buildBlastHtml` and are
  * substituted per recipient by `personalizeBlastHtml`.
+ *
+ * The message goes through `emailBodyHtml` (`src/lib/email-body.ts`) — bare urls become links,
+ * scheme-less hrefs get https, pasted `data:` pictures are dropped, spacing matches the editor.
+ * Never interpolate the editor's HTML raw again: that is how typed urls arrived unclickable.
  */
+
+import { emailBodyHtml } from "@/lib/email-body"
 
 export type BlastEmailType = "custom" | "availability"
 
@@ -36,8 +42,12 @@ export interface BuildBlastHtmlArgs {
 	subject: string
 	message: string
 	eventName: string
-	/** Where "View Event Details" points. Resolved server-side from the event's slug. */
-	eventLink: string
+	/**
+	 * Where "View Event Details" points. Resolved server-side from the event's slug. EMPTY = no
+	 * button: an admin Email Attendees send with no event linked is a plain custom email. Event
+	 * blasts always pass one.
+	 */
+	eventLink?: string
 	/** Already-built HTML for the footer line — differs for a host-owned vs admin-owned event. */
 	footerContact: string
 	emailType?: BlastEmailType
@@ -142,6 +152,17 @@ export function buildBlastHtml({
 	year,
 }: BuildBlastHtmlArgs): string {
 	const copyright = year ?? new Date().getFullYear()
+	// Shapes the editor's HTML for an inbox. The stored message stays exactly as typed.
+	const body = emailBodyHtml(message)
+	// No link → no button (a plain custom email from the admin Email Attendees page).
+	const cta = eventLink
+		? `
+        <div style="text-align: center; margin: 35px 0;">
+          <a href="${eventLink}" style="background-color: #F79432; color: #fff; padding: 12px 25px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
+            View Event Details
+          </a>
+        </div>`
+		: ""
 	const pictures = imagesBlock(images)
 	const files = linksBlock(links)
 	// Omitted entirely when off: an empty <p> would still leave a gap above the message.
@@ -183,13 +204,8 @@ export function buildBlastHtml({
           </a>
         </div>
         <div style="font-size: 16px; color: #555; line-height: 1.6;">
-          ${message}
-        </div>${pictures}${files}
-        <div style="text-align: center; margin: 35px 0;">
-          <a href="${eventLink}" style="background-color: #F79432; color: #fff; padding: 12px 25px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
-            View Event Details
-          </a>
-        </div>
+          ${body}
+        </div>${pictures}${files}${cta}
         <p style="font-size: 14px; color: #999; text-align: center; margin-top: 30px; border-top: 1px solid #eee; padding-top: 20px;">
           ${footerContact}
           <br />
@@ -214,13 +230,8 @@ export function buildBlastHtml({
         <h1 style="color: #333; text-align: center;">${subject}</h1>
         ${greeting}
         <div style="font-size: 16px; color: #555; line-height: 1.6;">
-          ${message}
-        </div>${pictures}${files}
-        <div style="text-align: center; margin: 35px 0;">
-          <a href="${eventLink}" style="background-color: #F79432; color: #fff; padding: 12px 25px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
-            View Event Details
-          </a>
-        </div>
+          ${body}
+        </div>${pictures}${files}${cta}
         <p style="font-size: 14px; color: #999; text-align: center; margin-top: 30px; border-top: 1px solid #eee; padding-top: 20px;">
           ${footerContact}
           <br />
