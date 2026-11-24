@@ -269,6 +269,9 @@ export interface IBookings extends IBaseModelProps {
 	tax: number
 	total: number
 	referralCode?: string
+	/** Marketing link credited with this booking (last touch, 30 days). Absent = direct. */
+	marketingLinkId?: Types.ObjectId
+	marketingLinkTag?: string
 	discountAmount?: number
 	premiumMemberDiscountApplied?: boolean
 	/** Rates behind `discountAmount`; undefined on bookings predating the split. */

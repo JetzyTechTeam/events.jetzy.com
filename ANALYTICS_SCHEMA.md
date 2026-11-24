@@ -86,7 +86,8 @@ Three identifiers track a visitor across the journey:
 | `pageviews` | `PageView` | One doc per page view. Has `timeSpent`, UTM params, device/browser, referrer. |
 | `usersessions` | `UserSession` | One doc per session. `startTime`, `endTime`, `duration`, `entryPage`, `exitPage`, `pageCount`, `isLoggedIn`, **`anonId` (added)**. |
 | `userjourneys` | `UserJourney` | One doc per session with a `journey: [{ action, page, eventId?, timestamp, duration?, metadata? }]` array. **`anonId` (added)**. |
-| `eventinteractions` | `EventInteraction` | Event-scoped interactions: `view`, `click`, `share`, `ticket_select`, `booking_start`. |
+| `eventinteractions` | `EventInteraction` | Event-scoped interactions: `view`, `click`, `share`, `ticket_select`, `booking_start`, `checkout_submit`. **`anonId` + `marketingLinkId` (added 2026-11-24)** — both optional, no default; `marketingLinkId` = the event's marketing link (`event-marketing-links`) the browser last opened within 30 days, absent = direct. `checkout_submit` was missing from the schema enum before 2026-11-24, so no such rows exist before that date. |
+| `event-marketing-links` | `MarketingLinks` | Tracked share links per event (`?mk=<tag>`): `eventId`, `tag` (unique per event, immutable), `label`, `platform`, `referralCodeId?`, `isActive`, `isDeleted`. Bookings carry `marketingLinkId` / `marketingLinkTag`. |
 | `useractions` | `UserAction` | Generic action tracking (legacy). |
 
 ### New (added with the journey analytics feature)
@@ -106,6 +107,7 @@ All new collections include `sessionId`, `userId?`, `anonId?`, `page`, `eventId?
 **WebClick:** `{ sessionId: 1, timestamp: 1 }`, `{ eventId: 1, timestamp: -1 }`, `{ page: 1, timestamp: -1 }`, `{ isRageClick: 1 }`
 **WebScroll:** `{ sessionId: 1, page: 1 }` (unique), `{ eventId: 1, maxDepthPct: -1 }`
 **WebForm:** `{ sessionId: 1, timestamp: 1 }`, `{ eventId: 1, interactionType: 1 }`, `{ formName: 1, interactionType: 1 }`
+**EventInteraction:** adds `{ eventId: 1, marketingLinkId: 1, interactionType: 1 }` partial on `marketingLinkId` existing. **MarketingLinks:** `{ eventId: 1, tag: 1 }` unique. Both built by `scripts/create-marketing-link-index.ts`.
 
 ---
 

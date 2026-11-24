@@ -24,6 +24,7 @@ import { trialEndsOn } from "@/lib/invite-trial"
 import { useRouter } from "next/router"
 import { useAnalytics } from "@/hooks/useAnalytics"
 import { isPreviewQuery } from "@/lib/event-preview"
+import { readMarketingTouch } from "@/lib/marketing-link"
 
 /**
  * "monthly" reads better than "every month" in the billing disclosure, but the interval
@@ -598,6 +599,9 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 					eventId,
 					// Sent so the server can reproduce the same $0 and record WHY it was free.
 					referralCode: formData.referralCode?.trim()?.toUpperCase() || undefined,
+					// The event's last marketing link (30-day last touch). The server re-checks it
+					// belongs to this event and never fails the order over it.
+					marketingLinkId: readMarketingTouch(eventId ? String(eventId) : null)?.linkId,
 					customAnswers: JSON.stringify(customAnswersArray),
 					acceptedTerms: acceptedTerms,
 				}),
@@ -668,6 +672,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 					tickets: JSON.stringify(tickets),
 					user: JSON.stringify(formData),
 					referralCode: formData.referralCode?.trim()?.toUpperCase() || undefined,
+					marketingLinkId: readMarketingTouch(String((tickets[0] as any)?.eventId || eventData?._id || ""))?.linkId,
 					acceptedTerms: acceptedTerms,
 					customAnswers: JSON.stringify(
 						Object.entries(customAnswers).map(([qId, answer]) => ({ questionId: qId, answer }))

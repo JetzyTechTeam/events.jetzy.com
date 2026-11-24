@@ -16,7 +16,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	try {
 		await ensureDbConnected()
 		const session = await getServerSession(req, res, authOptions)
-		const { eventId, sessionId, interactionType, metadata } = req.body
+		const { eventId, sessionId, interactionType, metadata, anonId, marketingLinkId } = req.body
 
 		if (!eventId || !sessionId || !interactionType) {
 			return sendResponse(res, null, "Event ID, session ID, and interaction type are required", false, ResCode.BAD_REQUEST)
@@ -49,6 +49,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			interactionType,
 			timestamp,
 			metadata: metadata || undefined,
+			// Both optional; a malformed link id is dropped rather than failing the row. Whether
+			// the id belongs to THIS event is settled by the report, which only reads this
+			// event's links.
+			...(typeof anonId === "string" && anonId && anonId.length <= 64 ? { anonId } : {}),
+			...(typeof marketingLinkId === "string" && Types.ObjectId.isValid(marketingLinkId)
+				? { marketingLinkId: new Types.ObjectId(marketingLinkId) }
+				: {}),
 		}).catch((error) => {
 			console.error("[Analytics Track Event Interaction] Error:", error.message)
 		})

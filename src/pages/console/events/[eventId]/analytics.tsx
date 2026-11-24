@@ -38,6 +38,7 @@ import DateRangeSelector from "@/components/analytics/DateRangeSelector"
 import PhoneStatRows from "@/components/analytics/PhoneStatRows"
 import { WINDOW_KEYS, WINDOW_LABELS, type WindowKey } from "@/lib/analytics-windows"
 import SafeHTML from "@/components/misc/SafeHTML"
+import { MarketingLinksManager } from "@/components/console/MarketingLinksManager"
 import { stripHTMLAndDecode } from "@/lib/utils"
 
 interface FunnelStage { stage: string; label: string; count: number; dropOffPct: number; conversionPct: number }
@@ -898,6 +899,12 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 											</TableContainer>
 										</Box>
 									)}
+
+									{/* Marketing links — the same report the host manages on Manage Event, scoped
+									    to the date range above. */}
+									<Box mt={8}>
+										<MarketingLinksManager eventId={eventData._id} eventSlug={eventData.slug || eventData._id} readOnly rangeFrom={dateFrom} rangeTo={dateTo} />
+									</Box>
 								</TabPanel>
 								<TabPanel px={0}>
 									<Flex justify="space-between" align="center" mb={4} flexWrap="wrap" gap={3}>

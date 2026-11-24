@@ -2,6 +2,7 @@
 import { stripHtml } from "@/utils/text";
 import ConsoleLayout from "@/components/layout/ConsoleLayout"
 import { ReferralCodesManager } from "@/components/console/ReferralCodesManager"
+import { MarketingLinksManager } from "@/components/console/MarketingLinksManager"
 import { ticketMemberships, ticketMembershipInterval, ticketMembershipFreeMonths } from "@/lib/premium-bundle"
 import TicketMembershipToggles from "@/components/events/TicketMembershipToggles"
 import { SortableTicketList, SortableTicketItem } from "@/components/events/SortableTicketList"
@@ -133,7 +134,7 @@ import { eventPath, eventUrl, eventAlbumPath, eventAlbumUrl } from "@/lib/event-
 import { previewPath } from "@/lib/event-preview"
 import { ApprovalRequests } from "@/components/console/ApprovalRequests"
 import { AlbumPhotoRequests, albumPhotoRequestsQueryKey, fetchAlbumPhotoRequests } from "@/components/console/AlbumPhotoRequests"
-import { buildManageSections } from "@/components/console/manage/manageSections"
+import { buildManageSections, manageSectionIndex } from "@/components/console/manage/manageSections"
 import { ManageSectionSwitcher } from "@/components/console/manage/ManageSectionSwitcher"
 import { MobileSection } from "@/components/console/manage/MobileSection"
 import { ManageMobileActionBar } from "@/components/console/manage/ManageMobileActionBar"
@@ -402,20 +403,28 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 	// shift under the host while they are using it.
 	const hasApprovalTickets = React.useMemo(() => showApprovalsSurface(event as any, pendingApprovalCount), [event, pendingApprovalCount])
 
-	// Approvals is conditional, so every tab after it shifts by one when it is absent.
-	// Derived rather than written down twice — a hardcoded index here silently opens the
-	// wrong panel on an event that shows no Approvals tab.
-	const photoRequestsTabIndex = hasApprovalTickets ? 7 : 6
+	// One ordered list drives BOTH the desktop tab bar and the phone section switcher, so the
+	// two can't disagree about which index opens which panel. Every jump to a tab looks its
+	// index up by KEY — Approvals is conditional and tabs get inserted, so a written-down number
+	// silently opens the wrong panel.
+	const manageSections = React.useMemo(() => buildManageSections(hasApprovalTickets), [hasApprovalTickets])
+	const approvalsTabIndex = manageSectionIndex(manageSections, "approvals")
+	const photoRequestsTabIndex = manageSectionIndex(manageSections, "photoRequests")
+	const blastsTabIndex = manageSectionIndex(manageSections, "blasts")
+	const marketingLinksTabIndex = manageSectionIndex(manageSections, "marketingLinks")
 
 	// Deep-link from the admin approval-request email opens the Approvals tab
 	useEffect(() => {
-		if (router.query.tab === "approvals" && hasApprovalTickets) {
-			setTabIndex(6)
+		if (router.query.tab === "approvals" && approvalsTabIndex >= 0) {
+			setTabIndex(approvalsTabIndex)
 		}
 		if (router.query.tab === "photo-requests") {
 			setTabIndex(photoRequestsTabIndex)
 		}
-	}, [router.query.tab, hasApprovalTickets, photoRequestsTabIndex])
+		if (router.query.tab === "marketing-links") {
+			setTabIndex(marketingLinksTabIndex)
+		}
+	}, [router.query.tab, approvalsTabIndex, photoRequestsTabIndex, marketingLinksTabIndex])
 
 	const { data: analytics } = useQuery({
 		queryKey: ["event-analytics", event._id],
@@ -432,10 +441,6 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 			return res.data || []
 		},
 	})
-
-	// One ordered list drives BOTH the desktop tab bar and the phone section switcher, so the
-	// two can't disagree about which index opens which panel.
-	const manageSections = React.useMemo(() => buildManageSections(hasApprovalTickets), [hasApprovalTickets])
 
 	// Same cache entry the Photo Requests tab reads (its panel is mounted with the page), so the
 	// switcher's badge costs no extra request and moves when a request is marked handled.
@@ -1547,7 +1552,7 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 												? "Quick actions unlock once you publish this event and it's approved. You'll be able to invite guests, send blasts and open the check-in portal then."
 												: "Quick actions unlock once your event is approved. You'll be able to invite guests, send blasts and open the check-in portal then."}
 											onInvite={() => setInviteGuestsModal(true)}
-											onBlast={() => setTabIndex(5)}
+											onBlast={() => setTabIndex(blastsTabIndex)}
 											onShare={() => setShareModal(true)}
 											onCheckIn={() => router.push(`/console/events/${event._id}/check-in`)}
 										/>
@@ -2169,7 +2174,7 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 														<Flex as="button" type="button" align="center" gap={2} border="1px solid #FFFFFF29" borderRadius="10px" p={4} _hover={{ bg: "#FFFFFF0A" }} onClick={() => setInviteGuestsModal(true)}>
 															<UserPlusSVG /><Text className={roboto.className} color="white" fontWeight={500} fontSize="16px">Invite Guests</Text>
 														</Flex>
-														<Flex as="button" type="button" align="center" gap={2} border="1px solid #FFFFFF29" borderRadius="10px" p={4} _hover={{ bg: "#FFFFFF0A" }} onClick={() => setTabIndex(5)}>
+														<Flex as="button" type="button" align="center" gap={2} border="1px solid #FFFFFF29" borderRadius="10px" p={4} _hover={{ bg: "#FFFFFF0A" }} onClick={() => setTabIndex(blastsTabIndex)}>
 															<MessageSVG /><Text className={roboto.className} color="white" fontWeight={500} fontSize="16px">Send a Blast</Text>
 														</Flex>
 														<Flex as="button" type="button" align="center" gap={2} border="1px solid #FFFFFF29" borderRadius="10px" p={4} _hover={{ bg: "#FFFFFF0A" }} onClick={() => setShareModal(true)}>
@@ -2299,6 +2304,11 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 									eventId={event._id}
 									tickets={(event.tickets || []).map((t: any) => ({ _id: String(t._id), name: stripHtml(t.name || ""), price: Number(t.price) || 0 }))}
 								/>
+							</div>
+						</TabPanel>
+						<TabPanel px={{ base: 0, md: 4 }} pt={{ base: 1, md: 4 }}>
+							<div className="md:bg-[#181818] rounded-xl p-0 md:p-3">
+								<MarketingLinksManager eventId={String(event._id)} eventSlug={event.slug || String(event._id)} />
 							</div>
 						</TabPanel>
 						<TabPanel px={{ base: 0, md: 4 }} pt={{ base: 1, md: 4 }}>

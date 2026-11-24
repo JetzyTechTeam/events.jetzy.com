@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from "react"
 import { useRouter } from "next/router"
 import { useSession } from "next-auth/react"
+import { readMarketingTouch } from "@/lib/marketing-link"
 
 interface AnalyticsContextType {
 	sessionId: string | null
@@ -259,13 +260,19 @@ export function AnalyticsProvider({ children }: { children: React.ReactNode }) {
 						sessionId,
 						interactionType,
 						metadata,
+						// Unique visitors are counted on anonId (stable across tabs), and every
+						// funnel stage is credited to the event's last marketing link — attached
+						// HERE so each writer (view / ticket_select / booking_start /
+						// checkout_submit) is covered without touching its call site.
+						anonId: anonId || readOrCreateAnonId() || undefined,
+						marketingLinkId: readMarketingTouch(eventId)?.linkId,
 					}),
 				})
 			} catch (error) {
 				console.error("[Analytics] Failed to track event interaction:", error)
 			}
 		},
-		[sessionId]
+		[sessionId, anonId]
 	)
 
 	// Track user action
