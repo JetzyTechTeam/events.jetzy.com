@@ -159,3 +159,32 @@ export async function referralCodeBelongsToEvent(eventId: Types.ObjectId, codeId
 	const code = await ReferralCodes.findOne({ _id: new Types.ObjectId(codeId), eventId, isDeleted: { $ne: true } }).select("code").lean()
 	return code?.code || null
 }
+
+/**
+ * Adds `marketingLinkLabel` / `marketingLinkPlatform` to plain booking rows that came through
+ * one of this event's marketing links, so Bookings, Guests and the event page can say
+ * "via Instagram bio" instead of a raw tag. Deleted links included — an old booking still
+ * deserves its name. One query per call. Never throws; on failure the rows come back as given
+ * and the chip falls back to the stored tag.
+ */
+export async function attachMarketingLinkLabels<T extends Record<string, any>>(eventId: unknown, rows: T[]): Promise<T[]> {
+	try {
+		if (!rows.some((r) => r?.marketingLinkId)) return rows
+		const id = String(eventId || "")
+		if (!Types.ObjectId.isValid(id)) return rows
+		const { MarketingLinks } = await loadModels()
+		const links = await MarketingLinks.find({ eventId: new Types.ObjectId(id) }).select("label platform").lean()
+		const byId = new Map(links.map((l) => [String(l._id), l]))
+		for (const row of rows) {
+			const link = row?.marketingLinkId ? byId.get(String(row.marketingLinkId)) : undefined
+			if (link) {
+				;(row as any).marketingLinkLabel = link.label
+				;(row as any).marketingLinkPlatform = link.platform || null
+			}
+		}
+		return rows
+	} catch (err) {
+		console.error("[marketing-link] attach labels failed:", err)
+		return rows
+	}
+}

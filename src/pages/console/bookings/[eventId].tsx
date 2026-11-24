@@ -276,10 +276,19 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (ctx) => {
     "payment.premiumStatus": 1,
     "payment.premiumAmount": 1,
     adjustedTickets: 1,
+    // Which marketing link brought this booking in — labelled below.
+    marketingLinkId: 1,
+    marketingLinkTag: 1,
   })
     .sort({ createdAt: -1 })
     .lean()
     .exec();
+
+  // "via Instagram bio" on each row that came through a marketing link. Never throws.
+  {
+    const { attachMarketingLinkLabels } = await import("@/lib/marketing-link-server");
+    await attachMarketingLinkLabels(eventId, bookings as any[]);
+  }
 
   // Unfiltered, and deliberately a separate count: the list above is narrowed by whatever the
   // host has typed into the filters, so a pending request can be absent from it while still
@@ -309,7 +318,7 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (ctx) => {
       });
       // `adjustedTickets` holds ObjectIds and the export doesn't use it — left out rather than
       // serialized, since this object is a prop as well.
-      const { adjustedTickets: _adjustedTickets, ...bookingForExport } = b;
+      const { adjustedTickets: _adjustedTickets, marketingLinkId: _marketingLinkId, ...bookingForExport } = b;
       return {
         booking: {
           ...bookingForExport,
@@ -370,6 +379,11 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (ctx) => {
         adjustedTickets: Array.isArray(b.adjustedTickets) && b.adjustedTickets.length > 0
           ? b.adjustedTickets.map((t: any) => ({ ticketId: String(t.ticketId), quantity: t.quantity }))
           : null,
+        // ObjectId → string; `null` for a direct booking (`undefined` is not a valid prop).
+        marketingLinkId: b.marketingLinkId ? String(b.marketingLinkId) : null,
+        marketingLinkTag: b.marketingLinkTag || null,
+        marketingLinkLabel: b.marketingLinkLabel || null,
+        marketingLinkPlatform: b.marketingLinkPlatform || null,
       })),
       exportable,
       checkInMap,

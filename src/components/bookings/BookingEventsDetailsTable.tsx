@@ -14,6 +14,8 @@ import { bookingMoneyAmount, bookingMoneyState, MoneyState } from "@/lib/booking
 import { bookingTicketCount } from "@/lib/booking-approval"
 import { isRequestAdjusted, plannedTickets } from "@/lib/booking-request-edit"
 import { bookingMemberships } from "@/lib/booking-memberships"
+import MarketingSourceTag from "@/components/bookings/MarketingSourceTag"
+import { bookingMarketingSource } from "@/lib/marketing-link"
 
 type Props = {
 	rows: Booking[]
@@ -63,7 +65,7 @@ const BookingTableComponent: React.FC<Props> = ({ rows, exportable, checkInMap, 
 		setLocalRows(rows)
 	}, [rows])
 
-	const exportTableHeaders = ["Reference", "Event", "Amount", "Status", "Customer", "Tickets", "Check-in", "Date"]
+	const exportTableHeaders = ["Reference", "Event", "Amount", "Status", "Customer", "Tickets", "Check-in", "Date", "Marketing link"]
 
 	const exportTableData = exportable.map((row) => [
 		row.booking.bookingRef,
@@ -78,6 +80,7 @@ const BookingTableComponent: React.FC<Props> = ({ rows, exportable, checkInMap, 
 			? (checkInMap[row.booking._id?.toString()].isFullyCheckedIn ? "Fully Checked In" : `Partial (${checkInMap[row.booking._id?.toString()].checkedInCount})`)
 			: "Not Checked In",
 		new Date(row.booking.createdAt).toLocaleString(),
+		bookingMarketingSource(row.booking)?.label || "Direct",
 	])
 
 	const handleExport = () => {
@@ -210,11 +213,15 @@ const BookingTableComponent: React.FC<Props> = ({ rows, exportable, checkInMap, 
 							edited · asked for {asked}
 						</Badge>
 					)}
+					<MarketingSourceTag booking={row} ml={1} />
 				</>
 			) : (
-				<Badge colorScheme="purple" fontSize={"smaller"}>
-					No-ticket event
-				</Badge>
+				<>
+					<Badge colorScheme="purple" fontSize={"smaller"}>
+						No-ticket event
+					</Badge>
+					<MarketingSourceTag booking={row} ml={1} />
+				</>
 			)
 		})()
 		const customer = (

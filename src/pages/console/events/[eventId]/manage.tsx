@@ -160,6 +160,8 @@ import utc from "dayjs/plugin/utc"
 import timezone from "dayjs/plugin/timezone"
 import { getEventZone, normalizeTimezone } from "@/utils/eventTime"
 import { bookingMemberships } from "@/lib/booking-memberships"
+import MarketingSourceTag from "@/components/bookings/MarketingSourceTag"
+import { bookingMarketingSource } from "@/lib/marketing-link"
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -3882,6 +3884,9 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 						<Badge colorScheme="cyan" variant="outline" borderRadius="6px">via app</Badge>
 					</Tooltip>
 				)}
+				{/* Which marketing link brought them — the newest booking on the row that has
+				    one, not just the primary booking, which may be a direct one. */}
+				<MarketingSourceTag booking={row.bookings.find((b: any) => bookingMarketingSource(b))} />
 				{row.duplicateInvitationCount > 1 && (
 					<Tooltip hasArrow label={`Invited ${row.duplicateInvitationCount} times.`}>
 						<Badge colorScheme="gray" variant="outline" borderRadius="6px">×{row.duplicateInvitationCount}</Badge>
