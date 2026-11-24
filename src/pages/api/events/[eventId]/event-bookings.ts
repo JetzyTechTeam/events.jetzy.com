@@ -57,7 +57,12 @@ export default async function handler(
       // portal) deterministically at the bottom instead of leaving them to natural order.
       .sort({ createdAt: -1, _id: -1 });
 
-    return res.status(200).json(bookings);
+    // Plain objects (what res.json produced anyway) + the marketing link's name, so the event
+    // page's Bookings panel can show "via Instagram bio". Never fails the request.
+    const { attachMarketingLinkLabels } = await import("@/lib/marketing-link-server");
+    const rows = await attachMarketingLinkLabels(eventId, bookings.map((b: any) => b.toJSON()));
+
+    return res.status(200).json(rows);
   } catch (error) {
     console.error("Error fetching bookings:", error);
     return res.status(500).json({ message: "Error fetching bookings" });

@@ -74,6 +74,17 @@ export function suggestMarketingTag(base: string, taken: Iterable<string>): stri
 export const marketingLinkUrl = (baseUrl: string, slug: string, tag: string) =>
 	`${eventUrl(baseUrl, slug)}?${MK_PARAM}=${encodeURIComponent(tag)}`
 
+/**
+ * Where a booking came from, for the "via <link>" chip on Bookings, Guests and the event page.
+ * `marketingLinkLabel` is attached server-side (`attachMarketingLinkLabels`); the stored tag is
+ * the fallback when that lookup didn't run. Null = direct, which renders nothing.
+ */
+export function bookingMarketingSource(booking: any): { label: string; platform: string | null } | null {
+	if (!booking?.marketingLinkId && !booking?.marketingLinkTag) return null
+	const label = booking.marketingLinkLabel || booking.marketingLinkTag
+	return label ? { label: String(label), platform: booking.marketingLinkPlatform || null } : null
+}
+
 export type MarketingTouch = { linkId: string; tag: string; at: number }
 
 /** Last touch wins — a new link click overwrites whatever was stored for this event. */

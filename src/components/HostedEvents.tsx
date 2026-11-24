@@ -91,6 +91,8 @@ dayjs.extend(timezone)
 
 import { stripHtml } from "@/utils/text";
 import { FiShare2, FiChevronDown, FiChevronUp, FiMoreHorizontal } from "react-icons/fi"
+import MarketingSourceTag from "@/components/bookings/MarketingSourceTag"
+import { bookingMarketingSource } from "@/lib/marketing-link"
 
 /**
  * Which block of the event page is in edit mode.
@@ -2609,6 +2611,11 @@ interface Booking {
 	tax: number
 	total: number
 	createdAt: string
+	/** Marketing link that brought this booking in (label attached by the API). Absent = direct. */
+	marketingLinkId?: string
+	marketingLinkTag?: string
+	marketingLinkLabel?: string
+	marketingLinkPlatform?: string | null
 	/** Absent on free bookings and on anything predating paid approval. */
 	payment?: {
 		status?: string
@@ -2834,6 +2841,11 @@ function EventBookings({
 								<div className="min-w-0">
 									<p className="text-sm font-semibold text-white truncate">{booking.customerName}</p>
 									<p className="text-xs text-[#bbbbbb] mt-0.5 truncate">Ref: {booking.bookingRef}</p>
+									{bookingMarketingSource(booking) && (
+										<div className="mt-1">
+											<MarketingSourceTag booking={booking} />
+										</div>
+									)}
 									<div className="mt-1 md:hidden">
 										<BookingStatusPill booking={booking} />
 									</div>
@@ -2857,6 +2869,10 @@ function EventBookings({
 									</p>
 									<p className="text-sm text-[#bbbbbb] mt-1">
 										<span className="font-semibold text-white">Created:</span> {new Date(booking.createdAt).toLocaleString()}
+									</p>
+									<p className="text-sm text-[#bbbbbb] mt-1">
+										<span className="font-semibold text-white">Source:</span>{" "}
+										{bookingMarketingSource(booking)?.label ? `Marketing link — ${bookingMarketingSource(booking)!.label}` : "Direct (no marketing link)"}
 									</p>
 
 									<div className="mt-3">
