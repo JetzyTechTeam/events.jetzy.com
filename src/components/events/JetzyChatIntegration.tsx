@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState, useMemo } from "react"
-import { Box, Spinner, Text } from "@chakra-ui/react"
+import { Box, Button, Flex, Spinner, Text } from "@chakra-ui/react"
 import { useSession } from "next-auth/react"
 
 interface JetzyChatIntegrationProps {
@@ -18,6 +18,26 @@ export default function JetzyChatIntegration({ eventId, eventName, onHasMessages
 	const [isLoading, setIsLoading] = useState(true)
 	const [error, setError] = useState<string | null>(null)
 	const [apiToken, setApiToken] = useState<string | null>(null)
+	// May this viewer SEND? Read is open to anyone signed in; posting is for confirmed guests, the
+	// host and admins (`src/lib/event-chat-access.ts`). The signed `chatAccess` token is what
+	// JetzyChat enforces — the iframe url alone can be edited. `undefined` = still checking.
+	const [access, setAccess] = useState<{ canPost: boolean; enforced: boolean; chatAccess?: string } | null | undefined>(undefined)
+
+	useEffect(() => {
+		if (!eventId || !session?.user?.email) return
+		let cancelled = false
+		fetch(`/api/events/${eventId}/chat-access`)
+			.then((r) => (r.ok ? r.json() : null))
+			.then((json) => {
+				if (!cancelled) setAccess(json?.data || null)
+			})
+			// A failed check must not take the chat away: it loads as before, with no token, and
+			// JetzyChat decides on its own.
+			.catch(() => !cancelled && setAccess(null))
+		return () => {
+			cancelled = true
+		}
+	}, [eventId, session?.user?.email])
 
 	// Get token from sessionStorage on mount
 	// Also check localStorage as fallback
@@ -172,6 +192,12 @@ export default function JetzyChatIntegration({ eventId, eventName, onHasMessages
 			url.searchParams.set('eventName', eventName)
 		}
 
+		// Who may post — `canPost` for the UI, `chatAccess` (HS256, shared secret) for enforcement.
+		if (access?.enforced && access.chatAccess) {
+			url.searchParams.set('canPost', access.canPost ? '1' : '0')
+			url.searchParams.set('chatAccess', access.chatAccess)
+		}
+
 		// Pass JWT token for authentication (if available)
 		if (apiToken) {
 			url.searchParams.set('token', apiToken)
@@ -189,7 +215,7 @@ export default function JetzyChatIntegration({ eventId, eventName, onHasMessages
 		}
 		
 		return url
-	}, [jetzyChatUrl, eventId, userId, userEmail, userName, userImage, eventName, apiToken])
+	}, [jetzyChatUrl, eventId, userId, userEmail, userName, userImage, eventName, apiToken, access])
 
 	// Validate required parameters
 	if (!userId || !userEmail) {
@@ -228,7 +254,38 @@ export default function JetzyChatIntegration({ eventId, eventName, onHasMessages
 		)
 	}
 
+	const readOnly = !!access?.enforced && !access.canPost
+
 	return (
+		<>
+		{readOnly && (
+			<Flex
+				bg="rgba(247,148,50,0.10)"
+				border="1px solid #F79432"
+				borderRadius="lg"
+				px={4}
+				py={3}
+				mb={3}
+				gap={3}
+				align={{ base: "stretch", md: "center" }}
+				direction={{ base: "column", md: "row" }}
+			>
+				<Text fontSize="sm" color="white" flex="1">
+					You can read the chat. Only guests with a ticket can send messages — book a ticket to join the conversation.
+				</Text>
+				<Button
+					as="a"
+					href="#event-tickets"
+					size="sm"
+					bg="#F79432"
+					color="black"
+					_hover={{ bg: "#E68422" }}
+					flexShrink={0}
+				>
+					Get tickets
+				</Button>
+			</Flex>
+		)}
 		<Box 
 			bg="white" 
 			borderRadius="lg" 
@@ -269,7 +326,8 @@ export default function JetzyChatIntegration({ eventId, eventName, onHasMessages
 				</Box>
 			)}
 
-			<iframe
+			{/* Held back until the access check answers, so the chat doesn't load twice. */}
+			{access !== undefined && <iframe
 				ref={iframeRef}
 				key={embedUrl.toString()} // Force reload when URL changes (e.g., when token is added)
 				src={embedUrl.toString()}
@@ -286,8 +344,9 @@ export default function JetzyChatIntegration({ eventId, eventName, onHasMessages
 					setIsLoading(false)
 				}}
 				title="JetzyChat"
-			/>
+			/>}
 		</Box>
+		</>
 	)
 }
 
