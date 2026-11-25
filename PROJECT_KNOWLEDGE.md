@@ -3372,6 +3372,14 @@ CEO ask: change the number of tickets a request is for, and the name on it, with
 - **Sealed**: public `totals`/`availability` are counts; `participants` returns names/emails only — no amount leaves to a non-host.
 - **Mobile**: `TICKET_SCHEMA.md` Revision 7 §15 + `BOOKING_FLOW.md` changelog — the app must hide bid tickets until it supports them. Restart the dev server after this change (ticket + booking schemas).
 
+## Custom questions per ticket (IMPLEMENTED 2026-11-26)
+- **`event.questions[].ticketIds`** (ticket `_id` strings, NO default — `customQuestionSchema` `default: undefined`). **Absent/empty = asked for EVERY ticket** (all existing questions). A list → asked (and required) only when ANY selected ticket is on it. All its tickets deleted → asked for NOTHING, never widened; the host's row says so.
+- **Use `src/lib/question-ticket-scope.ts`** (pure) — `questionsForSelection`, `questionAppliesToSelection`, `answersForQuestions`, `liveQuestionTicketIds`, `resolveQuestionTicketIds`. Thin wrappers over `referral-ticket-scope.ts`: the same rule as a referral code's `ticketIds`. Never re-derive.
+- Host: Manage Event → Custom Questions → "Ask this for: All tickets / Specific tickets" (checkbox per ticket). "All tickets" is stored as NO `ticketIds`. `update-questions.ts` resolves each list against the event's tickets (400 on a new list matching none; an unchanged stale list is kept so saving other questions still works).
+- Buyer: `EventCheckoutModel` uses `visibleQuestions` for the step, the button label, the required check and the render, and sends only answers to visible questions. Server: `api/checkout/index.ts` + `free-events.ts` require only `questionsForSelection(event.questions, ticket ids)` and drop other answers before storing / Stripe metadata.
+- `clone.ts` re-points scoped questions at the clone's ticket ids BY POSITION (new `_id`s). Guest detail modal lists only questions asked for that booking's tickets, plus any it answered. Premium applications share `ICustomQuestion` and never set the field.
+- Mobile contract: `BOOKING_FLOW.md` §5.1 step 7 + changelog.
+
 ## Blast gaps still open (NOT addressed 2026-09-23)
 Deliberately out of scope; all pre-existing, none introduced by the identity work.
 - ~~No unsubscribe link anywhere on a blast~~ — **DONE 2026-11-25**, SendGrid ASM group, see "Email footer + Unsubscribe".

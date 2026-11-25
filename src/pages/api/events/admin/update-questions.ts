@@ -7,6 +7,7 @@ import { getServerSession } from "next-auth/next"
 import { authOptions } from "../../auth/[...nextauth]"
 import { Roles } from "@/types"
 import { carryDraftForward } from "@/lib/event-draft"
+import { resolveQuestionTicketIds } from "@/lib/question-ticket-scope"
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
     if (req.method !== 'POST') {
@@ -42,11 +43,39 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             }
         }
 
+        if (!event) {
+            return sendResponse(res, null, "Event not found.", false, ResCode.NOT_FOUND)
+        }
+
+        // Which tickets each question is asked for: deduped, filtered to tickets on THIS event,
+        // and an "all tickets" question stored with no `ticketIds` at all (absent = every ticket).
+        // A question whose tickets were ALL deleted since is kept as it was (asked for nothing —
+        // never widened to all tickets), so saving any OTHER question still works; the host is
+        // warned on that row. Only a newly chosen list that matches no ticket is refused.
+        const storedScope = new Map<string, string[]>(
+            ((event as any).questions || []).map((sq: any) => [String(sq.id), (sq.ticketIds || []).map(String)])
+        )
+        const sameList = (a: string[], b: string[]) => a.length === b.length && a.every((id) => b.includes(id))
+        const cleaned: any[] = []
+        for (const q of questions) {
+            const { ticketIds, ...rest } = q || {}
+            const submitted: string[] | undefined = Array.isArray(ticketIds) ? ticketIds.map(String) : undefined
+            const scope = resolveQuestionTicketIds(event as any, submitted)
+            if (!scope.ok && submitted && sameList(submitted, storedScope.get(String(rest.id)) || [])) {
+                cleaned.push({ ...rest, ticketIds: submitted })
+                continue
+            }
+            if (!scope.ok) {
+                return sendResponse(res, null, `"${rest.title || "Question"}": ${scope.message}`, false, ResCode.BAD_REQUEST)
+            }
+            cleaned.push(scope.ticketIds ? { ...rest, ticketIds: scope.ticketIds } : rest)
+        }
+
         // Same carry-forward as the other non-content writers: custom questions are not part
         // of the draft payload, so moving `updatedAt` must not retire the host's draft.
         const updatedEvent = await Events.findByIdAndUpdate(
             eventId,
-            { $set: { questions, ...carryDraftForward(event as any) } },
+            { $set: { questions: cleaned, ...carryDraftForward(event as any) } },
             { new: true }
         )
 

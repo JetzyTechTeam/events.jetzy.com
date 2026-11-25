@@ -551,7 +551,13 @@ In this order; the first failure is the reply:
 6. **Referral code** (if any): active, not deleted, under `maxUses`, belongs to THIS event, and
    (if scoped with `ticketIds`) covers at least one selected ticket. Codes are unique **per event**
    — always look up by `{ code: CODE.toUpperCase(), eventId }`. (`src/lib/referral-validation.ts`)
-7. **Required custom questions** answered → `Required question "<title>" is missing an answer.`
+7. **Required custom questions that apply to the selected tickets** answered → `Required question "<title>" is missing an answer.`
+   A question (`event.questions[]`) may carry **`ticketIds`** (ticket `_id` strings). **Absent or
+   empty = asked for every ticket** (every question before 2026-11-26). Otherwise it is asked — and
+   required — only when **any** selected ticket is on the list; a list whose tickets were all
+   deleted is asked for **nothing** (never widened to all). Answers to questions that don't apply
+   to the order are **dropped** before the booking / Stripe metadata is written.
+   (`src/lib/question-ticket-scope.ts` — `questionsForSelection`, `answersForQuestions`)
 8. **Membership caps** (tickets that sell Premium/Concierge): at most **2 per order** and **2 per
    email per event per membership**, counting every order that email placed for the event except
    `failed`/`rejected` ones. Cancelled ones still count. (`src/lib/premium-ticket-limit.ts`)
@@ -1977,6 +1983,11 @@ default) — every reader of a booking's price uses it before the ticket's list 
 (`bookingUnitPrice`). Approve / reject / expiry unchanged (capture = the hold). The free path and
 the waiting list refuse bid tickets. Also: `api/checkout` now refuses a ticket whose `priceId`
 isn't that ticket's stored price, and re-reads approval from the stored ticket.
+
+**2026-11-26 (custom questions per ticket):** `event.questions[].ticketIds` (optional) scopes a
+question to specific tickets; absent/empty = all tickets. Both checkout paths require only the
+questions that apply to the selected tickets and drop answers to the rest (§5.1 step 7). Clone
+re-points scoped questions at the clone's tickets by position. No booking shape change.
 
 **2026-11-24 (marketing links):** bookings gain optional `marketingLinkId` + `marketingLinkTag`
 (no defaults), and Stripe metadata an optional `marketingLinkId` (§5.6). Both checkout endpoints

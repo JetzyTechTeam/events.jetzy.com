@@ -1,6 +1,7 @@
 "use client"
 import { stripHtml } from "@/utils/text";
 import { ticketBidFields } from "@/lib/ticket-bid"
+import { liveQuestionTicketIds, questionAppliesToAllTickets, questionAppliesToSelection } from "@/lib/question-ticket-scope"
 import ConsoleLayout from "@/components/layout/ConsoleLayout"
 import { ReferralCodesManager } from "@/components/console/ReferralCodesManager"
 import { MarketingLinksManager } from "@/components/console/MarketingLinksManager"
@@ -3286,8 +3287,17 @@ function CustomQuestionsManager({ event }: { event: any }) {
 	})
 	const [optionInput, setOptionInput] = useState('')
 
+	// Which tickets a question is asked for (`question-ticket-scope.ts`): absent = every ticket.
+	const eventTickets: { _id: string; name: string }[] = (event.tickets || []).map((t: any) => ({ _id: String(t._id), name: stripHtml(t.name || '') || 'Ticket' }))
+	const ticketName = (id: string) => eventTickets.find((t) => t._id === String(id))?.name
+	const scopeLabel = (q: any) => {
+		if (questionAppliesToAllTickets(q)) return 'All tickets'
+		const live = liveQuestionTicketIds(q, event.tickets)
+		return live.length ? live.map((id) => ticketName(id)).join(', ') : ''
+	}
+
 	const openAddModal = () => {
-		setForm({ title: '', type: 'text', isRequired: false, responseLength: 'short', selectionType: 'single', options: [], platform: 'instagram', collectJobTitle: false, termsContentType: 'text', termsContent: '', collectSignature: false })
+		setForm({ title: '', type: 'text', isRequired: false, responseLength: 'short', selectionType: 'single', options: [], platform: 'instagram', collectJobTitle: false, termsContentType: 'text', termsContent: '', collectSignature: false, ticketScope: 'all', ticketIds: [] })
 		setOptionInput('')
 		setEditingIndex(null)
 		setIsModalOpen(true)
@@ -3295,7 +3305,8 @@ function CustomQuestionsManager({ event }: { event: any }) {
 
 	const openEditModal = (idx: number) => {
 		const q = questions[idx]
-		setForm({ ...q, options: q.options ? [...q.options] : [] })
+		const scoped = !questionAppliesToAllTickets(q)
+		setForm({ ...q, options: q.options ? [...q.options] : [], ticketScope: scoped ? 'specific' : 'all', ticketIds: scoped ? liveQuestionTicketIds(q, event.tickets) : [] })
 		setOptionInput('')
 		setEditingIndex(idx)
 		setIsModalOpen(true)
@@ -3307,15 +3318,22 @@ function CustomQuestionsManager({ event }: { event: any }) {
 			await axios.post('/api/events/admin/update-questions', { eventId: event._id, questions: updated })
 			setQuestions(updated)
 			toast({ title: 'Questions saved!', status: 'success', duration: 2500, isClosable: true })
-		} catch {
-			toast({ title: 'Failed to save questions.', status: 'error', duration: 3000, isClosable: true })
+		} catch (err: any) {
+			toast({ title: 'Failed to save questions.', description: err?.response?.data?.message, status: 'error', duration: 4000, isClosable: true })
 		}
 		setSaving(false)
 	}
 
 	const handleSaveQuestion = () => {
 		if (!form.title.trim()) { toast({ title: 'Title is required.', status: 'warning', duration: 2500 }); return }
-		const q = { ...form, id: editingIndex !== null ? questions[editingIndex].id : `q_${Date.now()}` }
+		if (form.ticketScope === 'specific' && !(form.ticketIds || []).length) { toast({ title: 'Pick at least one ticket, or choose All tickets.', status: 'warning', duration: 3000 }); return }
+		const { ticketScope, ticketIds, ...fields } = form
+		const q = {
+			...fields,
+			// "All tickets" is stored as NO ticketIds — absent means every ticket.
+			...(ticketScope === 'specific' ? { ticketIds } : { ticketIds: undefined }),
+			id: editingIndex !== null ? questions[editingIndex].id : `q_${Date.now()}`,
+		}
 		const updated = editingIndex !== null
 			? questions.map((existing, i) => i === editingIndex ? q : existing)
 			: [...questions, q]
@@ -3374,7 +3392,10 @@ function CustomQuestionsManager({ event }: { event: any }) {
 				<Flex key={q.id} bg="#1E1E1E" border="1px solid #3E3E3E" rounded="xl" p={4} mb={3} align="center" justify="space-between">
 					<Box>
 						<Text fontWeight="bold">{q.title}</Text>
-						<Text fontSize="sm" color="#9C9C9C">{qTypeLabel[q.type] || q.type}{q.isRequired ? ' · Required' : ' · Optional'}</Text>
+						<Text fontSize="sm" color="#9C9C9C">{qTypeLabel[q.type] || q.type}{q.isRequired ? ' · Required' : ' · Optional'}{scopeLabel(q) ? ` · ${scopeLabel(q)}` : ''}</Text>
+						{!scopeLabel(q) && (
+							<Text fontSize="xs" color="#F6AD55" mt={1}>The tickets this question was for no longer exist, so it isn&apos;t being asked. Edit it to pick tickets again.</Text>
+						)}
 					</Box>
 					<Flex gap={2}>
 						<Button size="sm" variant="outline" colorScheme="orange" onClick={() => openEditModal(idx)}>Edit</Button>
@@ -3501,6 +3522,43 @@ function CustomQuestionsManager({ event }: { event: any }) {
 								<input type="checkbox" checked={form.isRequired} onChange={e => setForm((f: any) => ({ ...f, isRequired: e.target.checked }))} />
 								<Text fontSize="sm" color="#9C9C9C">Users must answer this before buying a ticket</Text>
 							</Flex>
+
+							<Box>
+								<Text mb={1} fontWeight="bold">Ask this for</Text>
+								<Flex gap={4} mb={2} wrap="wrap">
+									<Flex as="label" align="center" gap={2} cursor="pointer">
+										<input type="radio" name="question-ticket-scope" checked={form.ticketScope !== 'specific'} onChange={() => setForm((f: any) => ({ ...f, ticketScope: 'all' }))} />
+										<Text fontSize="sm">All tickets</Text>
+									</Flex>
+									<Flex as="label" align="center" gap={2} cursor={eventTickets.length ? 'pointer' : 'not-allowed'} opacity={eventTickets.length ? 1 : 0.5}>
+										<input type="radio" name="question-ticket-scope" disabled={!eventTickets.length} checked={form.ticketScope === 'specific'} onChange={() => setForm((f: any) => ({ ...f, ticketScope: 'specific' }))} />
+										<Text fontSize="sm">Specific tickets</Text>
+									</Flex>
+								</Flex>
+								{form.ticketScope === 'specific' && (
+									<Box bg="#090C10" border="1px solid #444" rounded="md" p={3}>
+										<Text fontSize="xs" color="#9C9C9C" mb={2}>Only buyers of these tickets see this question.</Text>
+										{eventTickets.map((t) => {
+											const checked = (form.ticketIds || []).includes(t._id)
+											return (
+												<Flex as="label" key={t._id} align="center" gap={2} py={1} cursor="pointer">
+													<input
+														type="checkbox"
+														checked={checked}
+														onChange={(e) =>
+															setForm((f: any) => ({
+																...f,
+																ticketIds: e.target.checked ? [...(f.ticketIds || []), t._id] : (f.ticketIds || []).filter((id: string) => id !== t._id),
+															}))
+														}
+													/>
+													<Text fontSize="sm">{t.name}</Text>
+												</Flex>
+											)
+										})}
+									</Box>
+								)}
+							</Box>
 
 							<Button bg="#F79432" color="black" fontWeight="bold" _hover={{ bg: '#E68422' }} onClick={handleSaveQuestion} isLoading={saving}>
 								{editingIndex !== null ? 'Save Changes' : 'Add Question'}
@@ -4477,20 +4535,30 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 									</Box>
 								</Flex>
 
-								{/* Questions */}
-								{eventQuestions.length > 0 && (
-									<Box>
-										<Heading size="sm" mb={3} color="white">Questions</Heading>
-										<Flex direction="column" gap={2}>
-											{eventQuestions.map((q: any) => (
-												<Box key={q.id} bg="#2A2A2A" rounded="lg" px={4} py={3}>
-													<Text fontSize="sm" color="#F79432" fontWeight="semibold" mb={1}>{q.title}{q.isRequired ? ' *' : ''}</Text>
-													<Text fontSize="sm" color="white"><AnswerText value={formatAnswer(q.id, selectedGuest.booking)} /></Text>
-												</Box>
-											))}
-										</Flex>
-									</Box>
-								)}
+								{/* Questions — only those asked for this guest's tickets, plus any they answered
+								    (a question scoped to other tickets wasn't put to them). */}
+								{(() => {
+									const booking = selectedGuest.booking
+									const bookingTicketIds = (booking?.tickets || []).map((t: any) => String(t.ticketId))
+									const answeredIds = new Set((booking?.customAnswers || []).map((a: any) => String(a.questionId)))
+									const guestQuestions = eventQuestions.filter(
+										(q: any) => !booking || answeredIds.has(String(q.id)) || questionAppliesToSelection(q, bookingTicketIds),
+									)
+									if (!guestQuestions.length) return null
+									return (
+										<Box>
+											<Heading size="sm" mb={3} color="white">Questions</Heading>
+											<Flex direction="column" gap={2}>
+												{guestQuestions.map((q: any) => (
+													<Box key={q.id} bg="#2A2A2A" rounded="lg" px={4} py={3}>
+														<Text fontSize="sm" color="#F79432" fontWeight="semibold" mb={1}>{q.title}{q.isRequired ? ' *' : ''}</Text>
+														<Text fontSize="sm" color="white"><AnswerText value={formatAnswer(q.id, booking)} /></Text>
+													</Box>
+												))}
+											</Flex>
+										</Box>
+									)
+								})()}
 							</Flex>
 						)}
 					</ModalBody>

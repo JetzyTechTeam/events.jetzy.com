@@ -25,6 +25,7 @@ import { useRouter } from "next/router"
 import { useAnalytics } from "@/hooks/useAnalytics"
 import { isPreviewQuery } from "@/lib/event-preview"
 import { readMarketingTouch } from "@/lib/marketing-link"
+import { questionsForSelection } from "@/lib/question-ticket-scope"
 import { EMAIL_VERIFIED, VERIFY_CODE_FAILED, VERIFY_CODE_SENT, VERIFY_SKIPPED } from "@/lib/checkout-verification-events"
 
 /**
@@ -117,6 +118,14 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 	// A bid ticket ("name your price", `src/lib/ticket-bid.ts`): the price is the guest's bid, the
 	// card is held for it and charged only if the host accepts. No referral code applies to a bid.
 	const isBidOrder = tickets.some((t: any) => t.pricingMode === "bid")
+	// The questions asked for THESE tickets — a question may be set for specific tickets only
+	// (`question-ticket-scope.ts`). The same rule both checkout endpoints enforce.
+	const visibleQuestions: any[] = questionsForSelection(liveEventData?.questions || [], selectedTicketIds)
+	// Answers to questions that are no longer asked (the tickets changed) are never sent.
+	const answersToSend = () =>
+		Object.entries(customAnswers)
+			.filter(([qId]) => visibleQuestions.some((q: any) => String(q.id) === qId))
+			.map(([qId, answer]) => ({ questionId: qId, answer }))
 	const referralScope = { ticketIds: referralTicketIds }
 	// Only the tickets the code covers are discounted — the same split `api/checkout` charges.
 	const referralSubtotal = referralEligibleSubtotal(
@@ -437,7 +446,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 			}
 			trackCheckout(EMAIL_VERIFIED)
 
-			if ((liveEventData?.questions || []).length > 0) {
+			if (visibleQuestions.length > 0) {
 				setCheckoutStep("questions")
 				return
 			}
@@ -506,13 +515,13 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 			// or an admin booking for a guest. Without it they'd read as having skipped a step.
 			trackCheckout(VERIFY_SKIPPED, { admin: ["admin", "super admin"].includes((session?.user as any)?.role) })
 
-			if ((liveEventData?.questions || []).length > 0) {
+			if (visibleQuestions.length > 0) {
 				setCheckoutStep("questions")
 				return
 			}
 		} else {
 			// Validate required custom questions
-			const eventQuestions: any[] = liveEventData?.questions || []
+			const eventQuestions: any[] = visibleQuestions
 			for (const q of eventQuestions) {
 				const ans = customAnswers[q.id]
 				if (q.isRequired) {
@@ -600,7 +609,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 	 */
 	const submitFreeOrder = async (mayFallBack: boolean) => {
 		const eventId = (tickets[0] as any)?.eventId || eventData?._id
-		const customAnswersArray = Object.entries(customAnswers).map(([qId, answer]) => ({ questionId: qId, answer }))
+		const customAnswersArray = answersToSend()
 		try {
 			const response = await fetch('/api/checkout/free-events', {
 				method: 'POST',
@@ -686,9 +695,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 					referralCode: formData.referralCode?.trim()?.toUpperCase() || undefined,
 					marketingLinkId: readMarketingTouch(String((tickets[0] as any)?.eventId || eventData?._id || ""))?.linkId,
 					acceptedTerms: acceptedTerms,
-					customAnswers: JSON.stringify(
-						Object.entries(customAnswers).map(([qId, answer]) => ({ questionId: qId, answer }))
-					),
+					customAnswers: JSON.stringify(answersToSend()),
 					// Stripe is about to take the browser off-origin. Sent so the server can stamp
 					// the marker onto the success/cancel URLs it comes back to — see lib/app-return.
 					fromApp: cameFromApp(),
@@ -1517,10 +1524,10 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 									)}
 
 									{/* Custom Questions */}
-									{checkoutStep === "questions" && (liveEventData?.questions || []).length > 0 && (
+									{checkoutStep === "questions" && visibleQuestions.length > 0 && (
 										<div className="space-y-4">
 											<h3 className="font-bold text-white border-t border-[#3E3E3E] pt-4">Additional Questions</h3>
-											{(liveEventData.questions as any[]).map((q: any) => (
+											{visibleQuestions.map((q: any) => (
 												<div key={q.id}>
 													<label className="block text-sm font-medium text-white mb-1">
 														{q.title}{q.isRequired && <span className="text-red-400 ml-1">*</span>}
@@ -1750,7 +1757,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 											type="submit"
 											className="w-full bg-jetzy text-black font-bold px-6 py-3 rounded-xl transition-all transform hover:scale-105 shadow-lg disabled:opacity-50"
 										>
-											{isLoading || verifyBusy ? <Spinner /> : ((liveEventData?.questions || []).length > 0 ? "Next" : selectionNeedsApproval ? "Request to Book" : "Submit")}
+											{isLoading || verifyBusy ? <Spinner /> : (visibleQuestions.length > 0 ? "Next" : selectionNeedsApproval ? "Request to Book" : "Submit")}
 										</button>
 									)}
 								</div>

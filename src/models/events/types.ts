@@ -55,6 +55,8 @@ export interface ICustomQuestion {
 	termsContentType?: 'text' | 'link'; // For terms
 	termsContent?: string; // For terms
 	collectSignature?: boolean; // For terms
+	/** Tickets this question is asked for. Absent/empty = every ticket (`question-ticket-scope.ts`). */
+	ticketIds?: string[];
 }
 
 export interface IDatePollOption {

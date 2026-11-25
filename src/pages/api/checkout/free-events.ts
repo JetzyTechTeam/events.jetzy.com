@@ -1,5 +1,6 @@
 import { isPendingAdminApproval } from "@/lib/event-approval"
 import { isBidTicket } from "@/lib/ticket-bid"
+import { answersForQuestions, questionsForSelection } from "@/lib/question-ticket-scope"
 import { createOrUpdateUser } from "@/lib/user-utils"
 import { sendResponse } from "@/lib/helpers"
 import { uniqueId } from "@/lib/utils"
@@ -93,7 +94,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const user = JSON.parse(req.body?.user) as BodyParams["user"]
 		const eventId = req.body?.eventId as string
 		const acceptedTerms = req.body?.acceptedTerms === true || req.body?.acceptedTerms === "true"
-		const customAnswers: Array<{ questionId: string; answer: any }> = req.body?.customAnswers
+		let customAnswers: Array<{ questionId: string; answer: any }> = req.body?.customAnswers
 			? JSON.parse(req.body.customAnswers)
 			: []
 
@@ -150,8 +151,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return sendResponse(res, null, "This event is awaiting admin approval and can't be booked yet.", false, 403)
 		}
 		// Private events are unlisted rather than invite-only — no access code required.
-		if (event.questions && event.questions.length > 0) {
-			const requiredQuestions = event.questions.filter((q: any) => q.isRequired)
+		// Only the questions asked for the tickets in this order (`question-ticket-scope.ts`);
+		// answers to questions that don't apply are dropped.
+		const askedQuestions = questionsForSelection((event.questions || []) as any[], (tickets || []).map((t: any) => String(t?.id)))
+		customAnswers = answersForQuestions(customAnswers, askedQuestions)
+		if (askedQuestions.length > 0) {
+			const requiredQuestions = askedQuestions.filter((q: any) => q.isRequired)
 			for (const reqQ of requiredQuestions) {
 				const ans = customAnswers.find((a: any) => a.questionId === reqQ.id)
 				if (!ans || !ans.answer || (Array.isArray(ans.answer) && ans.answer.length === 0)) {

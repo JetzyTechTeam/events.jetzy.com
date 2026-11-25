@@ -129,6 +129,9 @@ const customQuestionSchema = new Schema(
 		termsContentType: { type: String, enum: ['text', 'link'], required: false },
 		termsContent: { type: String, required: false },
 		collectSignature: { type: Boolean, required: false },
+		// Tickets this question is asked for (ticket `_id`s). NO DEFAULT — absent/empty = every
+		// ticket, which is every question written before scoping. `question-ticket-scope.ts`.
+		ticketIds: { type: [String], required: false, default: undefined },
 	},
 	{ _id: false }
 )

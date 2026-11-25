@@ -1,4 +1,5 @@
 import { isPendingAdminApproval } from "@/lib/event-approval"
+import { answersForQuestions, questionsForSelection } from "@/lib/question-ticket-scope"
 import { buildTicketPricing, isBelowStripeMinimum, STRIPE_MIN_CHARGE_USD } from "@/lib/ticket-pricing"
 import { sendResponse } from "@Jetzy/lib/helpers"
 import { ResCode } from "@Jetzy/lib/responseCodes"
@@ -408,9 +409,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return sendResponse(res, null, "We couldn't verify your membership status. Please try again.", false, ResCode.INTERNAL_SERVER_ERROR)
 		}
 
-		// Validate required custom questions
-		if (event.questions && event.questions.length > 0) {
-			const requiredQuestions = event.questions.filter(q => q.isRequired);
+		// Validate required custom questions — only those asked for the tickets in this order
+		// (`question-ticket-scope.ts`); answers to questions that don't apply are dropped.
+		const askedQuestions = questionsForSelection(event.questions as any[], (tickets || []).map((t: any) => String(t?.id)))
+		customAnswers = answersForQuestions(customAnswers, askedQuestions)
+		if (askedQuestions.length > 0) {
+			const requiredQuestions = askedQuestions.filter((q: any) => q.isRequired);
 			for (const reqQ of requiredQuestions) {
 				const ans = customAnswers.find(a => a.questionId === reqQ.id);
 				if (!ans || !ans.answer || (Array.isArray(ans.answer) && ans.answer.length === 0)) {
