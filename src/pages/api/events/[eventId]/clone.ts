@@ -120,6 +120,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					: {}),
 				includesPremium: ticketMemberships(ticket as any).includes("premium"),
 			})),
+			// Re-pointed below: a question scoped to tickets must name the CLONE's tickets.
 			questions: source.questions,
 			benefits: source.benefits,
 			locationDisclosedAfterBooking: source.locationDisclosedAfterBooking,
@@ -148,6 +149,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		})
 
 		if (!newEvent) return sendResponse(res, null, "Failed to clone event.", false, ResCode.INTERNAL_SERVER_ERROR)
+
+		// Questions scoped to tickets named the SOURCE's ticket ids, which match nothing on the
+		// clone. Re-point them by ticket position — the clone's tickets are built in the same order.
+		const ticketIdMap = new Map<string, string>(
+			sourceTickets.map((t: any, i: number) => [String(t._id), String((newEvent as any).tickets?.[i]?._id || "")]),
+		)
+		const scopedQuestions = ((newEvent as any).questions || []).some((q: any) => Array.isArray(q.ticketIds) && q.ticketIds.length > 0)
+		if (scopedQuestions) {
+			const questions = ((newEvent as any).questions || []).map((q: any) => {
+				const plain = typeof q.toObject === "function" ? q.toObject() : { ...q }
+				if (!Array.isArray(plain.ticketIds) || plain.ticketIds.length === 0) return plain
+				const mapped = plain.ticketIds.map((id: string) => ticketIdMap.get(String(id))).filter(Boolean)
+				// Every one of its tickets was gone on the source too: keep it asked for nothing.
+				return { ...plain, ticketIds: mapped.length ? mapped : plain.ticketIds }
+			})
+			await Events.updateOne({ _id: newEvent._id }, { $set: { questions } })
+		}
 
 		// Create event tracker for the clone
 		await newEvent.createEventTracker(source.capacity ?? 0)
