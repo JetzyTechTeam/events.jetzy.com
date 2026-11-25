@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react"
+import { bookingUnitPrice } from "@/lib/ticket-bid"
 import {
 	Badge,
 	Box,
@@ -90,7 +91,8 @@ export default function BookingDetailModal({ booking, isOpen, onClose, onCancel,
 		for (const t of event.tickets || []) map.set(String(t._id), t)
 		return (booking as any).tickets?.map((bt: any) => {
 			const meta = map.get(String(bt.ticketId))
-			return { name: meta?.name || "Ticket", price: Number(meta?.price) || 0, quantity: bt.quantity }
+			// A bid booking is priced at the guest's bid (`bookingUnitPrice`).
+			return { name: meta?.name || "Ticket", price: bookingUnitPrice(booking as any, meta), quantity: bt.quantity }
 		}) || []
 	}, [booking, event])
 

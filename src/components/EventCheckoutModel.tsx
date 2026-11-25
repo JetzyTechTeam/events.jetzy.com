@@ -115,6 +115,9 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 	const [referralError, setReferralError] = useState<string>("")
 	const selectedTicketIds = tickets.map((t) => String((t as any).id ?? ""))
 	const selectedTicketIdsKey = selectedTicketIds.join(",")
+	// A bid ticket ("name your price", `src/lib/ticket-bid.ts`): the price is the guest's bid, the
+	// card is held for it and charged only if the host accepts. No referral code applies to a bid.
+	const isBidOrder = tickets.some((t: any) => t.pricingMode === "bid")
 	// The questions asked for THESE tickets — a question may be set for specific tickets only
 	// (`question-ticket-scope.ts`). The same rule both checkout endpoints enforce.
 	const visibleQuestions: any[] = questionsForSelection(liveEventData?.questions || [], selectedTicketIds)
@@ -1125,7 +1128,9 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 
 													    The period follows the TICKET's interval — an annual bundle holds a
 													    full year, which is a materially larger authorization to disclose. */}
-													{selectionTotal <= 0
+													{isBidOrder
+														? `Your card will be held for your bid of ${pricing.total.toLocaleString("en-US", { style: "currency", currency: "usd" })}. You're charged only if the host accepts your bid; otherwise the hold is released automatically within ${AUTH_HOLD_DAYS} days.`
+														: selectionTotal <= 0
 														? giftedChargedKeys.length > 0
 															? `Your registration is subject to host approval. Nothing is charged now — your ${membershipLabelList(giftedChargedKeys)} is free for ${appliedFreeMonths} ${appliedFreeMonths === 1 ? "month" : "months"} — but we'll ask for a card so it continues afterwards rather than stopping.`
 															: "Your registration is subject to host approval."
@@ -1137,8 +1142,8 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 												</p>
 											</div>
 										)}
-										{/* Referral Code Field — first */}
-										<div>
+										{/* Referral Code Field — first. Not on a bid: the bid IS the price. */}
+										<div className={isBidOrder ? "hidden" : undefined}>
 											<label className="block text-sm font-medium text-white mb-1.5">
 												Referral Code <span className="text-gray-400 font-normal">(Optional)</span>
 											</label>
@@ -1654,7 +1659,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 										<div className="pt-4 lg:pt-0">
 											<div className="rounded-lg bg-[#1A1A1A] border border-[#2E2E2E] p-3 text-sm">
 												<div className="flex justify-between text-gray-300">
-													<span>Subtotal</span>
+													<span>{isBidOrder ? "Your bid" : "Subtotal"}</span>
 													<span>{pricing.subtotal.toLocaleString("en-US", { style: "currency", currency: "usd" })}</span>
 												</div>
 												{pricing.lines.map((line) => (

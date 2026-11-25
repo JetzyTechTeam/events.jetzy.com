@@ -1,4 +1,5 @@
 import { sendResponse } from "@Jetzy/lib/helpers"
+import { bidRangeProblem } from "@/lib/ticket-bid"
 import { ResCode } from "@Jetzy/lib/responseCodes"
 import type { NextApiRequest, NextApiResponse } from "next"
 import { Events } from "@/models/events"
@@ -42,6 +43,15 @@ const schema = zod.object({
 			membershipFreeMonths: zod.number().int().min(0).max(MAX_MEMBERSHIP_FREE_MONTHS).optional(),
 			/** @deprecated Superseded by `memberships`; still accepted from older clients. */
 			includesPremium: zod.boolean().optional(),
+			// Bid ticket ("name your price") — `src/lib/ticket-bid.ts`. Absent = unchanged / fixed.
+			pricingMode: zod.enum(["bid", "fixed"]).optional(),
+			bidMin: zod.number().optional(),
+			bidMax: zod.number().optional(),
+			bidSuggested: zod.number().optional(),
+		}).superRefine((t, ctx) => {
+			if (t.pricingMode !== "bid") return
+			const problem = bidRangeProblem({ min: t.bidMin, max: t.bidMax, suggested: t.bidSuggested })
+			if (problem) ctx.addIssue({ code: zod.ZodIssueCode.custom, message: `"${t.title}": ${problem}`, path: ["bidMin"] })
 		}),
 	),
 })

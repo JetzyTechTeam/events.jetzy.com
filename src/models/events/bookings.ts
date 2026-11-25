@@ -177,6 +177,13 @@ const bookingSchema = new Schema<IBookings>(
 			type: Number,
 			default: 0,
 		},
+		// The guest's bid on a bid ticket ("name your price", `src/lib/ticket-bid.ts`) — the price
+		// of the ONE seat. NO default: absent = an ordinary booking at the ticket's list price.
+		// Read through `bookingUnitPrice`, never the ticket's current price.
+		bidAmount: {
+			type: Number,
+			required: false,
+		},
 		tax: {
 			type: Number,
 			default: 0,

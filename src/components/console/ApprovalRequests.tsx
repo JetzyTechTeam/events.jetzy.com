@@ -69,6 +69,8 @@ export function ApprovalRequests({
 	surfaceBg?: string
 }) {
 	const [showProcessed, setShowProcessed] = useState(false)
+	// Bid tickets: the host can also rank requests by the amount bid (`src/lib/ticket-bid.ts`).
+	const [sortBy, setSortBy] = useState<"expiry" | "bid">("expiry")
 	const [processedPage, setProcessedPage] = useState(1)
 
 	const { data: bookings = [], isLoading, isError } = useQuery({
@@ -84,14 +86,19 @@ export function ApprovalRequests({
 	const approvals = useBookingApprovals({ eventId, bookings: bookings as any[] })
 	const { fitFor, limitedTickets, priorConfirmedFor } = approvals
 
-	// Soonest-expiring first — that ordering is the entire point of showing the countdown.
-	const pending = (bookings as any[])
-		.filter((b) => isPendingBooking(b))
-		.sort((a, b) => {
-			const ax = a?.payment?.authExpiresAt ? new Date(a.payment.authExpiresAt).getTime() : Infinity
-			const bx = b?.payment?.authExpiresAt ? new Date(b.payment.authExpiresAt).getTime() : Infinity
-			return ax - bx
-		})
+	// Soonest-expiring first — that ordering is the entire point of showing the countdown. On an
+	// event taking bids the host may rank by the bid instead (highest first).
+	const pendingUnsorted = (bookings as any[]).filter((b) => isPendingBooking(b))
+	const hasBids = pendingUnsorted.some((b) => b?.bidAmount !== undefined && b?.bidAmount !== null)
+	const pending = pendingUnsorted.sort((a, b) => {
+		if (hasBids && sortBy === "bid") {
+			const diff = (Number(b?.bidAmount) || 0) - (Number(a?.bidAmount) || 0)
+			if (diff !== 0) return diff
+		}
+		const ax = a?.payment?.authExpiresAt ? new Date(a.payment.authExpiresAt).getTime() : Infinity
+		const bx = b?.payment?.authExpiresAt ? new Date(b.payment.authExpiresAt).getTime() : Infinity
+		return ax - bx
+	})
 
 	// Resolved requests that involved money, newest first.
 	const processed = (bookings as any[])
@@ -154,6 +161,11 @@ export function ApprovalRequests({
 				{isRequestAdjusted(b) && (
 					<Text fontSize="xs" color="#F79432" whiteSpace="nowrap">
 						Edited &middot; asked for {asked}
+					</Text>
+				)}
+				{b?.bidAmount !== undefined && b?.bidAmount !== null && (
+					<Text fontSize="xs" color="#7DD3FC" fontWeight="semibold" whiteSpace="nowrap">
+						Bid {Number(b.bidAmount).toLocaleString("en-US", { style: "currency", currency: "usd" })}
 					</Text>
 				)}
 			</>
@@ -246,6 +258,25 @@ export function ApprovalRequests({
 				<Text color="white">No pending approval requests.</Text>
 			) : (
 				<>
+				{hasBids && (
+					<Flex align="center" gap={2} mb={3} wrap="wrap">
+						<Text fontSize="sm" color="#9C9C9C">Sort:</Text>
+						{([["expiry", "Soonest expiring"], ["bid", "Highest bid"]] as const).map(([key, label]) => (
+							<Button
+								key={key}
+								size="xs"
+								borderRadius="full"
+								bg={sortBy === key ? "#F79432" : "transparent"}
+								color={sortBy === key ? "black" : "white"}
+								border="1px solid #444"
+								_hover={{ bg: sortBy === key ? "#E68422" : "#2A2A2A" }}
+								onClick={() => setSortBy(key)}
+							>
+								{label}
+							</Button>
+						))}
+					</Flex>
+				)}
 				{/* Phones: one card per request — the frozen-column table needs a wide screen. */}
 				<Flex display={{ base: "flex", md: "none" }} direction="column" gap={3}>
 					{pending.map((b: any) => {

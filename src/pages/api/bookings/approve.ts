@@ -1,4 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from "next"
+import { bookingUnitPrice } from "@/lib/ticket-bid"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 import { sendResponse } from "@Jetzy/lib/helpers"
@@ -647,7 +648,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const et = (event as any).tickets?.find((t: any) => t._id?.toString() === bt.ticketId?.toString())
 		return {
 			name: et?.name || "Ticket",
-			price: et?.price || 0,
+			// A bid booking is priced at the guest's bid, not the ticket's suggested price.
+			price: bookingUnitPrice(booking as any, et),
 			quantity: bt.quantity || 1,
 			desc: et?.desc || "",
 		}

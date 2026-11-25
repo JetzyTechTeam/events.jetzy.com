@@ -22,6 +22,13 @@ const eventTicketsSchema = new Schema<IEventTicket>(
 			type: String,
 			required: true,
 		},
+		// Bid ticket ("name your price") — `src/lib/ticket-bid.ts`. NO defaults: absent = an
+		// ordinary fixed-price ticket, which is every ticket written before bids existed. On a bid
+		// ticket `price` holds the suggested amount.
+		pricingMode: { type: String, required: false },
+		bidMin: { type: Number, required: false },
+		bidMax: { type: Number, required: false },
+		bidSuggested: { type: Number, required: false },
 		// Per-ticket approval override. Deliberately has NO default: `undefined` means
 		// "inherit event.requireApproval", which is what keeps every pre-existing ticket
 		// working without a migration. A default of `false` would pin legacy tickets to

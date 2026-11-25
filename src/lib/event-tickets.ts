@@ -2,6 +2,7 @@ import Stripe from "stripe"
 import { ticketMemberships, ticketMembershipFreeMonths } from "@/lib/premium-bundle"
 import { sanitizeMembershipKeys } from "@/lib/memberships"
 import { ticketQuantityLimit } from "@/lib/ticket-quantity"
+import { isBidTicket } from "@/lib/ticket-bid"
 
 const stripe = new Stripe(process.env.NEXT_STRIPE_SECRET_KEY as string)
 
@@ -20,6 +21,11 @@ export type IncomingTicket = {
 	membershipFreeMonths?: number
 	/** @deprecated legacy mirror of `memberships` */
 	includesPremium?: boolean
+	/** "bid" makes it a bid ticket; "fixed" turns one back into a normal ticket; absent = unchanged. */
+	pricingMode?: "bid" | "fixed"
+	bidMin?: number
+	bidMax?: number
+	bidSuggested?: number
 }
 
 /**
@@ -56,8 +62,25 @@ export async function resolveTickets(existingTickets: any[] | undefined, tickets
 	const existingTicketById = ticketsById(existingTickets)
 
 	return await Promise.all(
-		tickets.map(async (ticket) => {
+		tickets.map(async (incoming) => {
+			let ticket = incoming
 			const existing = existingTicketById.get(ticket.id?.toString())
+
+			// Bid ticket — preserve-on-omit like every flag here: an absent `pricingMode` keeps what is
+			// stored; "fixed" turns it back into a normal ticket. A bid ticket's `price` IS its
+			// suggested bid, it always needs approval and it sells no membership (`ticket-bid.ts`).
+			const bid =
+				ticket.pricingMode === "bid"
+					? { bidMin: Number(ticket.bidMin), bidMax: Number(ticket.bidMax), bidSuggested: Number(ticket.bidSuggested) }
+					: ticket.pricingMode === undefined && isBidTicket(existing)
+						? {
+								bidMin: Number(ticket.bidMin ?? existing.bidMin),
+								bidMax: Number(ticket.bidMax ?? existing.bidMax),
+								bidSuggested: Number(ticket.bidSuggested ?? existing.bidSuggested),
+						  }
+						: null
+			if (bid) ticket = { ...ticket, price: bid.bidSuggested, requireApproval: true, memberships: [], includesPremium: false }
+
 			const priceChanged = !existing || Number(existing.price) !== ticket.price
 			const stripeProductId = priceChanged
 				? (
@@ -122,11 +145,12 @@ export async function resolveTickets(existingTickets: any[] | undefined, tickets
 				// `update.ts` replaces the whole array, so leaving the key out clears the limit.
 				...(resolvedQuantity !== null ? { quantity: resolvedQuantity } : {}),
 				memberships: resolvedMemberships,
-				...(resolvedMembershipInterval !== undefined ? { membershipInterval: resolvedMembershipInterval } : {}),
-				...(resolvedMembershipFreeMonths !== undefined ? { membershipFreeMonths: resolvedMembershipFreeMonths } : {}),
+				...(!bid && resolvedMembershipInterval !== undefined ? { membershipInterval: resolvedMembershipInterval } : {}),
+				...(!bid && resolvedMembershipFreeMonths !== undefined ? { membershipFreeMonths: resolvedMembershipFreeMonths } : {}),
 				// Written alongside the array purely so the mobile app and any older reader still
 				// see a bundled Premium ticket. The array is the authority.
 				includesPremium: resolvedMemberships.includes("premium"),
+				...(bid ? { pricingMode: "bid", ...bid } : {}),
 			}
 		}),
 	)

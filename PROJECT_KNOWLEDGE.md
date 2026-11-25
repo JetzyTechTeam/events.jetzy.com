@@ -3390,6 +3390,18 @@ CEO ask: change the number of tickets a request is for, and the name on it, with
 - `clone.ts` re-points scoped questions at the clone's ticket ids BY POSITION (new `_id`s). Guest detail modal lists only questions asked for that booking's tickets, plus any it answered. Premium applications share `ICustomQuestion` and never set the field.
 - Mobile contract: `BOOKING_FLOW.md` §5.1 step 7 + changelog.
 
+## Bid tickets — "name your price" (IMPLEMENTED 2026-11-26)
+- **CEO ask.** The guest sets their price on a slider between host-set min/max (starts at suggested), checks out normally, and the bid is an APPROVAL REQUEST: the card is held for the bid (existing manual-capture hold, ~7-day expiry), charged on approve, released on reject. Decided: each bid is a SEPARATE request (one seat, own hold); sealed; host sets min / suggested / max.
+- **Use `src/lib/ticket-bid.ts`** (pure) — `isBidTicket`, `bidRange`, `bidRangeProblem`, `validateBidAmount`, `clampBid`, `bookingUnitPrice`, `ticketBidFields`, `BID_MIN_FLOOR` (0.50), `BID_STEP` ($1). Never re-derive.
+- **Ticket fields `pricingMode: "bid"`, `bidMin`, `bidMax`, `bidSuggested`** — NO defaults (absent = fixed price). `price` = suggested. Forced on every write (`resolveTickets`, `create.ts`): `requireApproval: true`, no memberships. Zod `superRefine` with `bidRangeProblem` in create/update/tickets. Preserve-on-omit; `pricingMode: "fixed"` turns it back. `clone.ts` copies them. Carried through `TicketData`, manage `mapEventTicket`/`mapDraftTicket`, `HostedEvents` seed + tickets PATCH via `ticketBidFields`.
+- **Host UI** — `TicketEditorModal`: "Pricing: Fixed price / Let guests bid", Minimum / Suggested / Maximum, approval switch locked on, Membership section hidden.
+- **Guest UI** — `EventTicketsComponent`: "Name your price · $min–$max" badge, "From $min"; selected → −/+ buttons, typed amount and a range slider; no quantity stepper; CTA "Place bid"; redux row carries `pricingMode: "bid"`, `bidAmount`, `price = bid`, `quantity: 1`. `EventCheckoutModel`: hold copy "held for your bid of $X", "Your bid" row, referral field hidden.
+- **Server — `api/checkout/index.ts`**: every ticket must match a STORED ticket by id AND `priceId` (it used to put any body `priceId` into `line_items`), and `requireApproval` is re-read from the stored ticket (it used to trust the body). A bid order: alone, quantity 1, no referral, `validateBidAmount` on the stored range → `price_data { unit_amount: bid, product: <stored price's product> }`, metadata `bidAmount`, charge rows priced at the bid. `free-events.ts` and `waiting-list/add.ts` refuse bid tickets.
+- **Booking `bidAmount`** (Number, no default) written by `checkout-fulfillment.ts`. **Readers use `bookingUnitPrice`**: `approve.ts` email rows, `BookingDetailModal`, `cancel.ts` email rows; `describePriceChange` returns null for a bid. Approve / reject / expiry unchanged.
+- **Approvals tab**: "Bid $X" under the ticket; "Sort: Soonest expiring / Highest bid" when any pending request is a bid.
+- **Sealed**: public `totals`/`availability` are counts; `participants` returns names/emails only — no amount leaves to a non-host.
+- **Mobile**: `TICKET_SCHEMA.md` Revision 7 §15 + `BOOKING_FLOW.md` changelog — the app must hide bid tickets until it supports them. Restart the dev server after this change (ticket + booking schemas).
+
 ## Blast gaps still open (NOT addressed 2026-09-23)
 Deliberately out of scope; all pre-existing, none introduced by the identity work.
 - ~~No unsubscribe link anywhere on a blast~~ — **DONE 2026-11-25**, SendGrid ASM group, see "Email footer + Unsubscribe".

@@ -1,4 +1,5 @@
 import { isPendingAdminApproval } from "@/lib/event-approval"
+import { isBidTicket } from "@/lib/ticket-bid"
 import { answersForQuestions, questionsForSelection } from "@/lib/question-ticket-scope"
 import { createOrUpdateUser } from "@/lib/user-utils"
 import { sendResponse } from "@/lib/helpers"
@@ -71,6 +72,8 @@ const resolveOrder = (event: any, tickets: BodyParams["tickets"]): { rows: Resol
 
 		const quantity = Number(ticket.quantity) || 0
 		if (quantity <= 0) return null
+		// A bid ticket is never free — it always goes through Stripe with a hold for the bid.
+		if (isBidTicket(stored)) return null
 
 		const price = Number(stored.price) || 0
 		subtotal += price * quantity
