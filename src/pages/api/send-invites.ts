@@ -8,6 +8,8 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "./auth/[...nextauth]";
 import { isPendingAdminApproval, PENDING_APPROVAL_MESSAGE } from "@/lib/event-approval";
 import { mailFrom } from "@/lib/send-grid";
+import { emailFooterHtml } from "@/lib/email-footer";
+import { promoMailOptions, unsubscribeGroupId } from "@/lib/email-unsubscribe";
 import {
   GUEST_IMPORT_MAX,
   firstNameOf,
@@ -122,6 +124,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // Host-typed text: escaped (it was interpolated raw), with their line breaks kept.
     const safeMessage = message?.trim() ? escapeHtml(message.trim()).replace(/\r?\n/g, "<br/>") : "";
 
+    // THE footer (`email-footer.ts`); Unsubscribe only when the `asm` group is configured.
+    const footerHtml = emailFooterHtml({ unsubscribe: !!unsubscribeGroupId() });
+
     const sendOne = (guest: ImportedGuest) => {
       const personalizedEventLink = `${eventLink}?email=${encodeURIComponent(guest.email)}`;
       const safeLink = escapeHtml(personalizedEventLink);
@@ -154,10 +159,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                 If the button does not work, copy this link:<br/>
                 <a href="${safeLink}" target="_blank" style="color:#3182ce;">${safeLink}</a>
               </p>
-              <hr style="margin:24px 0;border:none;border-top:1px solid #e2e8f0;">
-              <p style="font-size:12px;color:#a0aec0;text-align:center;">Sent via Jetzy Events</p>
             </div>
+            ${footerHtml}
           </div>`,
+        // An invitation is PROMOTIONAL: Unsubscribe in the footer + the matching `asm` group.
+        ...promoMailOptions(),
       });
     };
 

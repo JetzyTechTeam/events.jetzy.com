@@ -17,7 +17,7 @@ import { blastAttachmentRefusal, type BlastAttachment } from "@/lib/blast-attach
 import { fetchBlastAttachments } from "@/lib/blast-attachments-server";
 import { blastFallbackName, buildBlastHtml, personalizeBlastHtml } from "@/lib/blast-template";
 import { blastStatusIsAll, parseBlastStatuses, serializeBlastStatuses } from "@/lib/blast-status";
-import { emailFooterContactHtml } from "@/lib/support";
+import { promoMailOptions, unsubscribeGroupId } from "@/lib/email-unsubscribe";
 import {
   BLAST_TEST_MAX_PER_WINDOW,
   BLAST_TEST_RATE_LIMIT_MESSAGE,
@@ -211,9 +211,10 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
     // On a host-owned event the old footer was wrong: it told the guest to contact
     // contact@jetzyapp.com about a question only the host can answer. Replying now reaches the
     // host directly (see `replyTo` above), so the footer says so and names them.
+    // Absent = the footer's default line (tech@jetzyapp.com).
     const footerContact = sendAsHost
       ? `Questions? Just reply to this email &mdash; it goes straight to ${owner!.displayName}.<br />Sent by ${owner!.displayName} via Jetzy Events`
-      : emailFooterContactHtml()
+      : undefined
 
     // The attachments are fetched ONCE here, before the recipient loop, and the same array is
     // handed to every send - one CDN round trip per image, not one per guest.
@@ -226,6 +227,7 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
 
     // Built by `src/lib/blast-template.ts`, which the preview modal also calls - so what the
     // host is shown before sending and what the guest receives cannot drift apart.
+    const unsubscribeId = unsubscribeGroupId();
     const html = buildBlastHtml({
       subject: blastSubject,
       message: blastMessage,
@@ -239,6 +241,9 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
       links: fetched.links,
       // Absent reads as TRUE - every blast sent before the toggle existed opened with "Hi <name>,".
       greetByName: greetByName !== false,
+      // A blast is PROMOTIONAL: the footer carries Unsubscribe and every send below carries the
+      // matching `asm` group. Both come from the one env value, so they can't disagree.
+      unsubscribe: !!unsubscribeId,
     });
     const sendGridAttachments = fetched.attachments;
 
@@ -251,6 +256,7 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
         from: mailFrom(undefined, senderName),
         ...(replyTo ? { replyTo } : {}),
         subject: blastSubject,
+        ...promoMailOptions(),
         html: personalizeBlastHtml(html, {
           userName: ((session.user as any)?.name || "").trim() || blastFallbackName(testAddress),
           userEmail: testAddress,
@@ -290,6 +296,7 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
         from: mailFrom(undefined, senderName),
         ...(replyTo ? { replyTo } : {}),
         subject: blastSubject,
+        ...promoMailOptions(),
         html: personalizedHtml,
         // The same base64 payload rides on every message - SendGrid has no notion of a shared
         // attachment, which is why the ceilings in `blast-attachments.ts` are per-blast.
@@ -353,6 +360,8 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
           greetByName: greetByName !== false,
           // Written only when there were some (no default on the field).
           ...(extraEmails.length > 0 ? { extraRecipients: extraEmails } : {}),
+          // Recorded so the history knows the email carried an Unsubscribe link.
+          ...(unsubscribeId ? { unsubscribeGroupId: unsubscribeId } : {}),
           sentAt: new Date(),
         })
       } catch (persistErr) {

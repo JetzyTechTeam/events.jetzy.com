@@ -27,7 +27,7 @@ import { buildBlastHtml, personalizeBlastHtml } from "@/lib/blast-template"
 import { attachmentMode, blastImageContentId, type BlastAttachment } from "@/lib/blast-attachments"
 import { describeDeliveryFailure, type BlastRecipientStatus } from "@/lib/blast-delivery"
 import { eventUrl } from "@/lib/event-slug"
-import { emailFooterContactHtml } from "@/lib/support"
+import { previewUnsubscribeLinks } from "@/lib/email-footer"
 
 /**
  * Everything about one SENT Email Attendees email: what it said (rendered through the same
@@ -87,10 +87,11 @@ export default function AttendeeMailingDetail({
 				message: record.message || "",
 				eventName: record.promotedEventName || "",
 				eventLink: record.promotedEventId ? promotedLink || "#" : "",
-				footerContact: emailFooterContactHtml(),
 				emailType: "custom",
 				baseUrl: origin,
 				greetByName: record.greetByName !== false,
+				// Only when the email actually carried the link (absent on older sends).
+				unsubscribe: !!record.unsubscribeGroupId,
 				images: attached.map((a, i) => ({ contentId: blastImageContentId(i), filename: a.filename })),
 				links: attachments.filter((a) => attachmentMode(a) === "link").map((a) => ({ url: a.url, filename: a.filename, size: a.size })),
 			}),
@@ -99,7 +100,7 @@ export default function AttendeeMailingDetail({
 		attached.forEach((a, i) => {
 			out = out.replace(new RegExp(`cid:${blastImageContentId(i)}`, "g"), a.url)
 		})
-		return out
+		return previewUnsubscribeLinks(out)
 	}, [record, promotedLink, origin])
 
 	const exportCsv = () => {
@@ -143,6 +144,7 @@ export default function AttendeeMailingDetail({
 						<VStack align="stretch" spacing={6}>
 							<VStack align="stretch" spacing={2} bg="#2A2A2A" borderRadius="lg" p={4}>
 								{label("Sent", record.sentAt ? DateTime.fromISO(record.sentAt).toLocaleString(DateTime.DATETIME_MED) : "—")}
+								{label("From", `${record.fromName || "Jetzy"} <${record.fromEmail || "usual Jetzy address"}>`)}
 								{label("Sent by", record.sentByEmail || "—")}
 								{label(
 									"Linked event",

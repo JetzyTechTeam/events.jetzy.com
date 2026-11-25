@@ -395,6 +395,8 @@ export interface IBlast extends IBaseModelProps {
 	 * (or a blast sent before the field existed). Carried forward on a resend.
 	 */
 	extraRecipients?: string[]
+	/** SendGrid unsubscribe group the email carried. Absent = no Unsubscribe link. */
+	unsubscribeGroupId?: number
 	sentAt: Date
 	isDeleted: boolean
 }

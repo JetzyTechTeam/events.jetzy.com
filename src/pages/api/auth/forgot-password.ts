@@ -4,6 +4,7 @@ import { Users } from "@Jetzy/models/userModal"
 import { ensureDbConnected } from "@/configs/database"
 import crypto from "crypto"
 import sgMail from "@sendgrid/mail"
+import { withFooterHtml, withFooterText } from "@/lib/email-footer"
 
 sgMail.setApiKey((process.env.SENDGRID_API_KEY as string)?.trim())
 
@@ -68,7 +69,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                 name: "Jetzy Account"
             },
             subject: "Reset Your Jetzy Password",
-            html: `
+            // Transactional: the footer WITHOUT Unsubscribe (`email-footer.ts`).
+            html: withFooterHtml(`
                 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #eee; border-radius: 12px;">
                     <div style="text-align: center; margin-bottom: 24px;">
                         <img src="https://events.jetzy.com/favicon.ico" width="40" height="40" />
@@ -81,10 +83,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                         </a>
                     </div>
                     <p style="color: #999; font-size: 13px;">This link expires in 30 minutes. If you didn't request a reset, you can safely ignore this email.</p>
-                    <p style="color: #ccc; font-size: 12px; text-align: center; margin-top: 24px;">© ${new Date().getFullYear()} Jetzy Events, Inc.</p>
                 </div>
-            `,
-            text: `Reset your Jetzy password: ${resetUrl}\n\nThis link expires in 30 minutes.`
+            `),
+            text: withFooterText(`Reset your Jetzy password: ${resetUrl}\n\nThis link expires in 30 minutes.`),
         })
 
         return res.status(200).json({ success: true })

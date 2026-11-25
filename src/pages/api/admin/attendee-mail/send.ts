@@ -19,7 +19,8 @@ import {
 	normalizeTestAddress,
 } from "@/lib/blast-test-send"
 import { isRateLimited } from "@/lib/rate-limit"
-import { emailFooterContactHtml } from "@/lib/support"
+import { promoMailOptions, unsubscribeGroupId } from "@/lib/email-unsubscribe"
+import { isUnverifiedSenderError, normalizeFromEmail, normalizeFromName, unverifiedSenderMessage } from "@/lib/mail-sender"
 import { stripHtml } from "@/utils/text"
 
 sendgrid.setApiKey((process.env.SENDGRID_API_KEY as string)?.trim())
@@ -39,6 +40,11 @@ const CHUNK_SIZE = 50
  * re-derived here; it IS re-validated (every address, de-duplicated, capped).
  *
  * `testTo` sends ONE copy to that address and records nothing, exactly like a blast test.
+ *
+ * `fromEmail` / `fromName` are a CUSTOM sender typed by the admin (blank = the usual sender,
+ * "Jetzy"). Replies go to `fromEmail`. SendGrid refuses an unverified From for every recipient, so
+ * the first address is sent ALONE: if SendGrid refuses the sender, the request stops there with
+ * the reason and nothing is recorded — never 2,000 identical failures.
  */
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
 	if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" })
@@ -47,7 +53,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	if (!session) return
 
 	const userId = (session.user as any)?._id?.toString()
-	const { promotedEventId, subject, message, greetByName, attachments, recipients, sourceEventIds, groups, testTo, draftId } = req.body || {}
+	const { promotedEventId, subject, message, greetByName, attachments, recipients, sourceEventIds, groups, testTo, draftId, fromEmail, fromName } = req.body || {}
 
 	// Trimmed at the ENDS only, as for blasts: inner blank lines are the admin's paragraphs.
 	const mailSubject = typeof subject === "string" ? subject.trim() : ""
@@ -68,6 +74,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		promotedName = stripHtml((promoted as any).name || "") || "Jetzy event"
 		promotedLink = (promoted as any).slug ? eventUrl(baseUrl, (promoted as any).slug) : `${baseUrl}/${promotedEventId}`
 	}
+
+	const fromEmailCheck = normalizeFromEmail(fromEmail)
+	if ("error" in fromEmailCheck) return res.status(400).json({ error: fromEmailCheck.error })
+	const fromNameCheck = normalizeFromName(fromName)
+	if ("error" in fromNameCheck) return res.status(400).json({ error: fromNameCheck.error })
+	const customFromEmail = fromEmailCheck.email
+	const customFromName = fromNameCheck.name
 
 	const attachmentList: BlastAttachment[] = Array.isArray(attachments) ? attachments : []
 	const attachmentRefusal = blastAttachmentRefusal(attachmentList)
@@ -122,50 +135,67 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const fetched = await fetchBlastAttachments(attachmentList)
 		if (fetched.skipped.length > 0) console.warn("Attendee mailing attachments skipped:", fetched.skipped)
 
+		const unsubscribeId = unsubscribeGroupId()
 		const html = buildBlastHtml({
 			subject: mailSubject,
 			message: mailMessage,
 			eventName: promotedName,
 			eventLink: promotedLink,
-			footerContact: emailFooterContactHtml(),
 			emailType: "custom",
 			baseUrl,
 			images: fetched.images,
 			links: fetched.links,
 			greetByName: greetByName !== false,
+			// Promotional: Unsubscribe in the footer + the matching `asm` group on every send.
+			unsubscribe: !!unsubscribeId,
 		})
 		const sendOne = (to: string, name: string) =>
 			sendgrid.send({
 				to,
-				from: mailFrom(undefined, blastSenderName()),
+				from: mailFrom(customFromEmail || undefined, customFromName || blastSenderName()),
+				// A custom From is a real person or team inbox: replies go there.
+				...(customFromEmail ? { replyTo: customFromEmail } : {}),
 				subject: mailSubject,
+				...promoMailOptions(),
 				html: personalizeBlastHtml(html, { userName: name || blastFallbackName(to), userEmail: to }),
 				...(fetched.attachments.length > 0 ? { attachments: fetched.attachments } : {}),
 			})
 
 		if (isTestSend) {
-			await sendOne(testAddress, ((session.user as any)?.name || "").trim())
+			try {
+				await sendOne(testAddress, ((session.user as any)?.name || "").trim())
+			} catch (err: any) {
+				if (isUnverifiedSenderError(err)) return res.status(400).json({ error: unverifiedSenderMessage(customFromEmail || mailFrom().email) })
+				throw err
+			}
 			return res.status(200).json({ message: `Test sent to ${testAddress}.`, sentTo: testAddress, test: true, skippedAttachments: fetched.skipped })
 		}
 
 		const rows: IAttendeeMailingRecipient[] = []
-		for (let i = 0; i < people.length; i += CHUNK_SIZE) {
+		const recordRow = (p: Row, r: PromiseSettledResult<unknown>) => {
+			const base = { email: p.email, ...(p.name ? { name: p.name } : {}), ...(p.source ? { source: p.source } : {}) }
+			if (r.status === "fulfilled") {
+				rows.push({ ...base, status: "sent" })
+			} else {
+				const err: any = r.reason
+				rows.push({
+					...base,
+					status: "failed",
+					reason: err?.response?.body?.errors?.[0]?.message || err?.message || "The email could not be sent.",
+				})
+			}
+		}
+		// The first address goes ALONE: a sender SendGrid won't send from fails every recipient, so
+		// that is found out on one email and reported, with nothing sent and nothing recorded.
+		const [first] = await Promise.allSettled([sendOne(people[0].email, people[0].name)])
+		if (first.status === "rejected" && isUnverifiedSenderError(first.reason)) {
+			return res.status(400).json({ error: unverifiedSenderMessage(customFromEmail || mailFrom().email) })
+		}
+		recordRow(people[0], first)
+		for (let i = 1; i < people.length; i += CHUNK_SIZE) {
 			const chunk = people.slice(i, i + CHUNK_SIZE)
 			const results = await Promise.allSettled(chunk.map((p) => sendOne(p.email, p.name)))
-			results.forEach((r, j) => {
-				const p = chunk[j]
-				const base = { email: p.email, ...(p.name ? { name: p.name } : {}), ...(p.source ? { source: p.source } : {}) }
-				if (r.status === "fulfilled") {
-					rows.push({ ...base, status: "sent" })
-				} else {
-					const err: any = r.reason
-					rows.push({
-						...base,
-						status: "failed",
-						reason: err?.response?.body?.errors?.[0]?.message || err?.message || "The email could not be sent.",
-					})
-				}
-			})
+			results.forEach((r, j) => recordRow(chunk[j], r))
 		}
 
 		const succeeded = rows.filter((r) => r.status === "sent").length
@@ -191,6 +221,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				failedCount: failed,
 				...(attachmentList.length > 0 ? { attachments: attachmentList } : {}),
 				greetByName: greetByName !== false,
+				...(customFromEmail ? { fromEmail: customFromEmail } : {}),
+				...(customFromName ? { fromName: customFromName } : {}),
+				...(unsubscribeId ? { unsubscribeGroupId: unsubscribeId } : {}),
 				...(userId && Types.ObjectId.isValid(userId) ? { sentBy: new Types.ObjectId(userId) } : {}),
 				sentByEmail: (session.user as any)?.email,
 				sentAt: new Date(),

@@ -19,10 +19,7 @@ export const ADMIN_SUPPORT_EMAIL = (process.env.ADMIN_SUPPORT_EMAIL as string)?.
 /**
  * The "Questions? Contact us at …" address in every email footer. Deliberately NOT the sender
  * (`SENDGRID_EMAIL_SENDER`, now reservations@jetzy.com) — that mailbox is a sending identity,
- * not where guest questions are answered.
+ * not where guest questions are answered. Rendered by `email-footer.ts`.
  */
 export const EMAIL_FOOTER_CONTACT = "tech@jetzyapp.com"
 
-/** The footer line itself, so every blast-style email links it the same way. */
-export const emailFooterContactHtml = (color = "#F79432") =>
-	`Questions? Contact us at <a href="mailto:${EMAIL_FOOTER_CONTACT}" style="color: ${color}; text-decoration: none;">${EMAIL_FOOTER_CONTACT}</a>`

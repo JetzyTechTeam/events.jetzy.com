@@ -1,4 +1,5 @@
 import sgMail from "@sendgrid/mail"
+import { withFooterHtml, withFooterText } from "@/lib/email-footer"
 
 if (process.env.SENDGRID_API_KEY) {
   sgMail.setApiKey(process.env.SENDGRID_API_KEY.trim())
@@ -78,7 +79,6 @@ export function eventUpdateEmailTemplate({
         </table>
         
         ${linkHtml}
-        <p>If you have any questions, please contact us.</p>
         <p>Thank you,<br/>The Jetzy Team</p>
       </div>
     `;
@@ -106,8 +106,9 @@ export async function sendUpdateEventEmailLogic(data: EmailProps) {
       to: data.userEmail,
       from: process.env.SENDGRID_EMAIL_SENDER!.trim(),
       subject,
-      html,
-      text
+      // Transactional: the footer WITHOUT Unsubscribe (`email-footer.ts`).
+      html: withFooterHtml(html),
+      text: withFooterText(text),
     })
 
     return { success: true }
