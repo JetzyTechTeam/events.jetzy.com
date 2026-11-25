@@ -20,6 +20,7 @@
  */
 
 import { emailBodyHtml } from "@/lib/email-body"
+import { emailFooterHtml } from "@/lib/email-footer"
 
 export type BlastEmailType = "custom" | "availability"
 
@@ -48,8 +49,16 @@ export interface BuildBlastHtmlArgs {
 	 * blasts always pass one.
 	 */
 	eventLink?: string
-	/** Already-built HTML for the footer line — differs for a host-owned vs admin-owned event. */
-	footerContact: string
+	/**
+	 * Replaces the footer's contact line — a host-owned event's blast says replying reaches the
+	 * host. Absent = the default "Questions? Contact us at tech@jetzyapp.com".
+	 */
+	footerContact?: string
+	/**
+	 * Adds the Unsubscribe link (SendGrid's group tag) to the footer. ONLY when the send carries
+	 * `asm` — see `email-unsubscribe.ts`; without it the tag would print literally.
+	 */
+	unsubscribe?: boolean
 	emailType?: BlastEmailType
 	/** Base url for the cancel-booking link in the `availability` template. */
 	baseUrl?: string
@@ -57,7 +66,6 @@ export interface BuildBlastHtmlArgs {
 	images?: BlastInlineImage[]
 	/** Rendered as a list of anchors under the images. Empty/absent renders nothing. */
 	links?: BlastFileLink[]
-	/** Defaults to the current year; injectable so a test can assert a stable string. */
 	/**
 	 * Whether the email opens with `Hi {{userName}},`.
 	 *
@@ -66,7 +74,6 @@ export interface BuildBlastHtmlArgs {
 	 * Sarah," immediately followed by "Hi everyone!".
 	 */
 	greetByName?: boolean
-	year?: number
 }
 
 /**
@@ -149,9 +156,10 @@ export function buildBlastHtml({
 	images,
 	links,
 	greetByName = true,
-	year,
+	unsubscribe = false,
 }: BuildBlastHtmlArgs): string {
-	const copyright = year ?? new Date().getFullYear()
+	// THE footer (`email-footer.ts`) — the same one every Jetzy email ends with.
+	const footer = emailFooterHtml({ unsubscribe, contactHtml: footerContact })
 	// Shapes the editor's HTML for an inbox. The stored message stays exactly as typed.
 	const body = emailBodyHtml(message)
 	// No link → no button (a plain custom email from the admin Email Attendees page).
@@ -206,11 +214,7 @@ export function buildBlastHtml({
         <div style="font-size: 16px; color: #555; line-height: 1.6;">
           ${body}
         </div>${pictures}${files}${cta}
-        <p style="font-size: 14px; color: #999; text-align: center; margin-top: 30px; border-top: 1px solid #eee; padding-top: 20px;">
-          ${footerContact}
-          <br />
-          &copy; ${copyright} Jetzy Events, Inc.
-        </p>
+        ${footer}
       </div>
     </body>
     </html>
@@ -232,11 +236,7 @@ export function buildBlastHtml({
         <div style="font-size: 16px; color: #555; line-height: 1.6;">
           ${body}
         </div>${pictures}${files}${cta}
-        <p style="font-size: 14px; color: #999; text-align: center; margin-top: 30px; border-top: 1px solid #eee; padding-top: 20px;">
-          ${footerContact}
-          <br />
-          &copy; ${copyright} Jetzy Events, Inc.
-        </p>
+        ${footer}
       </div>
     </body>
     </html>

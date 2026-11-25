@@ -3,7 +3,7 @@
 import sgMail from "@sendgrid/mail";
 import fs from "fs";
 import path from "path";
-import { emailFooterContactHtml } from "../lib/support";
+import { withFooterHtml } from "../lib/email-footer";
 
 // Helper to load env vars
 function loadEnv(filePath: string) {
@@ -87,15 +87,6 @@ const emailHtml = `
       </a>
     </div>
   </div>
-
-  <div style="margin-top: 30px; padding-top: 25px; border-top: 2px solid #E5E7EB;">
-    <p style="color: #9CA3AF; font-size: 13px; line-height: 1.6; margin: 0; text-align: center;">
-      ${emailFooterContactHtml("#1877F2")}
-    </p>
-    <p style="color: #9CA3AF; font-size: 11px; line-height: 1.4; margin: 10px 0 0 0; text-align: center;">
-      &copy; ${new Date().getFullYear()} Jetzy Events, Inc.
-    </p>
-  </div>
 </div>
 `;
 
@@ -108,7 +99,7 @@ async function sendEmail() {
         to: email,
         from: process.env.SENDGRID_EMAIL_SENDER?.trim() || "tech@jetzyapp.com", // Fallback sender
         subject: `Important Update: ${EVENT_NAME}`,
-        html: emailHtml,
+        html: withFooterHtml(emailHtml),
       });
       console.log(`✅ Email sent to ${email}`);
     } catch (error: any) {

@@ -27,6 +27,11 @@ export type BlastRecipientStatus =
 	| "blocked"
 	/** The recipient marked it as spam. Never mail this address again. */
 	| "spam_report"
+	/**
+	 * The recipient clicked Unsubscribe (SendGrid group `SENDGRID_UNSUBSCRIBE_GROUP_ID`), or an
+	 * earlier unsubscribe made SendGrid drop this one. SendGrid now skips them on every blast.
+	 */
+	| "unsubscribed"
 
 export type BlastRecipient = {
 	email: string
@@ -44,6 +49,7 @@ export const BLAST_STATUS_LABEL: Record<BlastRecipientStatus, string> = {
 	bounced: "Bounced",
 	blocked: "Blocked",
 	spam_report: "Marked as spam",
+	unsubscribed: "Unsubscribed",
 }
 
 /** Chakra colour scheme per status, so the table and the summary can't disagree. */
@@ -53,6 +59,7 @@ export const BLAST_STATUS_COLOR: Record<BlastRecipientStatus, string> = {
 	bounced: "red",
 	blocked: "orange",
 	spam_report: "purple",
+	unsubscribed: "gray",
 }
 
 /**
@@ -66,10 +73,12 @@ export const BLAST_STATUS_COLOR: Record<BlastRecipientStatus, string> = {
 export const describeDeliveryFailure = (status: BlastRecipientStatus, reason?: string): string => {
 	const raw = (reason || "").toLowerCase()
 
+	if (status === "unsubscribed") {
+		return "This person unsubscribed from Jetzy event emails, so they no longer receive blasts."
+	}
 	if (status === "spam_report") {
-		// Deliberately does NOT claim we removed them from future sends — no opt-out list is
-		// built yet, and telling a host something was handled when it wasn't is worse than
-		// telling them nothing. What IS true is the consequence, so the sentence states that.
+		// States the consequence, not a removal: the unsubscribe group covers people who clicked
+		// Unsubscribe, and a spam complaint is SendGrid's own suppression, not ours.
 		return "This person marked your email as spam. Further emails to them will usually be blocked automatically, and repeated complaints can push this event's emails into everyone's spam folder."
 	}
 
@@ -101,7 +110,7 @@ export const describeDeliveryFailure = (status: BlastRecipientStatus, reason?: s
 
 /** True when the address should not be mailed again without the person opting back in. */
 export const isPermanentFailure = (status: BlastRecipientStatus): boolean =>
-	status === "bounced" || status === "spam_report"
+	status === "bounced" || status === "spam_report" || status === "unsubscribed"
 
 /** Counts for the summary line, computed from the rows so the two can never disagree. */
 export const summariseRecipients = (recipients: BlastRecipient[]) => {

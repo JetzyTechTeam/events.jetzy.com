@@ -193,6 +193,9 @@ export type DraftFields = {
 	excludedEmails: string[]
 	attachments: any[]
 	greetByName: boolean
+	/** "" = the usual sender / "Jetzy". */
+	fromEmail: string
+	fromName: string
 }
 
 /**
@@ -233,6 +236,12 @@ export async function parseDraftBody(body: any): Promise<{ fields: DraftFields }
 	if (rawExcluded.length > DRAFT_EXCLUDED_MAX) return { error: "Too many unticked people to save in one draft." }
 	const excludedEmails = Array.from(new Set(rawExcluded.map((e) => guestEmailKey(String(e ?? ""))).filter((e) => isTypedEmail(e))))
 
+	const { normalizeFromEmail, normalizeFromName } = await import("@/lib/mail-sender")
+	const fromEmail = normalizeFromEmail(body?.fromEmail)
+	if ("error" in fromEmail) return { error: fromEmail.error }
+	const fromName = normalizeFromName(body?.fromName)
+	if ("error" in fromName) return { error: fromName.error }
+
 	const attachments: any[] = Array.isArray(body?.attachments) ? body.attachments : []
 	const refusal = blastAttachmentRefusal(attachments)
 	if (refusal) return { error: refusal }
@@ -248,6 +257,8 @@ export async function parseDraftBody(body: any): Promise<{ fields: DraftFields }
 			excludedEmails,
 			attachments,
 			greetByName: body?.greetByName !== false,
+			fromEmail: fromEmail.email,
+			fromName: fromName.name,
 		},
 	}
 }

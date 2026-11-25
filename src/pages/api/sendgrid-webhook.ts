@@ -28,6 +28,8 @@ const BLAST_STATUS_BY_EVENT: Record<string, BlastRecipientStatus> = {
 	invalid: "bounced",
 	dropped: "blocked",
 	spamreport: "spam_report",
+	// Someone clicked Unsubscribe in a blast (`email-unsubscribe.ts`).
+	group_unsubscribe: "unsubscribed",
 }
 
 /**
@@ -45,7 +47,9 @@ const BLAST_STATUS_BY_EVENT: Record<string, BlastRecipientStatus> = {
  * row can hold `Anna@Example.com` while SendGrid reports `anna@example.com`.
  */
 async function recordBlastBounce(email: string, eventType: string, reason?: string) {
-	const status = BLAST_STATUS_BY_EVENT[eventType]
+	// A `dropped` for "Unsubscribed Address" is SendGrid honouring an unsubscribe, not a block.
+	const status =
+		eventType === "dropped" && /unsubscrib/i.test(reason || "") ? "unsubscribed" : BLAST_STATUS_BY_EVENT[eventType]
 	if (!status) return
 
 	const escaped = email.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
@@ -69,7 +73,7 @@ async function recordBlastBounce(email: string, eventType: string, reason?: stri
 
 interface SendGridEvent {
     email: string
-    event: string      // "bounce" | "blocked" | "invalid" | "deferred" | "delivered" | "open" | "click" | "unsubscribe" | "spamreport"
+    event: string      // "bounce" | "blocked" | "invalid" | "deferred" | "delivered" | "open" | "click" | "unsubscribe" | "group_unsubscribe" | "dropped" | "spamreport"
     timestamp: number
     type?: string      // "bounce" sub-type: "type" or "permanent"
     reason?: string

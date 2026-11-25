@@ -1,7 +1,7 @@
 import { IEvent } from "@/models/events/types"
 // Aliased: several functions below declare a local `eventUrl`, which would shadow the import.
 import { eventUrl as buildEventUrl, eventPath, eventAlbumUrl as buildEventAlbumUrl, eventAlbumPath } from "@/lib/event-slug"
-import { ADMIN_SUPPORT_EMAIL, EMAIL_FOOTER_CONTACT } from "@/lib/support"
+import { ADMIN_SUPPORT_EMAIL } from "@/lib/support"
 import { buildTicketPricing, TicketPricing } from "@/lib/ticket-pricing"
 import { LOCATION_TBA, containsLocationLink, locationHtml, locationWasPicked, mapsLinkFor, resolveEntrance, resolveGuestLocation } from "@/lib/event-location"
 import { MoneyState } from "@/lib/booking-cancellation"
@@ -9,6 +9,7 @@ import { getEventZone } from "@/utils/eventTime"
 import { membershipIncludesLine } from "@/lib/booking-membership-display"
 import { MEMBERSHIPS, MEMBERSHIP_KEYS } from "@/lib/memberships"
 import sgMail from "@sendgrid/mail"
+import { withFooterHtml, withFooterText } from "@/lib/email-footer"
 import dayjs from 'dayjs'
 import utc from 'dayjs/plugin/utc'
 import timezone from 'dayjs/plugin/timezone'
@@ -17,6 +18,23 @@ dayjs.extend(utc)
 dayjs.extend(timezone)
 
 sgMail.setApiKey(process.env.SENDGRID_API_KEY?.trim() as string)
+
+/**
+ * EVERY send in this file goes through here, never `sgMail.send` directly: it adds THE footer
+ * (`email-footer.ts`) to the html and the plain text, so no template carries its own and a new one
+ * can't forget it. Transactional mail only — NO Unsubscribe link and no `asm`: a group unsubscribe
+ * would make SendGrid drop someone's tickets, codes and receipts. Promotional mail is sent from
+ * `send-blast.ts`, `attendee-mail/send.ts` and `send-invites.ts`, which add their own.
+ */
+type MailMessage = Parameters<typeof sgMail.send>[0]
+function sendMail(msg: MailMessage) {
+  const m: any = msg
+  return sgMail.send({
+    ...m,
+    ...(typeof m.html === "string" ? { html: withFooterHtml(m.html) } : {}),
+    ...(typeof m.text === "string" ? { text: withFooterText(m.text) } : {}),
+  })
+}
 
 // Contact address shown in email footers — driven by the sender env var so a
 // single change propagates everywhere. Falls back if the env var is missing.
@@ -60,8 +78,6 @@ export const blastSenderName = (hostName?: string) => {
 }
 
 
-// Footer "Contact us" address — see EMAIL_FOOTER_CONTACT in support.ts.
-const CONTACT_EMAIL = EMAIL_FOOTER_CONTACT
 
 // Helper function to wrap HTML content in proper tags
 const wrapHtml = (html: string) => `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head><body>${html}</body></html>`;
@@ -337,7 +353,7 @@ export const sendWaitingListApproval = async ({ firstName, lastName, email, even
     const totalTickets = tickets.reduce((sum, ticket) => sum + ticket.quantity, 0)
     const totalAmount = tickets.reduce((sum, ticket) => sum + (ticket.price * ticket.quantity), 0)
 
-    await sgMail.send({
+    await sendMail({
       to: [email, "tech@jetzyapp.com"],
       from: mailFrom(),
       subject: `Jetzy [Good News!] Your wait is over - ${decodeHTMLEntities(eventName)}`,
@@ -396,7 +412,7 @@ export const sendWaitingListApproval = async ({ firstName, lastName, email, even
 
 export const sendWaitingListNotification = async ({ firstName, lastName, email, eventName }: WaitingListEmailData) => {
   try {
-    await sgMail.send({
+    await sendMail({
       to: [email, "tech@jetzyapp.com"],
       from: mailFrom(),
       subject: `Jetzy [Waiting List] ${decodeHTMLEntities(eventName)}`,
@@ -591,7 +607,7 @@ export const sendApprovalPending = async ({ event, firstName, email, tickets = [
               <li>If approved, you'll receive a confirmation email with your ticket.</li>
               <li>No further action is needed from you right now.</li>`
   try {
-    await sgMail.send({
+    await sendMail({
       to: [email, "tech@jetzyapp.com"],
       from: mailFrom(),
       subject: `Jetzy [Pending Approval] ${eventName}`,
@@ -727,7 +743,7 @@ export const sendAdminApprovalNotice = async ({
     : ""
 
   try {
-    await sgMail.send({
+    await sendMail({
       to: recipient,
       // The admin-inbox alerts keep their own sender name as a triage label; a host-facing
       // mail must use the standard "Jetzy" sender, and be replyable straight to the guest.
@@ -813,7 +829,7 @@ export const sendAlbumAccessNotice = async ({
   const albumUrl = buildEventAlbumUrl(baseUrl || "", eventSlug, albumId)
   const when = new Date().toLocaleString("en-US", { timeZone: "UTC", dateStyle: "medium", timeStyle: "short" }) + " UTC"
   try {
-    await sgMail.send({
+    await sendMail({
       to: adminEmail,
       from: mailFrom(senderEmail),
       subject: `[Album] ${recipientName} ${actionLabel} — ${cleanEventName}`,
@@ -877,7 +893,7 @@ export const sendAlbumTagNotification = async ({
   const cleanEventName = decodeHTMLEntities(eventName)
   const albumUrl = buildEventAlbumUrl(baseUrl || "", eventSlug, albumId)
   try {
-    await sgMail.send({
+    await sendMail({
       to: recipientEmail,
       from: mailFrom(),
       subject: `${taggerName} tagged you in a photo from ${cleanEventName}`,
@@ -939,7 +955,7 @@ export const sendAlbumPublishedNotification = async ({
   // prefill, never proof — anyone holding the link still needs the code from that inbox.
   const albumUrl = `${root}${albumPath}?email=${encodeURIComponent(recipientEmail)}`
   try {
-    await sgMail.send({
+    await sendMail({
       to: recipientEmail,
       from: mailFrom(),
       subject: `📸 The photos from ${cleanEventName} are up!`,
@@ -1020,7 +1036,7 @@ export const sendApprovalRejected = async ({ event, firstName, email, payment, r
     : ""
 
   try {
-    await sgMail.send({
+    await sendMail({
       to: [email, "tech@jetzyapp.com"],
       from: mailFrom(),
       subject: `Jetzy [Update] ${eventName}`,
@@ -1049,7 +1065,7 @@ export const sendEventInvitation = async ({ email, eventName, eventSlug, eventDa
   const eventUrl = buildEventUrl(baseUrl, eventSlug)
 
   try {
-    await sgMail.send({
+    await sendMail({
       to: email,
       from: mailFrom(),
       replyTo: (process.env.SENDGRID_EMAIL_SENDER as string)?.trim(),
@@ -1146,7 +1162,7 @@ export const sendBlastEmail = async ({
   const config = buttonConfig[emailType]
 
   try {
-    await sgMail.send({
+    await sendMail({
       to: email,
       from: mailFrom(),
       replyTo: (process.env.SENDGRID_EMAIL_SENDER as string)?.trim(),
@@ -1421,18 +1437,10 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
             </div>
           </div>
 
-          <div style="margin-top: 30px; padding-top: 25px; border-top: 2px solid #E5E7EB;">
-            <p style="color: #9CA3AF; font-size: 13px; line-height: 1.6; margin: 0; text-align: center;">
-              Questions? Contact us at <a href="mailto:${CONTACT_EMAIL}" style="color: #1877F2; text-decoration: none;">${CONTACT_EMAIL}</a>
-            </p>
-            <p style="color: #9CA3AF; font-size: 11px; line-height: 1.4; margin: 10px 0 0 0; text-align: center;">
-              &copy; ${new Date().getFullYear()} Jetzy Events, Inc.
-            </p>
-          </div>
         </div>
       `;
 
-      await sgMail.send({
+      await sendMail({
         to: [email, "tech@jetzyapp.com"],
         from: mailFrom(),
       subject: `Booking Confirmation: ${EVENT_NAME}`,
@@ -1500,18 +1508,10 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
             </div>
           </div>
 
-          <div style="margin-top: 30px; padding-top: 25px; border-top: 2px solid #E5E7EB;">
-            <p style="color: #9CA3AF; font-size: 13px; line-height: 1.6; margin: 0; text-align: center;">
-              Questions? Contact us at <a href="mailto:${CONTACT_EMAIL}" style="color: #1877F2; text-decoration: none;">${CONTACT_EMAIL}</a>
-            </p>
-            <p style="color: #9CA3AF; font-size: 11px; line-height: 1.4; margin: 10px 0 0 0; text-align: center;">
-              &copy; ${new Date().getFullYear()} Jetzy Events, Inc.
-            </p>
-          </div>
         </div>
       `;
 
-      await sgMail.send({
+      await sendMail({
         to: [email, "tech@jetzyapp.com"],
         from: mailFrom(),
       subject: `Booking Confirmation: ${EVENT_NAME}`,
@@ -1581,18 +1581,10 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
             </div>
           </div>
 
-          <div style="margin-top: 30px; padding-top: 25px; border-top: 2px solid #E5E7EB;">
-            <p style="color: #9CA3AF; font-size: 13px; line-height: 1.6; margin: 0; text-align: center;">
-              Questions? Contact us at <a href="mailto:${CONTACT_EMAIL}" style="color: #1877F2; text-decoration: none;">${CONTACT_EMAIL}</a>
-            </p>
-            <p style="color: #9CA3AF; font-size: 11px; line-height: 1.4; margin: 10px 0 0 0; text-align: center;">
-              &copy; ${new Date().getFullYear()} Jetzy Events, Inc.
-            </p>
-          </div>
         </div>
       `;
 
-      await sgMail.send({
+      await sendMail({
         to: [email, "tech@jetzyapp.com"],
         from: mailFrom(),
       subject: `Booking Confirmation: ${EVENT_NAME}`,
@@ -1662,18 +1654,10 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
             </div>
           </div>
 
-          <div style="margin-top: 30px; padding-top: 25px; border-top: 2px solid #E5E7EB;">
-            <p style="color: #9CA3AF; font-size: 13px; line-height: 1.6; margin: 0; text-align: center;">
-              Questions? Contact us at <a href="mailto:${CONTACT_EMAIL}" style="color: #1877F2; text-decoration: none;">${CONTACT_EMAIL}</a>
-            </p>
-            <p style="color: #9CA3AF; font-size: 11px; line-height: 1.4; margin: 10px 0 0 0; text-align: center;">
-              &copy; ${new Date().getFullYear()} Jetzy Events, Inc.
-            </p>
-          </div>
         </div>
       `;
 
-      await sgMail.send({
+      await sendMail({
         to: [email, "tech@jetzyapp.com"],
         from: mailFrom(),
       subject: `Booking Confirmation: ${EVENT_NAME}`,
@@ -1743,18 +1727,10 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
             </div>
           </div>
 
-          <div style="margin-top: 30px; padding-top: 25px; border-top: 2px solid #E5E7EB;">
-            <p style="color: #9CA3AF; font-size: 13px; line-height: 1.6; margin: 0; text-align: center;">
-              Questions? Contact us at <a href="mailto:${CONTACT_EMAIL}" style="color: #1877F2; text-decoration: none;">${CONTACT_EMAIL}</a>
-            </p>
-            <p style="color: #9CA3AF; font-size: 11px; line-height: 1.4; margin: 10px 0 0 0; text-align: center;">
-              &copy; ${new Date().getFullYear()} Jetzy Events, Inc.
-            </p>
-          </div>
         </div>
       `;
 
-      await sgMail.send({
+      await sendMail({
         to: [email, "tech@jetzyapp.com"],
         from: mailFrom(),
         subject: `Booking Confirmation: ${EVENT_NAME}`,
@@ -1983,14 +1959,6 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
             Welcome to Jetzy! You now have access to exclusive membership benefits.
           </p>
           
-          <div style="margin-top: 30px; padding-top: 25px; border-top: 2px solid #E5E7EB;">
-            <p style="color: #9CA3AF; font-size: 13px; line-height: 1.6; margin: 0; text-align: center;">
-              Questions? Contact us at <a href="mailto:${CONTACT_EMAIL}" style="color: #1877F2; text-decoration: none;">${CONTACT_EMAIL}</a>
-            </p>
-            <p style="color: #9CA3AF; font-size: 11px; line-height: 1.4; margin: 10px 0 0 0; text-align: center;">
-              &copy; ${new Date().getFullYear()} Jetzy Events, Inc.
-            </p>
-          </div>
         </div>
       `),
       text: `Thank you for your purchase for ${event.name}!\n\nOrder Number: ${orderNumber}\nDate and Time: ${timestamp}\nVenue: ${location}${directionsLine}${entrance ? `\nEntrance: ${entrance}` : ""}${recurringLines
@@ -2012,7 +1980,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
       hasGuestEmails: guestEmails.length > 0,
     })
 
-    await sgMail.send(emailPayload as any)
+    await sendMail(emailPayload as any)
     console.log("[sendTicketConfirmation] Email sent successfully to:", email)
     return { success: true, message: "Email sent successfully" }
   } catch (error: any) {
@@ -2047,7 +2015,7 @@ export const sendOrganizerSaleNotification = async ({
   organizerEmail: string
 }) => {
   try {
-    await sgMail.send({
+    await sendMail({
       to: organizerEmail,
       from: mailFrom(),
       subject: `New Ticket Sale! - ${decodeHTMLEntities(event.name)}`,
@@ -2188,7 +2156,7 @@ export const sendBookingCancellation = async ({ event, firstName, lastName, emai
     const location = event.location
     const cancelledByHost = cancelledBy !== "guest"
 
-    await sgMail.send({
+    await sendMail({
       // The GUEST only. `bookings/cancel.ts` fires `sendHostCancellationNotice` immediately
       // after this one, and that already reaches ADMIN_NOTIFICATION_EMAIL (tech@jetzyapp.com)
       // with more than this receipt carries — who cancelled, the money position, and a link to
@@ -2262,14 +2230,6 @@ export const sendBookingCancellation = async ({ event, firstName, lastName, emai
             </p>
           </div>
           
-          <div style="margin-top: 30px; padding-top: 25px; border-top: 2px solid #E5E7EB;">
-            <p style="color: #9CA3AF; font-size: 13px; line-height: 1.6; margin: 0; text-align: center;">
-              Questions? Contact us at <a href="mailto:${CONTACT_EMAIL}" style="color: #1877F2; text-decoration: none;">${CONTACT_EMAIL}</a>
-            </p>
-            <p style="color: #9CA3AF; font-size: 11px; line-height: 1.4; margin: 10px 0 0 0; text-align: center;">
-              &copy; ${new Date().getFullYear()} Jetzy Events, Inc.
-            </p>
-          </div>
         </div>
       `),
       text: [
@@ -2358,7 +2318,7 @@ export const sendHostCancellationNotice = async ({
   const manageUrl = `${(baseUrl || "https://events.jetzy.com").replace(/\/$/, "")}/console/events/${eventId}/manage`
 
   try {
-    await sgMail.send({
+    await sendMail({
       to: recipients,
       from: mailFrom(senderEmail),
       subject: `Jetzy [Booking Cancelled] ${decodeHTMLEntities(event.name)} — ${guestName}`,
@@ -2395,14 +2355,6 @@ export const sendHostCancellationNotice = async ({
             </a>
           </div>
 
-          <div style="margin-top: 30px; padding-top: 25px; border-top: 2px solid #E5E7EB;">
-            <p style="color: #9CA3AF; font-size: 13px; line-height: 1.6; margin: 0; text-align: center;">
-              Questions? Contact us at <a href="mailto:${CONTACT_EMAIL}" style="color: #1877F2; text-decoration: none;">${CONTACT_EMAIL}</a>
-            </p>
-            <p style="color: #9CA3AF; font-size: 11px; line-height: 1.4; margin: 10px 0 0 0; text-align: center;">
-              &copy; ${new Date().getFullYear()} Jetzy Events, Inc.
-            </p>
-          </div>
         </div>
       `),
       text: `Booking cancelled for ${event.name}.\n\nGuest: ${guestName} (${guestEmail})\nTickets: ${ticketCount}\nRef: ${orderNumber}\n${moneyLine.replace(/<[^>]+>/g, "")}${membershipNote ? `\n${membershipNote}` : ""}\n\nManage: ${manageUrl}`,
@@ -2437,7 +2389,7 @@ export const sendDiscussionNotification = async ({
     : `<strong>${authorName}</strong> Posted in <strong>${decodeHTMLEntities(eventName)}</strong>.`
 
   try {
-    await sgMail.send({
+    await sendMail({
       to: email,
       from: mailFrom(),
       subject,
@@ -2508,7 +2460,7 @@ export const sendCommentNotification = async ({
       : `<strong>${commenterName}</strong> commented in <strong>${decodedEvent}</strong>.`
 
   try {
-    await sgMail.send({
+    await sendMail({
       to: email,
       from: mailFrom(),
       subject,
@@ -2571,7 +2523,7 @@ export const sendTagNotification = async ({
     : `<strong>${authorName}</strong> tagged you in a discussion in <strong>${decodeHTMLEntities(eventName)}</strong>.`
 
   try {
-    await sgMail.send({
+    await sendMail({
       to: email,
       from: mailFrom(),
       subject,
@@ -2625,7 +2577,7 @@ export const sendReactionNotification = async ({
   const discussionUrl = `${baseUrl}/login?magicToken=${magicToken}&_cb=${encodeURIComponent(`${eventPath(eventSlug)}?view=discussion&postId=${postId}`)}`
 
   try {
-    await sgMail.send({
+    await sendMail({
       to: email,
       from: mailFrom(),
       subject: `${reactorName} reacted to your post in ${decodeHTMLEntities(eventName)}`,
@@ -2679,7 +2631,7 @@ export const sendViewMilestoneNotification = async ({
   const discussionUrl = `${baseUrl}/login?magicToken=${magicToken}&_cb=${encodeURIComponent(`${eventPath(eventSlug)}?view=discussion&postId=${postId}`)}`
 
   try {
-    await sgMail.send({
+    await sendMail({
       to: email,
       from: mailFrom(),
       subject: `Your post in ${decodeHTMLEntities(eventName)} is getting attention`,
@@ -2763,7 +2715,7 @@ export const sendThankYouNotification = async ({
   `
 
   try {
-    await sgMail.send({
+    await sendMail({
       to: email,
       from: mailFrom(),
       subject,
@@ -2857,16 +2809,11 @@ export const sendWelcomeEmail = async ({ email, firstName, lastName, password, c
         </p>
       </div>
 
-      <p style="font-family: ${FONT}; font-size: 14px; color: #999; text-align: center; margin-top: 30px; border-top: 1px solid #eee; padding-top: 20px;">
-        Questions? Contact us at <a href="mailto:${CONTACT_EMAIL}" style="color: #F79432; text-decoration: none;">${CONTACT_EMAIL}</a>
-        <br />
-        &copy; ${new Date().getFullYear()} Jetzy Events, Inc.
-      </p>
     </div>
   `;
 
   try {
-    await sgMail.send({
+    await sendMail({
       to: email,
       from: mailFrom(process.env.SENDGRID_FROM_WELCOME),
       subject: "Welcome to Jetzy - Your Account is Ready!",
@@ -2945,16 +2892,11 @@ export const sendVerificationEmail = async ({
         If you didn't request this, you can safely ignore this email.
       </p>
 
-      <p style="font-size: 14px; color: #999; text-align: center; margin-top: 30px; border-top: 1px solid #eee; padding-top: 20px;">
-        Questions? Contact us at <a href="mailto:${CONTACT_EMAIL}" style="color: #F79432; text-decoration: none;">${CONTACT_EMAIL}</a>
-        <br />
-        &copy; ${new Date().getFullYear()} Jetzy Events, Inc.
-      </p>
     </div>
   `
 
   try {
-    await sgMail.send({
+    await sendMail({
       to: email,
       from: mailFrom(process.env.SENDGRID_FROM_WELCOME),
       subject: trialMonths && trialMonths > 0
@@ -2976,7 +2918,7 @@ export const sendVerificationEmail = async ({
 
 export const sendBlockNotificationEmail = async ({ email, blockedAt }: { email: string; blockedAt: string }) => {
   try {
-    await sgMail.send({
+    await sendMail({
       to: process.env.ADMIN_NOTIFICATION_EMAIL || "tech@jetzyapp.com",
       // Internal alert to the admin inbox — the distinct name is a triage label, not the
       // guest-facing sender, so it deliberately doesn't use `mailFrom()`.
@@ -3014,9 +2956,6 @@ export const sendBlockNotificationEmail = async ({ email, blockedAt }: { email: 
 
           <p style="color: #333; font-size: 14px;">Please review this account in the database for compliance.</p>
           
-          <p style="font-size: 12px; color: #999; text-align: center; border-top: 1px solid #eee; margin-top: 20px; padding-top: 15px;">
-            &copy; ${new Date().getFullYear()} Jetzy Events, Inc. – Internal Compliance System
-          </p>
         </div>
       `),
       text: `SECURITY ALERT: Account Blocked\n\nEmail: ${email}\nBlocked At: ${blockedAt}\nReason: User reported account was created without their consent.\n\nThe account has been automatically blocked and flagged for compliance review. Please review this account in the admin dashboard.`
@@ -3033,7 +2972,7 @@ export const sendBlockNotificationEmail = async ({ email, blockedAt }: { email: 
  */
 export const sendManualVerificationEmail = async ({ email, code }: { email: string; code: string }) => {
   try {
-    await sgMail.send({
+    await sendMail({
       to: email,
       from: mailFrom(),
       subject: `Your Jetzy Verification Code: ${code}`,
@@ -3056,9 +2995,6 @@ export const sendManualVerificationEmail = async ({ email, code }: { email: stri
             This code will expire in 30 minutes. If you did not request this, please ignore this email.
           </p>
           
-          <p style="font-size: 12px; color: #ccc; text-align: center; border-top: 1px solid #eee; margin-top: 30px; padding-top: 15px;">
-            &copy; ${new Date().getFullYear()} Jetzy Events, Inc.
-          </p>
         </div>
       `),
       text: `Your Jetzy Verification Code: ${code}\n\nUse this code to verify your email. It expires in 30 minutes.`
@@ -3081,7 +3017,7 @@ export const sendAlbumVerificationCode = async ({ email, code, eventName }: { em
   const cleanEventName = eventName ? stripHtml(decodeHTMLEntities(eventName)) : ""
   const forEvent = cleanEventName ? ` for &quot;${cleanEventName}&quot;` : ""
   try {
-    await sgMail.send({
+    await sendMail({
       to: email,
       from: mailFrom(),
       subject: `Your album access code: ${code}`,
@@ -3104,9 +3040,6 @@ export const sendAlbumVerificationCode = async ({ email, code, eventName }: { em
             This code expires in 10 minutes. If you didn't ask to view an album, you can ignore this email — nothing has been created for you.
           </p>
 
-          <p style="font-size: 12px; color: #ccc; text-align: center; border-top: 1px solid #eee; margin-top: 30px; padding-top: 15px;">
-            &copy; ${new Date().getFullYear()} Jetzy Events, Inc.
-          </p>
         </div>
       `),
       text: `Your album access code: ${code}
@@ -3149,7 +3082,7 @@ export const sendAlbumPhotoRequestReceived = async ({
   const count = (mediaUrls || []).length
   const context = [cleanAlbumTitle, cleanEventName].filter(Boolean).join(" — ")
   try {
-    await sgMail.send({
+    await sendMail({
       to: email,
       from: mailFrom(),
       subject: count > 1 ? `We received your request for ${count} unwatermarked photos` : `We received your request for unwatermarked photos`,
@@ -3179,9 +3112,6 @@ export const sendAlbumPhotoRequestReceived = async ({
             Thank you,<br />Jetzy Team
           </p>
 
-          <p style="font-size: 12px; color: #ccc; text-align: center; border-top: 1px solid #eee; margin-top: 30px; padding-top: 15px;">
-            &copy; ${new Date().getFullYear()} Jetzy Events, Inc.
-          </p>
         </div>
       `),
       text: `Hi,
@@ -3244,7 +3174,7 @@ export const sendAlbumPhotoRequestNotice = async ({
   const others = urls.filter((u) => !images.includes(u))
   const when = new Date().toLocaleString("en-US", { timeZone: "UTC", dateStyle: "medium", timeStyle: "short" }) + " UTC"
   try {
-    await sgMail.send({
+    await sendMail({
       to: recipient,
       // Still the verified sender — only the RECIPIENT is different. Changing `from` would
       // break sender verification.
@@ -3301,7 +3231,7 @@ export const sendAlbumPhotoRequestNotice = async ({
  */
 export const sendPremiumVerificationCode = async ({ email, code }: { email: string; code: string }) => {
   try {
-    await sgMail.send({
+    await sendMail({
       to: email,
       from: mailFrom(),
       subject: `Your Jetzy verification code: ${code}`,
@@ -3324,9 +3254,6 @@ export const sendPremiumVerificationCode = async ({ email, code }: { email: stri
             This code expires in 10 minutes. If you didn't ask for it, you can ignore this email — nothing has been created for you.
           </p>
 
-          <p style="font-size: 12px; color: #ccc; text-align: center; border-top: 1px solid #eee; margin-top: 30px; padding-top: 15px;">
-            &copy; ${new Date().getFullYear()} Jetzy Events, Inc.
-          </p>
         </div>
       `),
       text: `Your Jetzy verification code: ${code}
@@ -3347,7 +3274,7 @@ export const sendAdminComplianceAlert = async ({ email, unblockToken }: { email:
   const adminUrl = `${process.env.NEXT_PUBLIC_URL || 'https://events.jetzy.com'}/api/admin/compliance/unblock?token=${unblockToken}`;
   
   try {
-    await sgMail.send({
+    await sendMail({
       to: process.env.ADMIN_NOTIFICATION_EMAIL || "tech@jetzyapp.com",
       // Internal alert to the admin inbox — see the note on "Jetzy Security" above.
       from: {
@@ -3395,7 +3322,7 @@ export const sendAdminComplianceAlert = async ({ email, unblockToken }: { email:
  */
 export const sendAccountApprovedEmail = async ({ email, password }: { email: string; password?: string }) => {
   try {
-    await sgMail.send({
+    await sendMail({
       to: email,
       from: mailFrom(),
       subject: `Your Jetzy Account is Approved! 🎉`,
@@ -3426,8 +3353,7 @@ export const sendAccountApprovedEmail = async ({ email, password }: { email: str
           </div>
           
           <p style="color: #999; font-size: 13px; line-height: 1.5; text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee;">
-            Welcome to the Jetzy family! We're excited to have you back.<br>
-            &copy; ${new Date().getFullYear()} Jetzy Events, Inc.
+            Welcome to the Jetzy family! We're excited to have you back.
           </p>
         </div>
       `),
@@ -3465,7 +3391,7 @@ export const sendChatTagNotification = async ({
   const subject = `${taggerName} mentioned you in ${cleanEventName} chat`
 
   try {
-    await sgMail.send({
+    await sendMail({
       to: email,
       from: mailFrom(),
       subject,
@@ -3534,7 +3460,7 @@ export const sendChatMessageNotification = async ({
   const subject = `New message in ${cleanEventName}`
 
   try {
-    await sgMail.send({
+    await sendMail({
       to: email,
       from: mailFrom(),
       subject,
@@ -3627,7 +3553,6 @@ const membershipShell = (bodyHtml: string, accent: string) => wrapHtml(`
       ${bodyHtml}
       <p style="color: #6B7280; font-size: 13px; line-height: 1.6; margin: 25px 0 0 0; border-top: 1px solid #e5e7eb; padding-top: 15px;">
         Manage or cancel your membership any time from <strong>Manage membership</strong> in your account menu.
-        Questions? Reply to this email or contact us at ${CONTACT_EMAIL}.
       </p>
     </div>
   </div>
@@ -3669,7 +3594,7 @@ export const sendMembershipRenewed = async ({
 			: ""
 
 	try {
-		await sgMail.send({
+		await sendMail({
 			to: email,
 			from: mailFrom(),
 			subject: `Your ${membershipName(product)} renewed — ${money(amount)}`,
@@ -3811,7 +3736,7 @@ export const sendMembershipStarted = async ({
 		  ]
 
 	try {
-		await sgMail.send({
+		await sendMail({
 			to: email,
 			from: mailFrom(),
 			subject: isPremiumProduct
@@ -3856,7 +3781,7 @@ export const sendPremiumApplicationReceived = async ({ email, name }: { email: s
 	const first = name || email.split("@")[0]
 
 	try {
-		await sgMail.send({
+		await sendMail({
 			to: email,
 			from: mailFrom(),
 			subject: "Your Jetzy Premium application is under review",
@@ -3896,7 +3821,7 @@ export const sendPremiumApplicationRejected = async ({ email, name, reason }: { 
 		: ""
 
 	try {
-		await sgMail.send({
+		await sendMail({
 			to: email,
 			from: mailFrom(),
 			subject: "An update on your Jetzy Premium application",
@@ -3971,7 +3896,7 @@ export const sendPremiumApplicationAdminNotice = async ({
 				: `A Jetzy Premium application was rejected.`
 
 	try {
-		await sgMail.send({
+		await sendMail({
 			to: adminEmail,
 			from: mailFrom(),
 			subject,
@@ -4026,7 +3951,7 @@ export const sendMembershipPlanChanged = async ({
 			: ""
 
 	try {
-		await sgMail.send({
+		await sendMail({
 			to: email,
 			from: mailFrom(),
 			subject: `Your ${product} plan is now ${money(amount)}/${interval}`,
@@ -4060,7 +3985,7 @@ export const sendMembershipPaymentFailed = async ({ email, firstName, amount, in
 	const baseUrl = process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com"
 
 	try {
-		await sgMail.send({
+		await sendMail({
 			to: email,
 			from: mailFrom(),
 			subject: `Action needed: your ${product} payment didn't go through`,
@@ -4155,7 +4080,7 @@ export const sendMembershipCancelled = async ({
 				: `Your separate ${product} subscription won't renew after your current billing period.`
 		const body = `${product} is now included with your ${includedWith}, so you keep every ${product} benefit and won't be charged for it twice. Nothing else changes.`
 		try {
-			await sgMail.send({
+			await sendMail({
 				to: email,
 				from: mailFrom(),
 				subject: `${product} is now included with your ${includedWith}`,
@@ -4201,7 +4126,7 @@ export const sendMembershipCancelled = async ({
 			: "You keep full access until then, and you won't be charged again. Any tickets you've already bought are unaffected and remain valid."
 
 		try {
-			await sgMail.send({
+			await sendMail({
 				to: email,
 				from: mailFrom(),
 				subject: alreadyEnded ? `Your ${membershipName(product)} has ended` : `Your ${membershipName(product)} is scheduled to end`,
@@ -4248,7 +4173,7 @@ export const sendMembershipCancelled = async ({
 		: null
 
 	try {
-		await sgMail.send({
+		await sendMail({
 			to: email,
 			from: mailFrom(),
 			subject: `Your ${membershipName(product)} has been canceled`,
@@ -4312,7 +4237,7 @@ export const sendSupportRequestReceived = async ({
 	const cleanEventName = eventName ? stripHtml(decodeHTMLEntities(eventName)) : ""
 	const cleanMessage = stripHtml(decodeHTMLEntities(message))
 	try {
-		await sgMail.send({
+		await sendMail({
 			to: email,
 			from: mailFrom(),
 			subject: "We received your support request",
@@ -4334,9 +4259,6 @@ export const sendSupportRequestReceived = async ({
             Thank you,<br />Jetzy Team
           </p>
 
-          <p style="font-size: 12px; color: #ccc; text-align: center; border-top: 1px solid #eee; margin-top: 30px; padding-top: 15px;">
-            &copy; ${new Date().getFullYear()} Jetzy Events, Inc.
-          </p>
         </div>
       `),
 			text: `Hi ${name},
@@ -4388,7 +4310,7 @@ export const sendSupportRequestNotice = async ({
 	const eventLink = eventSlug ? buildEventUrl(baseUrl, eventSlug) : ""
 	const cleanMessage = stripHtml(decodeHTMLEntities(message))
 	try {
-		await sgMail.send({
+		await sendMail({
 			to: ADMIN_SUPPORT_EMAIL,
 			// Still the verified sender — only the RECIPIENT is different. Changing `from` would
 			// break sender verification.
@@ -4444,7 +4366,7 @@ export const sendEventSubmittedForReview = async ({ email, firstName, event }: E
 	const manageUrl = `${(baseUrl || "https://events.jetzy.com").replace(/\/$/, "")}/console/events/${String(event._id)}/manage`
 
 	try {
-		await sgMail.send({
+		await sendMail({
 			to: email,
 			from: mailFrom(),
 			subject: `Your event "${eventName}" has been submitted for review`,
@@ -4468,7 +4390,6 @@ export const sendEventSubmittedForReview = async ({ email, firstName, event }: E
           <p style="text-align: center; margin: 25px 0;">
             <a href="${manageUrl}" style="background-color: #F79432; color: #000; padding: 12px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">Manage Event</a>
           </p>
-          <p style="margin-top: 30px; text-align: center; color: #666;">Questions? Reply to this email or contact us at ${CONTACT_EMAIL}.</p>
         </div>
       `),
 			text: `Hi ${name},\n\nThanks for creating "${eventName}" on Jetzy. Because it is a public event, our team reviews it before it appears in the public events list.\n\nWhile your event is under review:\n- It won't be shown in the public events list.\n- Inviting guests and sending blasts are paused.\n- You can still edit it at any time.\n\nWe'll email you as soon as it has been approved.\n\nManage your event: ${manageUrl}\n\n— Team Jetzy`,
@@ -4489,7 +4410,7 @@ export const sendEventApprovedByAdmin = async ({ email, firstName, event }: Even
 	const eventUrl = buildEventUrl(baseUrl || "", event.slug || String(event._id))
 
 	try {
-		await sgMail.send({
+		await sendMail({
 			to: email,
 			from: mailFrom(),
 			subject: `Your event "${eventName}" has been approved`,
@@ -4509,7 +4430,6 @@ export const sendEventApprovedByAdmin = async ({ email, firstName, event }: Even
             <a href="${eventUrl}" style="background-color: #F79432; color: #000; padding: 12px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">View Your Event</a>
           </p>
           <p style="color: #666; font-size: 13px; line-height: 1.6; text-align: center; word-break: break-all;">${eventUrl}</p>
-          <p style="margin-top: 30px; text-align: center; color: #666;">Questions? Reply to this email or contact us at ${CONTACT_EMAIL}.</p>
         </div>
       `),
 			text: `Hi ${name},\n\nGood news — "${eventName}" has been approved and is now visible in the public events list.\n\nYou can now invite guests, send blasts and share your event link:\n${eventUrl}\n\n— Team Jetzy`,
@@ -4545,7 +4465,7 @@ export const sendEventReviewAdminNotice = async ({
 	const subject = `[Event Review] "${eventName}" is awaiting approval`
 
 	try {
-		await sgMail.send({
+		await sendMail({
 			to: ADMIN_SUPPORT_EMAIL,
 			from: mailFrom(),
 			replyTo: ownerEmail,

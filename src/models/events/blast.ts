@@ -129,6 +129,12 @@ const blastSchema = new Schema<IBlast>(
 			required: false,
 			default: undefined,
 		},
+		// The SendGrid unsubscribe group the email carried (Unsubscribe link + `asm`). NO DEFAULT:
+		// absent = sent without one (before the link existed, or with the env var unset).
+		unsubscribeGroupId: {
+			type: Number,
+			required: false,
+		},
 		sentAt: {
 			type: Date,
 			default: Date.now,

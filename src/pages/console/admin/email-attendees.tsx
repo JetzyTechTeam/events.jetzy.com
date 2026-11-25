@@ -43,7 +43,8 @@ import { eventUrl } from "@/lib/event-slug"
 import type { BlastAttachment } from "@/lib/blast-attachments"
 import { stripHtml } from "@/utils/text"
 import { formatEventDate, formatEventTime, formatEventZoneLabel } from "@/utils/eventTime"
-import { emailFooterContactHtml } from "@/lib/support"
+import { emailFooterContactLine } from "@/lib/email-footer"
+import { FROM_NAME_MAX, normalizeFromEmail, normalizeFromName } from "@/lib/mail-sender"
 
 /**
  * Admin only — email the people from past events about a NEW event.
@@ -134,6 +135,8 @@ function composerSnapshot(v: {
 	message: string
 	greetByName: boolean
 	attachments: BlastAttachment[]
+	fromEmail: string
+	fromName: string
 }): string {
 	return JSON.stringify({
 		s: [...v.sourceIds].sort(),
@@ -145,6 +148,8 @@ function composerSnapshot(v: {
 		m: stripHtml(v.message).trim(),
 		gr: v.greetByName,
 		a: v.attachments.map((a) => `${a.url}|${a.mode || ""}`),
+		fe: v.fromEmail.trim().toLowerCase(),
+		fn: v.fromName.trim(),
 	})
 }
 
@@ -159,6 +164,8 @@ const EMPTY_SNAPSHOT = composerSnapshot({
 	message: "",
 	greetByName: true,
 	attachments: [],
+	fromEmail: "",
+	fromName: "",
 })
 
 /**
@@ -359,6 +366,14 @@ export default function EmailAttendeesPage() {
 	const [subject, setSubject] = useState("")
 	const [message, setMessage] = useState("")
 	const [greetByName, setGreetByName] = useState(true)
+	// Custom sender. Blank = the usual Jetzy address, as "Jetzy".
+	const [fromEmail, setFromEmail] = useState("")
+	const [fromName, setFromName] = useState("")
+	const fromEmailCheck = normalizeFromEmail(fromEmail)
+	const fromNameCheck = normalizeFromName(fromName)
+	const fromEmailError = "error" in fromEmailCheck ? fromEmailCheck.error : ""
+	const fromNameError = "error" in fromNameCheck ? fromNameCheck.error : ""
+	const fromLabel = `${fromName.trim() || "Jetzy"}${fromEmail.trim() ? ` <${fromEmail.trim()}>` : ""}`
 	const [attachments, setAttachments] = useState<BlastAttachment[]>([])
 	const [uploading, setUploading] = useState(false)
 	// What the last prefill wrote into the subject and into the message — tracked SEPARATELY. Each is
@@ -436,6 +451,7 @@ export default function EmailAttendeesPage() {
 		selectedRows.length === 0 && "select at least one person",
 		selectedRows.length > ATTENDEE_MAIL_MAX && `select at most ${ATTENDEE_MAIL_MAX} people`,
 		uploading && "wait for the upload to finish",
+		(fromEmailError || fromNameError) && "fix the From details",
 	].filter(Boolean) as string[]
 
 	const payload = () => ({
@@ -445,6 +461,8 @@ export default function EmailAttendeesPage() {
 		message,
 		greetByName,
 		attachments,
+		fromEmail: fromEmail.trim(),
+		fromName: fromName.trim(),
 		sourceEventIds: sourceIds,
 		groups,
 	})
@@ -455,7 +473,7 @@ export default function EmailAttendeesPage() {
 	const [savingDraft, setSavingDraft] = useState(false)
 	// "Use again" loads a COPY — this names what it was copied from, for the banner.
 	const [loadedFrom, setLoadedFrom] = useState<string | null>(null)
-	const snapshot = composerSnapshot({ sourceIds, groups, extras, excluded, promotedId: promoted?._id, subject, message, greetByName, attachments })
+	const snapshot = composerSnapshot({ sourceIds, groups, extras, excluded, promotedId: promoted?._id, subject, message, greetByName, attachments, fromEmail, fromName })
 	const [savedSnapshot, setSavedSnapshot] = useState(EMPTY_SNAPSHOT)
 	const dirty = snapshot !== savedSnapshot
 	const isBlank = snapshot === EMPTY_SNAPSHOT
@@ -482,6 +500,8 @@ export default function EmailAttendeesPage() {
 		setSubject("")
 		setMessage("")
 		setGreetByName(true)
+		setFromEmail("")
+		setFromName("")
 		setAttachments([])
 		setDraftId(null)
 		setSavedAt(null)
@@ -586,6 +606,8 @@ export default function EmailAttendeesPage() {
 			const nextSubject: string = rec.subject || ""
 			const nextMessage: string = rec.message || ""
 			const nextGreet = rec.greetByName !== false
+			const nextFromEmail: string = rec.fromEmail || ""
+			const nextFromName: string = rec.fromName || ""
 
 			setSourceEvents(liveSources)
 			setGroups(nextGroups)
@@ -597,6 +619,8 @@ export default function EmailAttendeesPage() {
 			setSubject(nextSubject)
 			setMessage(nextMessage)
 			setGreetByName(nextGreet)
+			setFromEmail(nextFromEmail)
+			setFromName(nextFromName)
 			setAttachments(nextAttachments)
 			forgetPrefill()
 			// The loaded text was written for its linked event — switching away should warn.
@@ -617,6 +641,8 @@ export default function EmailAttendeesPage() {
 							message: nextMessage,
 							greetByName: nextGreet,
 							attachments: nextAttachments,
+							fromEmail: nextFromEmail,
+							fromName: nextFromName,
 						})
 					: EMPTY_SNAPSHOT,
 			)
@@ -835,7 +861,22 @@ export default function EmailAttendeesPage() {
 							</Flex>
 						)}
 
-						<Text fontWeight="bold" mt={5} mb={1}>Subject</Text>
+						<Text fontWeight="bold" mt={5} mb={1}>From</Text>
+						<Text fontSize="xs" color="gray.400" mb={2}>
+							Leave blank to send as &quot;Jetzy&quot; from our usual address. A From email must be verified in our SendGrid account, or the email can&apos;t be sent — send yourself a test first. Replies go to the From email.
+						</Text>
+						<Flex gap={3} direction={{ base: "column", md: "row" }} mb={4}>
+							<Box flex="1">
+								<Input value={fromName} onChange={(e) => setFromName(e.target.value)} placeholder="From name (Jetzy)" maxLength={FROM_NAME_MAX} bg="#090C10" borderColor={fromNameError ? "#FC8181" : "#444444"} color="white" _placeholder={{ color: "gray.500" }} sx={inputSx} />
+								{fromNameError && <Text fontSize="xs" color="#FC8181" mt={1}>{fromNameError}</Text>}
+							</Box>
+							<Box flex="1">
+								<Input type="email" inputMode="email" autoCapitalize="off" autoCorrect="off" value={fromEmail} onChange={(e) => setFromEmail(e.target.value)} placeholder="From email (usual Jetzy address)" bg="#090C10" borderColor={fromEmailError ? "#FC8181" : "#444444"} color="white" _placeholder={{ color: "gray.500" }} sx={inputSx} />
+								{fromEmailError && <Text fontSize="xs" color="#FC8181" mt={1}>{fromEmailError}</Text>}
+							</Box>
+						</Flex>
+
+						<Text fontWeight="bold" mb={1}>Subject</Text>
 						<Input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Subject" bg="#090C10" borderColor="#444444" color="white" _placeholder={{ color: "gray.500" }} mb={staleWarning ? 2 : 4} sx={inputSx} />
 						{staleWarning && (
 							<Text fontSize="sm" color="#F6AD55" bg="rgba(246,173,85,0.10)" border="1px solid rgba(246,173,85,0.4)" borderRadius="md" px={3} py={2} mb={4}>
@@ -980,7 +1021,8 @@ export default function EmailAttendeesPage() {
 					emailType="custom"
 					attachments={attachments}
 					greetByName={greetByName}
-					footerContact={emailFooterContactHtml()}
+					footerContact={emailFooterContactLine()}
+					senderLabel={fromLabel}
 					targetType="all"
 					status="all"
 					hostName={(session?.user as any)?.name}
@@ -994,7 +1036,7 @@ export default function EmailAttendeesPage() {
 							<AlertDialogHeader>Send to {selectedRows.length} {selectedRows.length === 1 ? "person" : "people"}?</AlertDialogHeader>
 							<AlertDialogBody>
 								<Text fontSize="sm" color="gray.300">
-									&ldquo;{subject}&rdquo;{promoted ? <> about <strong>{promoted.name}</strong></> : null} goes out now, from Jetzy. This can&apos;t be undone.
+									&ldquo;{subject}&rdquo;{promoted ? <> about <strong>{promoted.name}</strong></> : null} goes out now, from <strong>{fromLabel}</strong>. This can&apos;t be undone.
 								</Text>
 								{staleWarning && (
 									<Text fontSize="sm" color="#F6AD55" mt={3}>

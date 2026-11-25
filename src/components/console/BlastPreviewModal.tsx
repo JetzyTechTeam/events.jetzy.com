@@ -19,6 +19,7 @@ import {
 import { attachmentMode, blastImageContentId, formatBytes, type BlastAttachment } from "@/lib/blast-attachments"
 import { normalizeTestAddress } from "@/lib/blast-test-send"
 import { blastFallbackName, buildBlastHtml, personalizeBlastHtml, type BlastEmailType } from "@/lib/blast-template"
+import { previewUnsubscribeLinks } from "@/lib/email-footer"
 
 /**
  * What the guest will actually see, before anyone sees it.
@@ -123,10 +124,12 @@ export default function BlastPreviewModal({
 			eventLink,
 			// The real footer is resolved server-side from the event's owner. Rendering a guess
 			// here would be a preview of an email nobody sends, so this states what it is.
-			footerContact: footerContact || "Questions? (the footer is added when the blast is sent)",
+			footerContact: footerContact || "Questions? (this line is added when the blast is sent)",
 			emailType,
 			baseUrl: typeof window !== "undefined" ? window.location.origin : "",
 			greetByName,
+			// A blast always carries Unsubscribe; shown here as an inert link.
+			unsubscribe: true,
 			images: attachments
 				.filter((a) => attachmentMode(a) === "attach")
 				.map((a, i) => ({ contentId: blastImageContentId(i), filename: a.filename })),
@@ -142,7 +145,7 @@ export default function BlastPreviewModal({
 			// of that template — a host previewing it needs to see the button they are sending.
 			bookingRef: emailType === "availability" ? "SAMPLE-REF" : undefined,
 		})
-		return withPreviewableImages(personalized, attachments)
+		return previewUnsubscribeLinks(withPreviewableImages(personalized, attachments))
 	}, [subject, message, eventName, eventLink, emailType, attachments, greetByName, footerContact, sampleName, sampleEmail])
 
 	// Checked as they type so the button can refuse before a round trip. The API runs the same

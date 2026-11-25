@@ -57,6 +57,11 @@ export interface IAttendeeMailing {
 	updatedByEmail?: string
 	attachments?: Array<{ url: string; filename: string; contentType: string; size: number; mode?: "attach" | "link" }>
 	greetByName?: boolean
+	/** SendGrid unsubscribe group the email carried. Absent = no Unsubscribe link. */
+	unsubscribeGroupId?: number
+	/** A custom sender typed by the admin. Absent = the usual sender, "Jetzy". */
+	fromEmail?: string
+	fromName?: string
 	sentBy?: Types.ObjectId
 	sentByEmail?: string
 	sentAt?: Date
@@ -119,6 +124,11 @@ const attendeeMailingSchema = new Schema<IAttendeeMailing>(
 			default: undefined,
 		},
 		greetByName: { type: Boolean, required: false },
+		// No default: absent = sent without an Unsubscribe link.
+		unsubscribeGroupId: { type: Number, required: false },
+		// No default: absent = sent from the usual sender as "Jetzy".
+		fromEmail: { type: String, required: false },
+		fromName: { type: String, required: false },
 		sentBy: { type: Schema.Types.ObjectId, required: false },
 		sentByEmail: { type: String, required: false },
 		// No default: a draft has not been sent. `send.ts` always writes it.
