@@ -1,4 +1,5 @@
 import { NextApiRequest, NextApiResponse } from "next"
+import { bookingUnitPrice } from "@/lib/ticket-bid"
 import { Bookings } from "@/models/events/bookings"
 import { EventTracker } from "@/models/events/event-tracker"
 import { Events } from "@/models/events"
@@ -138,7 +139,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					const meta = eventTicketMap.get(bt.ticketId?.toString())
 					return {
 						name: meta?.name || "Ticket",
-						price: Number(meta?.price) || 0,
+						price: bookingUnitPrice(booking as any, meta),
 						quantity: bt.quantity,
 						desc: meta?.desc || "",
 					}

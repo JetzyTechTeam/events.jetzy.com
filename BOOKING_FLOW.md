@@ -240,6 +240,7 @@ lower-case of these):
   "marketingLinkTag": "instagram",      // optional — snapshot of that link's tag
   "premiumMemberDiscountApplied": false,// legacy, retired feature — write false or leave
   "premiumMemberDiscountPercentage": 0, // legacy — never write for new bookings
+  "bidAmount": 40,                       // optional — a bid ticket's bid (one seat); absent = list price
   "customAnswers": [ { "questionId": "q1", "answer": "…" } ],
   "acceptedTerms": true, "acceptedTermsAt": ISODate,
   "payment": { … },                     // §3.2 — ABSENT on a plain free booking
@@ -1967,6 +1968,15 @@ from the app (§5.0); then act on them from the app **and** confirm the web show
 ---
 
 ## 18. Changelog
+
+**2026-11-26 (bid tickets):** a ticket may be a bid ticket (`TICKET_SCHEMA.md` §15). Its order is
+one seat, alone, no referral code, `bidAmount` validated against the stored `bidMin`/`bidMax`;
+the Stripe line item is `price_data` for the bid on the stored price's product, always the
+approval-hold shape (B). Bookings gain optional **`bidAmount`** (the one seat's price, no
+default) — every reader of a booking's price uses it before the ticket's list price
+(`bookingUnitPrice`). Approve / reject / expiry unchanged (capture = the hold). The free path and
+the waiting list refuse bid tickets. Also: `api/checkout` now refuses a ticket whose `priceId`
+isn't that ticket's stored price, and re-reads approval from the stored ticket.
 
 **2026-11-24 (marketing links):** bookings gain optional `marketingLinkId` + `marketingLinkTag`
 (no defaults), and Stripe metadata an optional `marketingLinkId` (§5.6). Both checkout endpoints

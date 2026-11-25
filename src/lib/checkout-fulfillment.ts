@@ -466,6 +466,8 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 			customerPhone: metadata.phone,
 			tickets: tickets.map((t) => ({ ticketId: t.id, quantity: t.quantity })),
 			subTotal: subtotal,
+			// A bid ticket's validated bid (`api/checkout`) — the price of this one seat.
+			...(Number.isFinite(Number(metadata.bidAmount)) && metadata.bidAmount ? { bidAmount: Number(metadata.bidAmount) } : {}),
 			total,
 			referralCode: metadata.referralCode || undefined,
 			...(marketingLink ? { marketingLinkId: marketingLink.id, marketingLinkTag: marketingLink.tag } : {}),

@@ -1,5 +1,6 @@
 "use client"
 import { stripHtml } from "@/utils/text";
+import { ticketBidFields } from "@/lib/ticket-bid"
 import ConsoleLayout from "@/components/layout/ConsoleLayout"
 import { ReferralCodesManager } from "@/components/console/ReferralCodesManager"
 import { MarketingLinksManager } from "@/components/console/MarketingLinksManager"
@@ -231,6 +232,8 @@ const mapEventTicket = (ticket: any) => ({
 	membershipFreeMonths: ticket.membershipFreeMonths,
 	quantity: ticket.quantity,
 	includesPremium: ticketMemberships(ticket).includes("premium"),
+	// Bid ticket — dropping these would turn it back into a fixed-price ticket on the next save.
+	...ticketBidFields(ticket),
 })
 
 /**
@@ -264,6 +267,8 @@ const mapDraftTicket = (t: any) => ({
 	membershipFreeMonths: t.membershipFreeMonths,
 	quantity: t.quantity,
 	includesPremium: ticketMemberships(t).includes("premium"),
+	...ticketBidFields(t),
+	...(t.pricingMode === "fixed" ? { pricingMode: "fixed" } : {}),
 })
 
 // Reports Formik state the page header needs but sits outside Formik to read: whether the

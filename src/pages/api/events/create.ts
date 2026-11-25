@@ -1,5 +1,6 @@
 // Next.js API route support: https://nextjs.org/docs/api-routes/introduction
 import { generateRandomId, sendResponse } from "@Jetzy/lib/helpers"
+import { bidRangeProblem } from "@/lib/ticket-bid"
 import { ResCode } from "@Jetzy/lib/responseCodes"
 import type { NextApiRequest, NextApiResponse } from "next"
 import { Events } from "@/models/events"
@@ -136,6 +137,15 @@ const schema = zod.object({
 			membershipFreeMonths: zod.number().int().min(0).max(MAX_MEMBERSHIP_FREE_MONTHS).optional(),
 			/** @deprecated Superseded by `memberships`; still accepted from older clients. */
 			includesPremium: zod.boolean().optional(),
+			// Bid ticket ("name your price") — `src/lib/ticket-bid.ts`. Absent = unchanged / fixed.
+			pricingMode: zod.enum(["bid", "fixed"]).optional(),
+			bidMin: zod.number().optional(),
+			bidMax: zod.number().optional(),
+			bidSuggested: zod.number().optional(),
+		}).superRefine((t, ctx) => {
+			if (t.pricingMode !== "bid") return
+			const problem = bidRangeProblem({ min: t.bidMin, max: t.bidMax, suggested: t.bidSuggested })
+			if (problem) ctx.addIssue({ code: zod.ZodIssueCode.custom, message: `"${t.title}": ${problem}`, path: ["bidMin"] })
 		}),
 	),
 	isPaid: zod.boolean(),
@@ -263,6 +273,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			: end
 		if (start && endForCompare && start >= endForCompare) return sendResponse(res, null, "Start date must be less than end date.", false, ResCode.BAD_REQUEST)
 
+		// A bid ticket's `price` IS its suggested bid; it always needs approval and sells no
+		// membership (`src/lib/ticket-bid.ts`). Normalised before the Stripe prices are minted.
+		tickets = tickets.map((t: any) =>
+			t.pricingMode === "bid"
+				? { ...t, price: Number(t.bidSuggested), requireApproval: true, memberships: [], includesPremium: false, membershipInterval: undefined, membershipFreeMonths: undefined }
+				: t,
+		)
+
 		// check if the event has tickets
 		if (isPaid && tickets.length === 0) return sendResponse(res, null, "You need to add at least one ticket to a paid event.", false, ResCode.BAD_REQUEST)
 
@@ -333,6 +351,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					? { membershipFreeMonths: ticketMembershipFreeMonths(ticket as any) }
 					: {}),
 				includesPremium: ticketMemberships(ticket as any).includes("premium"),
+				...((ticket as any).pricingMode === "bid"
+					? { pricingMode: "bid", bidMin: (ticket as any).bidMin, bidMax: (ticket as any).bidMax, bidSuggested: (ticket as any).bidSuggested }
+					: {}),
 			})),
 			benefits,
 			locationDisclosedAfterBooking: locationDisclosedAfterBooking ?? false,

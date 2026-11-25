@@ -28,6 +28,8 @@ import { MEMBERSHIPS, membershipLabelList, membershipsIncluding, type Membership
 import { validateReferralCodeForEvent, type ReferralCodeData } from "@/lib/referral-validation"
 import { REFERRAL_NOT_FOR_SELECTION_MESSAGE, referralCoversTicket, referralEligibleSubtotal } from "@/lib/referral-ticket-scope"
 import Stripe from "stripe"
+import { isBidTicket, validateBidAmount } from "@/lib/ticket-bid"
+import { ticketApprovalFlag } from "@/lib/ticket-approval"
 import { CHECKOUT_VERIFY_MESSAGE, sessionMayBookAs } from "@/lib/checkout-identity"
 
 type BodyParams = {
@@ -255,7 +257,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		}
 
 		// using price api from stripe create price for the tickets selected
-		const prices = tickets.map((ticket) => {
+		// A bid row is rebuilt as `price_data` below, once the event is loaded and the bid checked.
+		const prices: Stripe.Checkout.SessionCreateParams.LineItem[] = tickets.map((ticket) => {
 			return {
 				price: ticket.priceId,
 				quantity: ticket.quantity,
@@ -281,6 +284,47 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		}
 
 		// Private events are unlisted rather than invite-only — no access code required.
+
+		// ---- Every ticket must be one of THIS event's tickets — id AND Stripe price. The price id
+		// used to go straight from the body into `line_items`, so any price on the account could be
+		// charged. Approval is also re-read from the STORED ticket: `selectionRequiresApproval`
+		// trusts the body's flag, which a crafted request could flip off. ----
+		const storedById = new Map((event.tickets || []).map((et: any) => [String(et._id), et]))
+		for (const t of tickets) {
+			const stored: any = storedById.get(String(t.id))
+			if (!stored || String(stored.stripeProductId) !== String(t.priceId)) {
+				return sendResponse(res, null, "One of the selected tickets is no longer available. Please refresh and try again.", false, ResCode.BAD_REQUEST)
+			}
+			;(t as any).requireApproval = ticketApprovalFlag(event as any, stored)
+		}
+
+		// ---- Bid ticket ("name your price", `src/lib/ticket-bid.ts`). The bid is validated against
+		// the STORED range, never trusted; one seat, alone on the order, no referral code, and it
+		// always needs approval — the card is HELD for the bid and charged only on approval. ----
+		let bid: { amount: number; cents: number } | null = null
+		const bidRow = tickets.find((t) => isBidTicket(storedById.get(String(t.id)) as any))
+		if (bidRow) {
+			const stored: any = storedById.get(String(bidRow.id))
+			if (tickets.length !== 1 || Number(bidRow.quantity) !== 1) {
+				return sendResponse(res, null, "A bid is for one seat. Place one bid at a time — you can bid again for another seat.", false, ResCode.BAD_REQUEST)
+			}
+			if (referralCodeData) {
+				return sendResponse(res, null, "Referral codes don't apply to bids.", false, ResCode.BAD_REQUEST)
+			}
+			const check = validateBidAmount(stored, (bidRow as any).bidAmount)
+			if (!check.ok) return sendResponse(res, null, check.error, false, ResCode.BAD_REQUEST)
+			bid = { amount: check.amount, cents: check.cents }
+			// Normalised in place, so every step below — charge rows, metadata, the receipt — reads
+			// the validated bid rather than whatever the body said the price was.
+			bidRow.price = check.amount
+			;(bidRow as any).requireApproval = true
+			// The stored price's PRODUCT, so the line item still names the ticket on Stripe.
+			const productId = (await stripe.prices.retrieve(String(stored.stripeProductId))).product
+			prices[0] = {
+				price_data: { currency: "usd", unit_amount: check.cents, product: typeof productId === "string" ? productId : productId.id },
+				quantity: 1,
+			}
+		}
 
 		// Does this order sell memberships?
 		//
@@ -477,7 +521,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return {
 				// The STORED ticket's id decides referral eligibility, never the body's.
 				id: stored?._id ? String(stored._id) : "",
-				price: Number(stored?.price ?? ticket.price) || 0,
+				// A bid ticket is charged the validated bid, never its list (suggested) price.
+				price: bid && isBidTicket(stored as any) ? bid.amount : Number(stored?.price ?? ticket.price) || 0,
 				quantity: Number(ticket.quantity) || 0,
 			}
 		})
@@ -587,6 +632,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			acceptedTermsAt: acceptedTermsAt.toISOString(),
 			bookingRef,
 			requiresApproval: requiresApproval ? "true" : "false",
+			// The validated bid — fulfilment stores it on the booking (`booking.bidAmount`).
+			...(bid ? { bidAmount: bid.amount.toFixed(2) } : {}),
 			...(buyerId ? { bookerUserId: String(buyerId) } : {}),
 			...(checkoutUserId ? { checkoutUserId } : {}),
 		}

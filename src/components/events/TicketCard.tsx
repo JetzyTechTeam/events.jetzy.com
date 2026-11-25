@@ -39,6 +39,15 @@ export type TicketData = {
   membershipFreeMonths?: number
   /** @deprecated Superseded by `memberships`; still the fallback for tickets saved before it. */
   includesPremium?: boolean
+  /**
+   * Bid ticket ("name your price", `src/lib/ticket-bid.ts`). "bid" = guests choose their price
+   * between `bidMin` and `bidMax`; "fixed" turns a bid ticket back into a normal one; absent =
+   * unchanged (a normal ticket). On a bid ticket `price` mirrors `bidSuggested`.
+   */
+  pricingMode?: "bid" | "fixed"
+  bidMin?: number
+  bidMax?: number
+  bidSuggested?: number
 }
 
 export interface TicketCardProps {

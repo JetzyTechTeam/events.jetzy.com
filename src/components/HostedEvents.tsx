@@ -93,6 +93,7 @@ import { stripHtml } from "@/utils/text";
 import { FiShare2, FiChevronDown, FiChevronUp, FiMoreHorizontal } from "react-icons/fi"
 import MarketingSourceTag from "@/components/bookings/MarketingSourceTag"
 import { bookingMarketingSource } from "@/lib/marketing-link"
+import { ticketBidFields } from "@/lib/ticket-bid"
 
 /**
  * Which block of the event page is in edit mode.
@@ -445,6 +446,7 @@ export default function HostedEvents({ event }: Props) {
 				// inline editor shows "unlimited" and the next save removes the host's cap.
 				quantity: ticket.quantity,
 				includesPremium: ticketMemberships(ticket).includes("premium"),
+				...ticketBidFields(ticket),
 			})) as TicketData[],
 		)
 		setDraftLocation(shownEvent?.location || "")
@@ -563,6 +565,10 @@ export default function HostedEvents({ event }: Props) {
 						...((t as any).memberships !== undefined ? { memberships: (t as any).memberships } : {}),
 						...((t as any).membershipInterval !== undefined ? { membershipInterval: (t as any).membershipInterval } : {}),
 						...((t as any).membershipFreeMonths !== undefined ? { membershipFreeMonths: Number((t as any).membershipFreeMonths) || 0 } : {}),
+						// Bid ticket ("name your price") — sent only when set; "fixed" turns one back.
+						...((t as any).pricingMode !== undefined
+							? { pricingMode: (t as any).pricingMode, ...((t as any).pricingMode === "bid" ? { bidMin: Number((t as any).bidMin), bidMax: Number((t as any).bidMax), bidSuggested: Number((t as any).bidSuggested) } : {}) }
+							: {}),
 						// `null` is sent through as null — it is the host clearing the cap, which
 						// is a different instruction from omitting the key.
 						...((t as any).quantity !== undefined

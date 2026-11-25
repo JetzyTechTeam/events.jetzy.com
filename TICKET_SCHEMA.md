@@ -2,6 +2,11 @@
 
 For the mobile app / backend, which writes to the same `events` collection this portal does.
 
+**Revision 7 (2026-11-26).** **Bid tickets** ("name your price") — new optional ticket fields
+`pricingMode`, `bidMin`, `bidMax`, `bidSuggested`; see **§15**. **Until the app supports them it
+must hide or refuse a ticket whose `pricingMode` is `"bid"`** — selling it at `price` would charge
+the suggested amount with no bid and no host approval. Nothing else changed.
+
 **Revision 6 (2026-11-11).** No schema change. Brings the document up to date with the code:
 **§0 — handoff** (who builds what, what changed, the remaining work); **§6 rewritten** —
 Premium repriced to **$10/month and $100/year** (2026-09-18, new price ids), **Full Concierge now
@@ -1192,3 +1197,32 @@ say "Your … was set to end. Booking this ticket keeps it — it will renew at 
 An event that sells no membership returns `{ held: [], sellsPremium: false }`.
 
 ---
+
+---
+
+## 15. NEW (Revision 7) — Bid tickets ("name your price")
+
+The guest chooses what they pay, between a host-set minimum and maximum; the slider starts at the
+suggested amount. The card is **held** for the bid (the existing approval hold, manual capture,
+~7-day expiry) and **charged only when the host approves**. Sealed — no guest sees another's bid.
+Web source of truth: `src/lib/ticket-bid.ts`.
+
+| Field | Type | Rule |
+|---|---|---|
+| `pricingMode` | `"bid"` \| absent | Absent = an ordinary fixed-price ticket (every ticket before this). |
+| `bidMin` | Number | `>= 0.50` (Stripe's minimum; a $0 bid has nothing to hold). |
+| `bidSuggested` | Number | `bidMin <= bidSuggested <= bidMax`. |
+| `bidMax` | Number | `>= bidMin`. All three: at most 2 decimals. |
+| `price` | Number | **Equals `bidSuggested`** on a bid ticket, so `stripeProductId` and every list display keep working. |
+
+A bid ticket ALWAYS: `requireApproval: true`; `memberships: []` (no `membershipInterval` /
+`membershipFreeMonths`); takes **no referral code**; is **never free**; has **no waiting list**;
+is sold **one seat per bid** — more seats = more bids, each its own request and hold. No defaults
+on any of the four fields; preserve-on-omit on update (an absent `pricingMode` keeps what is
+stored, `"fixed"` turns it back into a normal ticket and drops the bid fields).
+
+Selling (web): the order carries the ticket alone, `quantity: 1`, and `bidAmount`; the server
+validates the bid against the STORED range (never trusts it), charges it as
+`price_data { unit_amount: bid, product: <product of the stored price> }`, forces the approval
+hold, and the booking stores **`bidAmount`** (see `BOOKING_FLOW.md`). Anything that shows a
+booking's price must read `bidAmount` when present, never the ticket's current `price`.

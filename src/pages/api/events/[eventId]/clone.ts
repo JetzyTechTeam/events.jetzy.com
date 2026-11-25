@@ -119,6 +119,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					? { membershipFreeMonths: ticketMembershipFreeMonths(ticket as any) }
 					: {}),
 				includesPremium: ticketMemberships(ticket as any).includes("premium"),
+				// A bid ticket stays a bid ticket in the copy.
+				...((ticket as any).pricingMode === "bid"
+					? { pricingMode: "bid", bidMin: (ticket as any).bidMin, bidMax: (ticket as any).bidMax, bidSuggested: (ticket as any).bidSuggested }
+					: {}),
 			})),
 			questions: source.questions,
 			benefits: source.benefits,

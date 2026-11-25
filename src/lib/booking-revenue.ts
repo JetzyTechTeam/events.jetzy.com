@@ -101,6 +101,8 @@ export type PriceChange = { paid: number; current: number; direction: "up" | "do
  * truthful.
  */
 export const describePriceChange = (booking: BookingLike, currentPrice: number | null | undefined): PriceChange | null => {
+	// A bid was never at the list price — the guest named their own, so there is no "change".
+	if ((booking as any)?.bidAmount !== undefined && (booking as any)?.bidAmount !== null) return null
 	const paid = paidUnitPrice(booking)
 	// `null`/`undefined` must be rejected BEFORE coercion: `Number(null)` is 0 and passes
 	// `isFinite`, so a deleted ticket type would otherwise report "Paid $1.00 · now $0.00" —
