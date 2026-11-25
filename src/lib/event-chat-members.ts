@@ -203,3 +203,71 @@ export async function collectEventChatMembers(eventId: string): Promise<{ eventN
 	}
 	return { eventName: event.name, host, members: dedupe([host, ...guests]) }
 }
+
+// ---- Cleanup: people in the chat who never booked ----
+
+export type ListedChatMember = { userId?: string | null; email?: string | null; name?: string | null; isAdmin?: boolean }
+
+/** `GET <URL>?eventId=` — who is in the chat now. Reads only. Throws on failure (the script stops). */
+export async function listEventChatMembers(eventId: string): Promise<ListedChatMember[]> {
+	const cfg = chatConfig()
+	if (!cfg) throw new Error("JETZYCHAT_MEMBERS_URL and JETZYCHAT_MEMBERS_SECRET must be set.")
+	const r = await fetch(`${cfg.url}?eventId=${encodeURIComponent(String(eventId))}`, {
+		headers: { Authorization: `Bearer ${cfg.secret}` },
+		signal: AbortSignal.timeout(TIMEOUT_MS),
+	})
+	if (!r.ok) throw new Error(`List failed: HTTP ${r.status} ${(await r.text().catch(() => "")).slice(0, 200)}`)
+	const json: any = await r.json()
+	return Array.isArray(json?.members) ? json.members : []
+}
+
+/** Jetzy platform admins by email — kept: they may post in any chat without booking. */
+async function platformAdminEmails(emails: string[]): Promise<Set<string>> {
+	const out = new Set<string>()
+	if (!emails.length) return out
+	const { Users } = await import("@Jetzy/models/userModal")
+	const { EventUsers } = await import("@/models/eventUsersModal")
+	const or = emails.map((e) => ({ email: { $regex: `^${escapeRegex(e)}$`, $options: "i" } }))
+	for (const Model of [Users, EventUsers] as any[]) {
+		for (let i = 0; i < or.length; i += 200) {
+			const rows: any[] = await Model.find({ $or: or.slice(i, i + 200), role: { $in: ["admin", "super admin"] } }).select("email").lean()
+			rows.forEach((u) => u.email && out.add(emailKey(u.email)))
+		}
+	}
+	return out
+}
+
+/**
+ * Who in the chat has no business there: not a chat admin, not the host, not a Jetzy platform
+ * admin, and no live booking on the event (matched by email, case-insensitive; a member with no
+ * email is matched by their Jetzy user id against the bookers' accounts).
+ *
+ * Run AFTER the backfill (JetzyChat's advice) so nobody who booked is removed by mistake.
+ */
+export async function findChatMembersToRemove(eventId: string): Promise<{ listed: number; keep: number; remove: { email?: string; jetzyUserId?: string; name?: string }[] }> {
+	const listed = await listEventChatMembers(eventId)
+	const { members: allowed } = await collectEventChatMembers(eventId)
+	const allowedEmails = new Set(allowed.map((m) => emailKey(m.email)))
+	const allowedIds = new Set(allowed.map((m) => m.jetzyUserId).filter(Boolean) as string[])
+	const admins = await platformAdminEmails(listed.map((m) => String(m.email || "")).filter(Boolean))
+
+	const remove: { email?: string; jetzyUserId?: string; name?: string }[] = []
+	for (const m of listed) {
+		if (m.isAdmin) continue
+		const email = m.email ? emailKey(m.email) : ""
+		if (email && (allowedEmails.has(email) || admins.has(email))) continue
+		if (!email && m.userId && allowedIds.has(String(m.userId))) continue
+		if (email) remove.push({ email: m.email as string, ...(m.name ? { name: m.name } : {}) })
+		else if (m.userId) remove.push({ jetzyUserId: String(m.userId), ...(m.name ? { name: m.name } : {}) })
+	}
+	return { listed: listed.length, keep: listed.length - remove.length, remove }
+}
+
+/** Sends the cleanup list to `/remove` (email, or `jetzyUserId` alone when the member has no email). */
+export async function removeListedChatMembers(eventId: string, members: { email?: string; jetzyUserId?: string }[]): Promise<CallResult> {
+	const list = members
+		.filter((m) => m.email || m.jetzyUserId)
+		.map((m) => ({ ...(m.email ? { email: m.email } : {}), ...(m.jetzyUserId ? { jetzyUserId: m.jetzyUserId } : {}) }))
+	if (!list.length) return { ok: true, sent: 0, failed: 0 }
+	return sendChunks("/remove", list as ChatMember[], (chunk) => ({ eventId: String(eventId), members: chunk }))
+}
