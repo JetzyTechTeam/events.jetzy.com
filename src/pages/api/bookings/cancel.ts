@@ -1,4 +1,5 @@
 import { NextApiRequest, NextApiResponse } from "next"
+import { removeBookingFromEventChat } from "@/lib/event-chat-members"
 import { bookingUnitPrice } from "@/lib/ticket-bid"
 import { Bookings } from "@/models/events/bookings"
 import { EventTracker } from "@/models/events/event-tracker"
@@ -121,6 +122,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				]
 				: []),
 		])
+
+		// Out of the event's chat (JetzyChat) — unless they hold another live booking on it, or are
+		// the host. Best-effort (`event-chat-members.ts`).
+		await removeBookingFromEventChat(booking as any)
 
 		const updatedBooking = await Bookings.findById(booking._id).select("-payment.paymentIntentId -payment.checkoutSessionId")
 

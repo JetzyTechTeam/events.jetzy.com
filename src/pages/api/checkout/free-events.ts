@@ -25,6 +25,7 @@ import { getServerSession } from "next-auth"
 import { CHECKOUT_VERIFY_MESSAGE, sessionMayBookAs } from "@/lib/checkout-identity"
 import { authOptions } from "../auth/[...nextauth]"
 import { addEventMember } from "@/utils/eventMembership"
+import { syncBookingToEventChat } from "@/lib/event-chat-members"
 import { reactivateHeldMemberships } from "@/lib/membership-upgrade"
 
 type BodyParams = {
@@ -439,6 +440,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				console.error("[checkout/free-events] Failed to add event participant:", error)
 			}
 		}
+		// …and into the event's chat (JetzyChat), with the host as admin. Best-effort, off until
+		// JETZYCHAT_MEMBERS_URL / _SECRET are set (`src/lib/event-chat-members.ts`).
+		await syncBookingToEventChat(booking as any)
 
 		// Send confirmation email
 		try {

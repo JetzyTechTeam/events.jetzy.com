@@ -22,6 +22,7 @@ import { plannedTickets } from "@/lib/booking-request-edit"
 import { Types } from "mongoose"
 import { startMembershipSubscription } from "@/lib/membership-subscriptions"
 import { addEventMember } from "@/utils/eventMembership"
+import { syncBookingToEventChat } from "@/lib/event-chat-members"
 import Stripe from "stripe"
 import zod from "zod"
 import { reactivateHeldMemberships } from "@/lib/membership-upgrade"
@@ -610,6 +611,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			console.error("[bookings/approve] Failed to add event participant:", error)
 		}
 	}
+	// …and into the event's chat (JetzyChat), with the host as admin. Best-effort, off until
+	// JETZYCHAT_MEMBERS_URL / _SECRET are set (`src/lib/event-chat-members.ts`).
+	await syncBookingToEventChat(booking as any)
 
 	// Referral usage was deliberately deferred from checkout so declined requests don't
 	// burn a limited-use code. Now that the booking is real, count it.
