@@ -93,6 +93,8 @@ import { stripHtml } from "@/utils/text";
 import { FiShare2, FiChevronDown, FiChevronUp, FiMoreHorizontal } from "react-icons/fi"
 import MarketingSourceTag from "@/components/bookings/MarketingSourceTag"
 import { bookingMarketingSource } from "@/lib/marketing-link"
+import { useAnalytics } from "@/hooks/useAnalytics"
+import { CHAT_LINK_SHARED, CHAT_OPEN, CHAT_QR_OPENED, DISCUSSION_LINK_VISIT, DISCUSSION_QR_PARAM } from "@/lib/discussion-events"
 import { bidSuggestedValue, isBidOnlyTicket, isBidTicket, ticketBidFields } from "@/lib/ticket-bid"
 
 /**
@@ -244,6 +246,24 @@ export default function HostedEvents({ event }: Props) {
 	// cannot see it. Suppressing the two role flags here suppresses every block downstream,
 	// which is why this is done once at the source instead of at each `canManage` site.
 	const previewAsGuest = isPreviewQuery(router.query)
+
+	// Discussion-chat analytics (`src/lib/discussion-events.ts`). Never under ?preview=1, and
+	// `chat_open` once per page visit, however it was opened.
+	const { trackEventInteraction } = useAnalytics()
+	const chatOpenTrackedRef = useRef(false)
+	const linkVisitTrackedRef = useRef(false)
+	const trackDiscussion = (type: string, metadata?: Record<string, unknown>) => {
+		const id = event?._id ? String(event._id) : ""
+		if (previewAsGuest || !id) return
+		trackEventInteraction(id, type, metadata).catch(() => {})
+	}
+	// Deliberate opens only — the panel also auto-expands when the chat has messages, which would
+	// count every signed-in visitor.
+	const trackChatOpen = (trigger: "click" | "link") => {
+		if (chatOpenTrackedRef.current) return
+		chatOpenTrackedRef.current = true
+		trackDiscussion(CHAT_OPEN, { trigger })
+	}
 
 	// @ts-ignore
 	const hasAdminRole = session?.user?.role === "admin" || session?.user?.role === "super admin"
@@ -992,6 +1012,12 @@ export default function HostedEvents({ event }: Props) {
 			}
 			if (router.query.view === "discussion") {
 				setIsChatExpanded(true)
+				// Once per page visit — this effect re-runs when the query changes.
+				if (!linkVisitTrackedRef.current) {
+					linkVisitTrackedRef.current = true
+					trackDiscussion(DISCUSSION_LINK_VISIT, { via: router.query.via === DISCUSSION_QR_PARAM.via ? "qr" : "link" })
+				}
+				trackChatOpen("link")
 				setTimeout(() => {
 					document.getElementById("discussion-chat")?.scrollIntoView({ behavior: "smooth" })
 				}, 1000)
@@ -2196,7 +2222,10 @@ export default function HostedEvents({ event }: Props) {
 									<Flex justify="space-between" align="center" mb={4} pl={2}>
 										<Box
 											cursor="pointer"
-											onClick={() => setIsChatExpanded((v) => !v)}
+											onClick={() => {
+												if (!isChatExpanded) trackChatOpen("click")
+												setIsChatExpanded((v) => !v)
+											}}
 											role="button"
 											aria-expanded={isChatExpanded}
 											aria-controls="discussion-chat-body"
@@ -2221,6 +2250,7 @@ export default function HostedEvents({ event }: Props) {
 													onClick={() => {
 														const discussionUrl = `${window.location.origin}${window.location.pathname}?view=discussion`
 														navigator.clipboard.writeText(discussionUrl)
+														trackDiscussion(CHAT_LINK_SHARED)
 														toast({ title: "Discussion Link Copied!", description: "Share this link to bring users directly to the discussion.", status: "success", duration: 2000, isClosable: true })
 													}}
 												>
@@ -2234,7 +2264,10 @@ export default function HostedEvents({ event }: Props) {
 													color="white"
 													_hover={{ bg: "whiteAlpha.200" }}
 													borderRadius="full"
-													onClick={onDiscussionQRModalOpen}
+													onClick={() => {
+														trackDiscussion(CHAT_QR_OPENED)
+														onDiscussionQRModalOpen()
+													}}
 												/>
 											</Flex>
 										)}
@@ -2375,7 +2408,7 @@ export default function HostedEvents({ event }: Props) {
 					<QRCodeModal
 						isOpen={isDiscussionQRModalOpen}
 						onClose={onDiscussionQRModalClose}
-						url={`${typeof window !== 'undefined' ? window.location.origin : ''}${router.asPath.split('?')[0]}?view=discussion`}
+						url={`${typeof window !== 'undefined' ? window.location.origin : ''}${router.asPath.split('?')[0]}?view=discussion&via=${DISCUSSION_QR_PARAM.via}`}
 						title="Event Discussion"
 					/>
 				)}

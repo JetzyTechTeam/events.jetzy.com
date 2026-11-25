@@ -90,6 +90,11 @@ interface InteractionWindowStats {
 	emailCodeSent: number
 	emailVerified: number
 	shares: number
+	/** Discussion chat (`src/lib/discussion-events.ts`) — sessions, except `chatLinkShared` (rows). */
+	discussionLinkVisits: number
+	discussionQrVisits: number
+	chatOpened: number
+	chatLinkShared: number
 }
 
 // Views are raw interaction rows (visits); viewers are distinct sessions (people-ish). The
@@ -102,6 +107,12 @@ async function interactionsByWindow(eventObjectId: Types.ObjectId, windows: Repo
 			{ $match: { timestamp: { $gte: w.from, $lte: w.to } } },
 			{ $group: { _id: "$interactionType", rows: { $sum: 1 }, sessions: { $addToSet: "$sessionId" } } },
 			{ $project: { rows: 1, sessions: { $size: "$sessions" } } },
+		]
+		// Chat-link arrivals split by how they came — the chat QR adds `via=qr`.
+		facet[`${w.key}__via`] = [
+			{ $match: { timestamp: { $gte: w.from, $lte: w.to }, interactionType: "discussion_link_visit" } },
+			{ $group: { _id: "$metadata.via", sessions: { $addToSet: "$sessionId" } } },
+			{ $project: { sessions: { $size: "$sessions" } } },
 		]
 	}
 	const [result] = await EventInteraction.aggregate([{ $match: { eventId: eventObjectId } }, { $facet: facet }])
@@ -120,6 +131,10 @@ async function interactionsByWindow(eventObjectId: Types.ObjectId, windows: Repo
 			emailCodeSent: byType("verify_code_sent")?.sessions || 0,
 			emailVerified: byType("email_verified")?.sessions || 0,
 			shares: byType("share")?.rows || 0,
+			discussionLinkVisits: byType("discussion_link_visit")?.sessions || 0,
+			discussionQrVisits: ((result?.[`${key}__via`] || []) as { _id: string; sessions: number }[]).find((r) => r._id === "qr")?.sessions || 0,
+			chatOpened: byType("chat_open")?.sessions || 0,
+			chatLinkShared: (byType("chat_link_shared")?.rows || 0) + (byType("chat_qr_opened")?.rows || 0),
 		}
 	}
 	return out
@@ -186,6 +201,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				"Check-ins": checkIns[key],
 				"Shares": interactions[key].shares,
 				"Discussion Posts": discussion[key],
+				"Discussion Link Visits": interactions[key].discussionLinkVisits,
+				"Discussion QR Visits": interactions[key].discussionQrVisits,
+				"Chat Opened": interactions[key].chatOpened,
+				"Chat Link Shared": interactions[key].chatLinkShared,
 				"Waiting List Joins": waitlist[key],
 				"Album Visitors": albumVisitors[key],
 			}

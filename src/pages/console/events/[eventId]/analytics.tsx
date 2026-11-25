@@ -195,6 +195,10 @@ const SNAPSHOT_ROWS: Array<{ key: string; label: string; hint?: string; money?: 
 	{ key: "Shares", label: "Shared the event", hideWhenEmpty: true },
 	{ key: "Waiting List Joins", label: "Joined the waiting list", hideWhenEmpty: true },
 	{ key: "Discussion Posts", label: "Discussion posts", hideWhenEmpty: true },
+	{ key: "Discussion Link Visits", label: "Arrived via chat link", hint: "Opened the event from a shared discussion link or QR", hideWhenEmpty: true },
+	{ key: "Discussion QR Visits", label: "…of them via the chat QR", hideWhenEmpty: true },
+	{ key: "Chat Opened", label: "Opened the chat", hint: "Clicked open the discussion chat, or arrived through its link", hideWhenEmpty: true },
+	{ key: "Chat Link Shared", label: "Chat link shared / QR shown", hint: "By the host", hideWhenEmpty: true },
 	{ key: "Album Visitors", label: "Album visitors", hint: "Opened a photo album from this event", hideWhenEmpty: true },
 ]
 
