@@ -53,6 +53,11 @@ const eventInteractionSchema = new Schema<IEventInteraction>(
 				"verify_code_failed",
 				"email_verified",
 				"verify_skipped",
+				// Discussion chat link / panel — see src/lib/discussion-events.ts.
+				"discussion_link_visit",
+				"chat_open",
+				"chat_link_shared",
+				"chat_qr_opened",
 			],
 			index: true,
 		},
