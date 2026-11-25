@@ -13,6 +13,7 @@ import { Events } from "@/models/events"
 import { Bookings } from "@/models/events/bookings"
 import { BookingStatus, IBookings, IEvent } from "@/models/events/types"
 import { addEventMember } from "@/utils/eventMembership"
+import { syncBookingToEventChat } from "@/lib/event-chat-members"
 import { reactivateHeldMemberships } from "@/lib/membership-upgrade"
 import { selectionMemberships } from "@/lib/premium-bundle"
 import { sendTicketMembershipWelcome } from "@/lib/membership-subscriptions"
@@ -624,6 +625,9 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 			console.error("[checkout-fulfillment] Failed to add event participant:", error)
 		}
 	}
+	// …and into the event's chat (JetzyChat), with the host as admin. Best-effort, off until
+	// JETZYCHAT_MEMBERS_URL / _SECRET are set (`src/lib/event-chat-members.ts`).
+	await syncBookingToEventChat(booking as any)
 
 	// ---- A membership this order sells that the buyer had CANCELLED ----
 	// Their plan is switched back on: nothing extra is charged (the current period is paid), it

@@ -3360,6 +3360,18 @@ CEO ask: change the number of tickets a request is for, and the name on it, with
 - Dead code untouched: `sendEventInvitation` / `sendBlastEmail` (no callers) still carry their own footer with a fake "Unsubscribe" linking to the event page.
 - `support.ts` `emailFooterContactHtml` is gone — `emailFooterContactLine()` in `email-footer.ts`.
 
+## Event chat members — JetzyChat (IMPLEMENTED 2026-11-25, OFF until env set)
+- **The event-page chat is JetzyChat (iframe) and keeps its OWN member list** — `POST /v2/interests/:id/join` (still called by `JetzyChatIntegration`) does NOT affect it. A guest used to join only by opening the chat (China: 10 members).
+- **Use `src/lib/event-chat-members.ts`** (server only): `syncBookingToEventChat`, `removeBookingFromEventChat`, `collectEventChatMembers`, `addMembersToEventChat`, `removeMembersFromEventChat`, `chatMemberForEmail`, `chatHostMember`. Contract (JetzyChat, 2026-11-25): `POST <JETZYCHAT_MEMBERS_URL>` `{ eventId, eventName, members: [{ email, jetzyUserId?, name?, image?, isAdmin? }] }` and `POST <URL>/remove` `{ eventId, members: [{ email, jetzyUserId? }] }`, `Authorization: Bearer <JETZYCHAT_MEMBERS_SECRET>`, both idempotent.
+- **OFF until BOTH `JETZYCHAT_MEMBERS_URL` and `JETZYCHAT_MEMBERS_SECRET` are set** — product must confirm first (members with the app start getting chat pushes). Unset = no call, no error.
+- **Identity: the MAIN Jetzy account's stored email + `users._id` as `jetzyUserId`, NEVER a portal (`eventusers`) id** — JetzyChat matches id first, then email ignoring case; a portal id that differs makes them create a second account. No `users` row → email + name only.
+- **The host is sent as `isAdmin: true` on EVERY add** (idempotent, keeps them admin) — `resolveEventOwner`.
+- **Added on CONFIRMED only**, next to every `addEventMember`: `free-events.ts` (confirmed branch), `checkout-fulfillment.ts` (immediate branch), `bookings/approve.ts`, `waiting-list/approve.ts`. A pending request is NOT in the chat.
+- **Removed on cancel** (`bookings/cancel.ts`) — unless the person holds ANOTHER live booking on the event (`liveCheckInBookingsFilter`, case-insensitive email) or is the host. `reject.ts` / hold expiry need nothing: pending requests were never added.
+- Per-booking calls time out at 4s and never throw — a chat outage must not fail a checkout. Bulk calls chunk 100, 8s.
+- **Existing bookings: `npx tsx scripts/sync-event-chat-members.ts --event <id|slug> [--dry-run]`** — SCRIPT ONLY by decision, run per event after product confirms; always `--dry-run` first. Staging dry run: Chicago Party II → 55 members, all with a Jetzy id.
+- **Chat notifications deliberately unchanged** (`chat-message-notify.ts` / `chat-tag-notify.ts`): JetzyChat calls our notify once per member per message, so a full room means one email per booked guest per message. Revisit before enabling on big events.
+
 ## Blast gaps still open (NOT addressed 2026-09-23)
 Deliberately out of scope; all pre-existing, none introduced by the identity work.
 - ~~No unsubscribe link anywhere on a blast~~ — **DONE 2026-11-25**, SendGrid ASM group, see "Email footer + Unsubscribe".

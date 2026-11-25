@@ -1,4 +1,5 @@
 import { NextApiRequest, NextApiResponse } from "next"
+import { syncBookingToEventChat } from "@/lib/event-chat-members"
 import { WaitingList } from "@/models/waitingList"
 import { Bookings } from "@/models/events/bookings"
 import { Events } from "@/models/events"
@@ -95,6 +96,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// Keep the mirror in step for the mobile app / admin portal, which still read it. The
 		// shared method no-ops when the tracker is missing, which the inline `+=` here could not.
 		await booking.updateEventTracker()
+		// Into the event's chat (JetzyChat), with the host as admin. Best-effort (`event-chat-members.ts`).
+		await syncBookingToEventChat(booking as any)
 
 		// Update waiting list status to approved
 		await WaitingList.findByIdAndUpdate(waitingListId, { status: 'approved' })
