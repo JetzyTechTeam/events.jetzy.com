@@ -711,18 +711,18 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
                         bid. The card is HELD for the bid and charged only if the host accepts. */}
                     {ticket.bid && ticket.isSelected && (
                       <div className="mt-3 bg-[#1e1e1e] rounded-xl p-3" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-between gap-3 mb-2">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3 mb-2">
                           <span className="text-sm text-[#bbbbbb]">Your bid</span>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 w-full sm:w-auto">
                             <button
                               aria-label="Lower bid"
                               onClick={() => setBid(ticket.id, bidFor(ticket.id) - BID_STEP)}
                               disabled={bidFor(ticket.id) <= ticket.bid.min}
-                              className="bg-black text-white w-9 h-9 rounded-full flex items-center justify-center text-lg hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                              className="flex-shrink-0 bg-black text-white w-9 h-9 rounded-full flex items-center justify-center text-lg hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                             >
                               -
                             </button>
-                            <div className="flex items-center bg-black rounded-full px-3 h-9">
+                            <div className="flex flex-1 sm:flex-none min-w-0 items-center bg-black rounded-full px-3 h-9">
                               <span className="text-gray-400 mr-1">$</span>
                               <input
                                 type="number"
@@ -737,14 +737,14 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
                                   if (e.key === "Enter") (e.target as HTMLInputElement).blur();
                                 }}
                                 aria-label="Your bid in dollars"
-                                className="w-20 bg-transparent text-white text-base font-semibold outline-none"
+                                className="w-full sm:w-20 min-w-0 bg-transparent text-white text-base font-semibold outline-none"
                               />
                             </div>
                             <button
                               aria-label="Raise bid"
                               onClick={() => setBid(ticket.id, bidFor(ticket.id) + BID_STEP)}
                               disabled={bidFor(ticket.id) >= ticket.bid.max}
-                              className="bg-black text-white w-9 h-9 rounded-full flex items-center justify-center text-lg hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                              className="flex-shrink-0 bg-black text-white w-9 h-9 rounded-full flex items-center justify-center text-lg hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                             >
                               +
                             </button>
