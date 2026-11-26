@@ -676,30 +676,76 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
                       <h3 className={`font-semibold text-base sm:text-lg leading-snug min-w-0 break-words ${ticket.isSelected ? 'text-white' : 'text-gray-200'}`}>
                         {ticket.name}
                       </h3>
-                      <div className="flex items-start gap-2 flex-shrink-0">
-                        {/* The normal price — or, while the guest is bidding, their bid. */}
-                        <p className={`font-bold text-xl sm:text-2xl whitespace-nowrap leading-snug ${ticket.isSelected ? 'text-jetzy' : 'text-white'}`}>
-                          {ticket.bid && ticket.isSelected && isBidding(ticket.id)
-                            ? formatBidMoney(bidFor(ticket.id))
-                            : staticTickets[index].price.toLocaleString("en-US", {
-                                style: "currency",
-                                currency: "usd",
-                              })}
-                        </p>
-                        {/* Admin / host: edit THIS ticket straight away (CEO, 2026-11-27). */}
-                        {canManage && onEditTicket && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onEditTicket(ticket.id);
-                            }}
-                            aria-label={`Edit ${ticket.name}`}
-                            className="mt-0.5 border border-[#F79432] text-[#F79432] py-1 px-2 text-xs rounded-lg hover:bg-[#F79432] hover:text-black transition-colors"
-                          >
-                            ✎ Edit
-                          </button>
-                        )}
+                      {/* Price, then the Bid / Edit buttons — one row from `sm`, buttons under the
+                          price on a phone so a long ticket name keeps its width. */}
+                      <div className="flex flex-col items-end gap-1.5 sm:flex-row sm:items-center sm:gap-2.5 flex-shrink-0">
+                        {/* The normal price — or, while the guest is bidding, their bid with the
+                            normal price struck through beneath it. */}
+                        <div className="text-right">
+                          <p className={`font-bold text-xl sm:text-2xl whitespace-nowrap leading-snug ${ticket.isSelected ? 'text-jetzy' : 'text-white'}`}>
+                            {ticket.bid && ticket.isSelected && isBidding(ticket.id)
+                              ? formatBidMoney(bidFor(ticket.id))
+                              : staticTickets[index].price.toLocaleString("en-US", {
+                                  style: "currency",
+                                  currency: "usd",
+                                })}
+                          </p>
+                          {ticket.bid && ticket.isSelected && isBidding(ticket.id) && (
+                            <p className="text-[11px] text-gray-400 whitespace-nowrap">
+                              Your bid · <span className="line-through">{staticTickets[index].price.toLocaleString("en-US", { style: "currency", currency: "usd" })}</span>
+                            </p>
+                          )}
+                        </div>
+                        {(ticket.bid && remainingFor(ticket.id) !== 0) || (canManage && onEditTicket) ? (
+                          <div className="flex items-center gap-2">
+                            {/* Takes bids: name your own price instead of the one shown. A toggle —
+                                pressing it again goes back to the normal price. */}
+                            {ticket.bid && remainingFor(ticket.id) !== 0 && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  chooseBid(ticket.id, !(ticket.isSelected && isBidding(ticket.id)));
+                                }}
+                                aria-pressed={ticket.isSelected && isBidding(ticket.id)}
+                                title={ticket.isSelected && isBidding(ticket.id) ? "Pay the normal price instead" : "Name your own price"}
+                                className={`inline-flex items-center gap-1.5 rounded-full border px-4 py-1.5 text-sm font-semibold transition-colors ${
+                                  ticket.isSelected && isBidding(ticket.id)
+                                    ? "bg-[#7DD3FC] border-[#7DD3FC] text-black hover:bg-[#a5e1fd]"
+                                    : "bg-[#7DD3FC]/10 border-[#7DD3FC] text-[#7DD3FC] hover:bg-[#7DD3FC] hover:text-black"
+                                }`}
+                              >
+                                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                  {ticket.isSelected && isBidding(ticket.id) ? (
+                                    <path d="M5 13l4 4L19 7" />
+                                  ) : (
+                                    <>
+                                      <path d="M14 13l-7.5 7.5a2.12 2.12 0 0 1-3-3L11 10" />
+                                      <path d="M16 16l6-6" />
+                                      <path d="M8 8l6-6" />
+                                      <path d="M9 7l8 8" />
+                                    </>
+                                  )}
+                                </svg>
+                                {ticket.isSelected && isBidding(ticket.id) ? "Bidding" : "Bid"}
+                              </button>
+                            )}
+                            {/* Admin / host: edit THIS ticket straight away (CEO, 2026-11-27). */}
+                            {canManage && onEditTicket && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onEditTicket(ticket.id);
+                                }}
+                                aria-label={`Edit ${ticket.name}`}
+                                className="inline-flex items-center rounded-full border border-[#F79432] text-[#F79432] py-1.5 px-3 text-sm hover:bg-[#F79432] hover:text-black transition-colors"
+                              >
+                                ✎ Edit
+                              </button>
+                            )}
+                          </div>
+                        ) : null}
                       </div>
                     </div>
 
@@ -751,24 +797,14 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
 
                     {/* Bid ticket: the guest sets their price. Sealed — nobody sees anyone else's
                         bid. The card is HELD for the bid and charged only if the host accepts. */}
-                    {/* Takes bids: the guest may name their own price instead of the one above. */}
-                    {ticket.bid && remainingFor(ticket.id) !== 0 && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          chooseBid(ticket.id, !(ticket.isSelected && isBidding(ticket.id)));
-                        }}
-                        className="block mt-2 text-sm font-semibold text-[#7DD3FC] hover:underline text-left"
-                      >
-                        {ticket.isSelected && isBidding(ticket.id)
-                          ? `Pay the normal price instead (${staticTickets[index].price.toLocaleString("en-US", { style: "currency", currency: "usd" })})`
-                          : `Or name your price · suggested ${formatBidMoney(ticket.bid.suggested)}`}
-                      </button>
-                    )}
-
                     {ticket.bid && ticket.isSelected && isBidding(ticket.id) && (
-                      <div className="mt-3 bg-[#1e1e1e] rounded-xl p-3" onClick={(e) => e.stopPropagation()}>
+                      <div className="mt-3 bg-[#1e1e1e] border border-[#7DD3FC]/30 rounded-xl p-3 sm:p-4" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-between gap-3 mb-3">
+                          <p className="text-sm font-semibold text-white">Name your price</p>
+                          <span className="text-[11px] font-semibold text-[#7DD3FC] bg-[#7DD3FC]/10 border border-[#7DD3FC]/30 rounded-full px-2.5 py-0.5 whitespace-nowrap">
+                            Suggested {formatBidMoney(ticket.bid.suggested)}
+                          </span>
+                        </div>
                         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3 mb-2">
                           <span className="text-sm text-[#bbbbbb]">Your bid</span>
                           <div className="flex items-center gap-2 w-full sm:w-auto">
@@ -815,11 +851,17 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
                           if (v < ticket.bid.min) return <p className="text-xs text-[#F5C518] mb-1">The lowest bid is {formatBidMoney(ticket.bid.min)}.</p>;
                           return null;
                         })()}
-                        <p className="text-xs text-gray-400">Suggested price {formatBidMoney(ticket.bid.suggested)}</p>
-                        <p className="text-xs font-semibold text-[#F79432] mt-2">{BID_APPROVAL_NOTICE}</p>
+                        <p className="text-xs font-semibold text-[#F79432] mt-1">{BID_APPROVAL_NOTICE}</p>
                         <p className="text-xs text-[#bbbbbb] mt-1">
                           One seat per bid. Your card is held for your bid and charged only if the host accepts it. Want more seats or a different amount? Place another bid.
                         </p>
+                        <button
+                          type="button"
+                          onClick={() => chooseBid(ticket.id, false)}
+                          className="mt-3 text-xs font-semibold text-gray-300 underline underline-offset-2 hover:text-white"
+                        >
+                          Pay the normal price instead ({staticTickets[index].price.toLocaleString("en-US", { style: "currency", currency: "usd" })})
+                        </button>
                       </div>
                     )}
 
