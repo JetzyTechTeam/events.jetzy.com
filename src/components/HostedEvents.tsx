@@ -368,6 +368,11 @@ export default function HostedEvents({ event }: Props) {
 	const shownMedia = clonedEvent ? eventMedia(clonedEvent) : []
 
 	const shownEvent = clonedEvent
+	// Remount key for the ticket list. `EventTicketsComponent` seeds its ticket state ONCE, so it
+	// must remount whenever ANY stored ticket field changes. The key used to be id + price + name
+	// only, so an edit to the description, approval, bidding, suggested bid or quantity saved but
+	// stayed invisible until a page refresh.
+	const ticketsRenderKey = useMemo(() => JSON.stringify(shownEvent?.tickets || []), [shownEvent?.tickets])
 
 	/**
 	 * Mobile "… more" on the title.
@@ -2120,7 +2125,7 @@ export default function HostedEvents({ event }: Props) {
 								// Remounted by key after a save: the component seeds its ticket state
 								// once, so a mutated prop alone would leave the host looking at the
 								// rows they just changed.
-								key={(shownEvent?.tickets || []).map((t: any) => `${t._id || t.id}:${t.price}:${t.name}`).join("|")}
+								key={ticketsRenderKey}
 								event={shownEvent as IEvent}
 								canManage={canManage}
 								onEditTicket={openTicketEditor}
@@ -2172,7 +2177,7 @@ export default function HostedEvents({ event }: Props) {
 										<TicketsInlineEditor />
 									) : (
 										<EventTicketsComponent
-											key={(shownEvent?.tickets || []).map((t: any) => `${t._id || t.id}:${t.price}:${t.name}`).join("|")}
+											key={ticketsRenderKey}
 											event={shownEvent as IEvent}
 										/>
 									)}
