@@ -26,7 +26,7 @@ import { ticketMemberships, ticketMembershipInterval, ticketMembershipFreeMonths
 import { isBelowStripeMinimum, BELOW_MIN_PRICE_MESSAGE } from "@/lib/ticket-pricing"
 import { blurOnWheel } from "@/lib/number-input"
 import { ticketQuantityLimit } from "@/lib/ticket-quantity"
-import { bidRangeProblem, BID_MIN_FLOOR } from "@/lib/ticket-bid"
+import { bidSuggestedProblem, BID_MIN_FLOOR } from "@/lib/ticket-bid"
 import type { TicketData } from "@/components/events/TicketCard"
 import {
 	ticketApprovalRow,
@@ -102,18 +102,19 @@ export default function TicketEditorModal({
 }) {
 	const toast = useToast()
 	const limit = ticketQuantityLimit(ticket as any)
-	// Bid ticket: the guest names their price between min and max (`src/lib/ticket-bid.ts`).
+	// Bids ("name your price", `src/lib/ticket-bid.ts`): an OPTION on this normal ticket. Guests
+	// pay the price, or name their own — and a bid always comes to the host for approval.
 	const isBid = ticket.pricingMode === "bid"
-	const setPricing = (mode: "fixed" | "bid") => {
-		if (mode === "bid" && !isBid) {
+	const setAcceptsBids = (on: boolean) => {
+		if (on && !isBid) {
 			const start = Number(ticket.price) >= BID_MIN_FLOOR ? Number(ticket.price) : 10
-			onTicketChange({ ...ticket, pricingMode: "bid", bidMin: ticket.bidMin ?? start, bidSuggested: ticket.bidSuggested ?? start, bidMax: ticket.bidMax ?? start * 4, requireApproval: true })
-		} else if (mode === "fixed" && isBid) {
-			onTicketChange({ ...ticket, pricingMode: "fixed", price: Number(ticket.bidSuggested ?? ticket.price) || 0 })
+			// A ticket that takes bids sells no membership — a bid order never carries one.
+			onTicketChange({ ...ticket, pricingMode: "bid", bidSuggested: ticket.bidSuggested ?? start, memberships: [], includesPremium: false } as any)
+		} else if (!on && isBid) {
+			onTicketChange({ ...ticket, pricingMode: "fixed" })
 		}
 	}
-	const bidNumber = (raw: string) => (raw === "" ? (undefined as unknown as number) : Math.max(0, parseFloat(raw)))
-	const bidProblem = isBid ? bidRangeProblem({ min: ticket.bidMin, max: ticket.bidMax, suggested: ticket.bidSuggested }) : null
+	const bidProblem = isBid ? bidSuggestedProblem(ticket.bidSuggested) : null
 
 	const save = () => {
 		// Only the title is required — description is optional server-side (zod `.optional()`),
@@ -122,21 +123,8 @@ export default function TicketEditorModal({
 			toast({ title: "Missing ticket name", description: "You need to provide a ticket name.", status: "error", duration: 4000, isClosable: true })
 			return
 		}
-		if (isBid) {
-			if (bidProblem) {
-				toast({ title: "Check the bid range", description: bidProblem, status: "error", duration: 5000, isClosable: true })
-				return
-			}
-			// A bid ticket's price IS its suggested bid; it always needs approval and sells no membership.
-			onSave({
-				...ticket,
-				title: ticket.title.trim(),
-				pricingMode: "bid",
-				price: Number(ticket.bidSuggested),
-				requireApproval: true,
-				memberships: [],
-				includesPremium: false,
-			})
+		if (isBid && bidProblem) {
+			toast({ title: "Check the suggested bid", description: bidProblem, status: "error", duration: 5000, isClosable: true })
 			return
 		}
 		// Stripe won't charge under $0.50, so a ticket priced there can never be sold — the
@@ -151,6 +139,8 @@ export default function TicketEditorModal({
 			...ticket,
 			title: ticket.title.trim(),
 			price: Number.isFinite(ticket.price) ? ticket.price : 0,
+			// A ticket that takes bids sells no membership.
+			...(isBid ? { pricingMode: "bid" as const, bidSuggested: Number(ticket.bidSuggested), memberships: [], includesPremium: false } : {}),
 		})
 	}
 
@@ -195,63 +185,7 @@ export default function TicketEditorModal({
 
 					<Box {...sectionBreak}>
 						<SectionTitle>Price &amp; availability</SectionTitle>
-						<FormControl mb={4}>
-							<FormLabel>Pricing</FormLabel>
-							<Flex gap={2}>
-								{(["fixed", "bid"] as const).map((mode) => {
-									const active = mode === "bid" ? isBid : !isBid
-									return (
-										<Button
-											key={mode}
-											size="sm"
-											flex="1"
-											bg={active ? "#F79432" : "#090C10"}
-											color={active ? "black" : "white"}
-											border="1px solid #444"
-											_hover={{ bg: active ? "#e0832a" : "#2A2D31" }}
-											onClick={() => setPricing(mode)}
-										>
-											{mode === "fixed" ? "Fixed price" : "Let guests bid"}
-										</Button>
-									)
-								})}
-							</Flex>
-							{isBid && (
-								<Text fontSize="12px" color="#868686" mt={1} lineHeight="140%">
-									Guests choose what they pay between your minimum and maximum, one seat per bid. Their card is held for the bid and charged only if you accept it.
-								</Text>
-							)}
-						</FormControl>
-						{isBid && (
-							<Grid templateColumns={{ base: "1fr", md: "1fr 1fr 1fr" }} columnGap={{ md: 4 }}>
-								{([
-									["bidMin", "Minimum bid (USD)"],
-									["bidSuggested", "Suggested bid (USD)"],
-									["bidMax", "Maximum bid (USD)"],
-								] as const).map(([key, label]) => (
-									<FormControl key={key} mb={4}>
-										<FormLabel>{label}</FormLabel>
-										<Input
-											type="number"
-											onWheel={blurOnWheel}
-											min={BID_MIN_FLOOR}
-											step="0.01"
-											inputMode="decimal"
-											bg="#090C10"
-											border="1px solid #444"
-											{...ticketField}
-											value={Number.isFinite(ticket[key] as number) ? (ticket[key] as number) : ""}
-											onChange={(e) => onTicketChange({ ...ticket, [key]: bidNumber(e.target.value) })}
-										/>
-									</FormControl>
-								))}
-							</Grid>
-						)}
-						{isBid && bidProblem && (
-							<Text fontSize="12px" color="#FC8181" mt={-2} mb={4}>{bidProblem}</Text>
-						)}
 						<Grid templateColumns={{ base: "1fr", md: "1fr 1fr" }} columnGap={{ md: 4 }}>
-							{!isBid && (
 							<FormControl mb={4}>
 								<FormLabel>Price (USD)</FormLabel>
 								{/* NaN would break the controlled value, so an empty field stays empty and is
@@ -281,7 +215,6 @@ export default function TicketEditorModal({
 									{Number(ticket.price) > 0 ? "Paid ticket — the buyer pays at checkout." : "Free ticket. Leave blank or 0."}
 								</Text>
 							</FormControl>
-							)}
 							<FormControl mb={4}>
 								<FormLabel>Quantity Available</FormLabel>
 								{/* Three states, and the field has to be able to express all of them:
@@ -320,6 +253,41 @@ export default function TicketEditorModal({
 								</Text>
 							</FormControl>
 						</Grid>
+
+						{/* Bids — an option on this ticket, not another kind of ticket (CEO, 2026-11-27). */}
+						<FormControl mb={4}>
+							<Flex align="center" justify="space-between" gap={4}>
+								<Box>
+									<FormLabel mb={0}>Let guests bid on this ticket</FormLabel>
+									<Text fontSize="12px" color="#868686" mt={1} lineHeight="140%">
+										Guests can pay the price above, or name their own price. Bids always come to you for approval — the card is held for the bid and charged only if you accept.
+									</Text>
+								</Box>
+								<Switch colorScheme="orange" isChecked={isBid} onChange={(e) => setAcceptsBids(e.target.checked)} />
+							</Flex>
+						</FormControl>
+						{isBid && (
+							<FormControl mb={4} maxW={{ md: "50%" }} pr={{ md: 2 }}>
+								<FormLabel>Suggested bid (USD)</FormLabel>
+								<Input
+									type="number"
+									onWheel={blurOnWheel}
+									min={BID_MIN_FLOOR}
+									step="0.01"
+									inputMode="decimal"
+									bg="#090C10"
+									border="1px solid #444"
+									{...ticketField}
+									value={Number.isFinite(ticket.bidSuggested as number) ? (ticket.bidSuggested as number) : ""}
+									onChange={(e) =>
+										onTicketChange({ ...ticket, bidSuggested: e.target.value === "" ? (undefined as unknown as number) : Math.max(0, parseFloat(e.target.value)) })
+									}
+								/>
+								<Text fontSize="12px" color={bidProblem ? "#FC8181" : "#868686"} mt={1} lineHeight="140%">
+									{bidProblem || "Shown to a guest who chooses to bid. Guests are told a bid that's too low won't be accepted."}
+								</Text>
+							</FormControl>
+						)}
 					</Box>
 
 					<Box {...sectionBreak}>
@@ -339,21 +307,19 @@ export default function TicketEditorModal({
 								<Box>
 									<FormLabel mb={0}>Require Approval</FormLabel>
 									<Text fontSize="12px" color="#868686" mt={1} maxW={{ base: "320px", md: "none" }} lineHeight="140%">
-										{isBid
-											? "Bids always need your approval — the card is held for the bid and only charged when you accept. Holds expire after 7 days."
-											: ticket.requireApproval === undefined
+										{ticket.requireApproval === undefined
 											? `Inherits the event setting (${eventRequireApproval ? "On" : "Off"})`
 											: !ticket.requireApproval
 												? "Guests book this ticket instantly."
 												: Number(ticket.price) > 0 || ticketMemberships(ticket as any).length > 0
 													? "The card is authorized at checkout and only charged when you approve. Holds expire after 7 days."
 													: "Guests request a spot; you approve or decline."}
+										{isBid && " Bids always need your approval, whatever this is set to."}
 									</Text>
 								</Box>
 								<Switch
 									colorScheme="orange"
-									isChecked={isBid ? true : ticket.requireApproval ?? eventRequireApproval}
-									isDisabled={isBid}
+									isChecked={ticket.requireApproval ?? eventRequireApproval}
 									onChange={(e) => onTicketChange({ ...ticket, requireApproval: e.target.checked })}
 								/>
 							</Flex>

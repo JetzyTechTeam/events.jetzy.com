@@ -21,8 +21,9 @@ export type IncomingTicket = {
 	membershipFreeMonths?: number
 	/** @deprecated legacy mirror of `memberships` */
 	includesPremium?: boolean
-	/** "bid" makes it a bid ticket; "fixed" turns one back into a normal ticket; absent = unchanged. */
+	/** "bid" = this ticket also takes bids; "fixed" turns that off; absent = unchanged. */
 	pricingMode?: "bid" | "fixed"
+	/** v1 fields — still accepted from an old tab, never stored. */
 	bidMin?: number
 	bidMax?: number
 	bidSuggested?: number
@@ -66,20 +67,17 @@ export async function resolveTickets(existingTickets: any[] | undefined, tickets
 			let ticket = incoming
 			const existing = existingTicketById.get(ticket.id?.toString())
 
-			// Bid ticket — preserve-on-omit like every flag here: an absent `pricingMode` keeps what is
-			// stored; "fixed" turns it back into a normal ticket. A bid ticket's `price` IS its
-			// suggested bid, it always needs approval and it sells no membership (`ticket-bid.ts`).
+			// Takes bids — preserve-on-omit like every flag here: an absent `pricingMode` keeps what is
+			// stored; "fixed" turns bidding off. `price` stays the NORMAL price and the ticket's own
+			// approval flag governs normal purchases (a bid is forced to approval at checkout). A
+			// ticket that takes bids sells no membership (`ticket-bid.ts`). v1's min/max are dropped.
 			const bid =
 				ticket.pricingMode === "bid"
-					? { bidMin: Number(ticket.bidMin), bidMax: Number(ticket.bidMax), bidSuggested: Number(ticket.bidSuggested) }
+					? { bidSuggested: Number(ticket.bidSuggested) }
 					: ticket.pricingMode === undefined && isBidTicket(existing)
-						? {
-								bidMin: Number(ticket.bidMin ?? existing.bidMin),
-								bidMax: Number(ticket.bidMax ?? existing.bidMax),
-								bidSuggested: Number(ticket.bidSuggested ?? existing.bidSuggested),
-						  }
+						? { bidSuggested: Number(ticket.bidSuggested ?? existing.bidSuggested ?? existing.price) }
 						: null
-			if (bid) ticket = { ...ticket, price: bid.bidSuggested, requireApproval: true, memberships: [], includesPremium: false }
+			if (bid) ticket = { ...ticket, memberships: [], includesPremium: false }
 
 			const priceChanged = !existing || Number(existing.price) !== ticket.price
 			const stripeProductId = priceChanged

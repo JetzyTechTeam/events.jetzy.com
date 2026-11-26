@@ -1975,6 +1975,14 @@ from the app (§5.0); then act on them from the app **and** confirm the web show
 
 ## 18. Changelog
 
+**2026-11-27 (bids v2):** bidding is an option on a normal ticket (`TICKET_SCHEMA.md` §15, Rev 8).
+**A bid is decided by the ORDER ROW** (`pricingMode: "bid"` + `bidAmount`), never by the ticket:
+a row without it on a ticket that takes bids is an ordinary order at the ticket's normal `price`,
+with the ticket's own approval setting (and may be free, e.g. a 100% referral, or join the
+waiting list). A bid row is unchanged from 2026-11-26 except its range: `bidAmount` must be
+`>= 0.50` and `<= 999999.99` (Stripe's bounds) — `bidMin`/`bidMax` are retired. It still always
+takes the approval-hold shape (B), even on a ticket whose `requireApproval` is off.
+
 **2026-11-26 (bid tickets):** a ticket may be a bid ticket (`TICKET_SCHEMA.md` §15). Its order is
 one seat, alone, no referral code, `bidAmount` validated against the stored `bidMin`/`bidMax`;
 the Stripe line item is `price_data` for the bid on the stored price's product, always the

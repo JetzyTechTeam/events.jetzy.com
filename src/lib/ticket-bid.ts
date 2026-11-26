@@ -1,59 +1,66 @@
 /**
- * Bid tickets ("name your price") — pure and isomorphic. The ticket card, the checkout modal and
- * both checkout endpoints use these, so the slider can never offer what the server refuses.
+ * Bids ("name your price") — pure and isomorphic. The ticket card, the checkout modal and both
+ * checkout endpoints use these, so the card can never offer what the server refuses.
  *
- * CEO, 2026-11-26: the guest sets what they pay between a host-set minimum and maximum (the slider
- * starts at the suggested price), checks out normally, and the bid becomes an approval request —
- * the card is HELD for the bid and charged only when the host approves (the existing manual-capture
- * hold, ~7-day expiry). Decided with the product owner:
- *   - each bid is a SEPARATE request, one seat, its own hold (more seats = more bids);
- *   - sealed — no guest sees another's bid;
- *   - a bid ticket ALWAYS needs approval, sells no membership, takes no referral discount, is
- *     never free and has no waiting list.
+ * v2 (CEO, 2026-11-27): bidding is an OPTION ON A NORMAL TICKET, not a kind of ticket. The host
+ * turns it on per ticket and sets ONE suggested price — no minimum, no maximum. The guest either
+ * buys at the ticket's normal `price` (an ordinary order, approval only if the ticket has it on)
+ * or names their own price. A BID always becomes an approval request whatever the ticket's
+ * approval setting: the card is HELD for the bid and charged only when the host approves (the
+ * existing manual-capture hold, ~7-day expiry). Each bid is one seat, its own request and hold;
+ * sealed; no referral discount; never free; no membership (a ticket that takes bids sells none).
  *
- * Ticket fields (all optional, NO default — absent = an ordinary fixed-price ticket):
- *   `pricingMode: "bid"`, `bidMin`, `bidMax`, `bidSuggested` (major units). `price` holds the
- *   suggested amount, so the Stripe price/product and every list display keep working.
+ * Ticket fields (optional, NO default — absent = the ticket takes no bids):
+ *   `pricingMode: "bid"` = this ticket ALSO accepts bids; `bidSuggested` = the suggested bid.
+ *   `price` is the normal price. `bidMin` / `bidMax` (v1) are no longer written or read.
+ *
+ * WHETHER AN ORDER IS A BID is decided by the ORDER ROW (`isBidOrderRow`), never by the ticket.
  */
 
 export const BID_MIN_FLOOR = 0.5 // Stripe's smallest charge — and a $0 bid would have nothing to hold
-export const BID_STEP = 1 // slider step; a typed amount may carry cents
+export const BID_MAX = 999999.99 // Stripe's largest single USD charge
+export const BID_STEP = 1 // the − / + buttons; a typed amount may carry cents
+
+/** Shown with every bid — the card, and the checkout modal. */
+export const BID_APPROVAL_NOTICE = "Bids need host approval — a bid that's too low won't be accepted."
 
 export type BidTicketLike = {
 	pricingMode?: string | null
-	bidMin?: number | string | null
-	bidMax?: number | string | null
 	bidSuggested?: number | string | null
 	price?: number | string | null
 } | null | undefined
 
 const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100
 const num = (v: unknown) => (v === null || v === undefined || v === "" ? NaN : Number(v))
+const clampToBounds = (n: number) => Math.min(BID_MAX, Math.max(BID_MIN_FLOOR, n))
 
+/** Does this ticket accept bids (beside its normal price)? */
 export const isBidTicket = (t: BidTicketLike): boolean => t?.pricingMode === "bid"
 
-/** The range a bid ticket accepts. `suggested` falls back to the minimum. */
+/** Is this ORDER ROW a bid? Only a row the buyer sent as a bid is one. */
+export const isBidOrderRow = (row: { pricingMode?: string | null } | null | undefined): boolean => row?.pricingMode === "bid"
+
+/**
+ * What a bid on this ticket may be: Stripe's bounds, and the host's suggested price (falling back
+ * to the ticket price, then the floor — always inside the bounds). Null when it takes no bids.
+ */
 export function bidRange(t: BidTicketLike): { min: number; max: number; suggested: number } | null {
 	if (!isBidTicket(t)) return null
-	const min = num(t!.bidMin)
-	const max = num(t!.bidMax)
-	if (!Number.isFinite(min) || !Number.isFinite(max)) return null
 	const s = num(t!.bidSuggested)
-	return { min, max, suggested: Number.isFinite(s) ? s : min }
+	const p = num(t!.price)
+	const suggested = Number.isFinite(s) ? s : Number.isFinite(p) && p > 0 ? p : BID_MIN_FLOOR
+	return { min: BID_MIN_FLOOR, max: BID_MAX, suggested: round2(clampToBounds(suggested)) }
 }
 
 export const formatBidMoney = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "usd" })
 
-/** Host side: is this min / suggested / max a valid bid range? Returns the problem, or null. */
-export function bidRangeProblem(r: { min?: unknown; max?: unknown; suggested?: unknown }): string | null {
-	const min = num(r.min)
-	const max = num(r.max)
-	const suggested = num(r.suggested)
-	if (!Number.isFinite(min) || !Number.isFinite(max) || !Number.isFinite(suggested)) return "Set a minimum, suggested and maximum bid."
-	if (min < BID_MIN_FLOOR) return `The minimum bid must be at least ${formatBidMoney(BID_MIN_FLOOR)}.`
-	if (max < min) return "The maximum bid can't be lower than the minimum."
-	if (suggested < min || suggested > max) return "The suggested bid must be between the minimum and the maximum."
-	if ([min, max, suggested].some((v) => round2(v) !== v)) return "Bids can have at most 2 decimals."
+/** Host side: is this a valid suggested bid? Returns the problem, or null. */
+export function bidSuggestedProblem(value: unknown): string | null {
+	const v = num(value)
+	if (!Number.isFinite(v)) return "Set a suggested bid."
+	if (v < BID_MIN_FLOOR) return `The suggested bid must be at least ${formatBidMoney(BID_MIN_FLOOR)}.`
+	if (v > BID_MAX) return `The suggested bid can't be more than ${formatBidMoney(BID_MAX)}.`
+	if (round2(v) !== v) return "The suggested bid can have at most 2 decimals."
 	return null
 }
 
@@ -69,7 +76,7 @@ export function validateBidAmount(t: BidTicketLike, amount: unknown): { ok: true
 	return { ok: true, amount: a, cents: Math.round(a * 100) }
 }
 
-/** Clamp a slider / typed value into the range (UI only — the server validates, never clamps). */
+/** Clamp a typed / stepped value into the bounds (UI only — the server validates, never clamps). */
 export function clampBid(t: BidTicketLike, amount: number): number {
 	const range = bidRange(t)
 	if (!range || !Number.isFinite(amount)) return range?.suggested ?? 0
@@ -79,7 +86,7 @@ export function clampBid(t: BidTicketLike, amount: number): number {
 /**
  * The price ONE ticket on this booking was bought at: the bid when the booking carries one, else
  * the ticket's list price. Every reader that used to rebuild a booking's money from the CURRENT
- * list price goes through this — a bid booking would otherwise read as the suggested price.
+ * list price goes through this — a bid booking would otherwise read as the normal price.
  */
 export function bookingUnitPrice(booking: { bidAmount?: number | null } | null | undefined, ticket: { price?: number | string | null } | null | undefined): number {
 	const bid = Number(booking?.bidAmount)
@@ -88,7 +95,5 @@ export function bookingUnitPrice(booking: { bidAmount?: number | null } | null |
 }
 
 /** The bid fields to carry when a ticket is mapped into a form (every ticket surface uses this). */
-export const ticketBidFields = (t: BidTicketLike): { pricingMode?: "bid"; bidMin?: number; bidMax?: number; bidSuggested?: number } =>
-	isBidTicket(t)
-		? { pricingMode: "bid", bidMin: Number(t!.bidMin), bidMax: Number(t!.bidMax), bidSuggested: Number(t!.bidSuggested) }
-		: {}
+export const ticketBidFields = (t: BidTicketLike): { pricingMode?: "bid"; bidSuggested?: number } =>
+	isBidTicket(t) ? { pricingMode: "bid", bidSuggested: bidRange(t)!.suggested } : {}

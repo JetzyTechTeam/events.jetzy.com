@@ -9,6 +9,7 @@ import { authOptions } from "../../auth/[...nextauth]"
 import Stripe from "stripe"
 import { ticketMemberships, ticketMembershipFreeMonths } from "@/lib/premium-bundle"
 import { ticketQuantityLimit } from "@/lib/ticket-quantity"
+import { ticketBidFields } from "@/lib/ticket-bid"
 import { buildUniqueSlug } from "@/lib/event-slug"
 import { seedDefaultReferralCodes } from "@/lib/default-referral-codes"
 import { Types } from "mongoose"
@@ -119,10 +120,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					? { membershipFreeMonths: ticketMembershipFreeMonths(ticket as any) }
 					: {}),
 				includesPremium: ticketMemberships(ticket as any).includes("premium"),
-				// A bid ticket stays a bid ticket in the copy.
-				...((ticket as any).pricingMode === "bid"
-					? { pricingMode: "bid", bidMin: (ticket as any).bidMin, bidMax: (ticket as any).bidMax, bidSuggested: (ticket as any).bidSuggested }
-					: {}),
+				// A ticket that takes bids still takes them in the copy (v1 min/max not carried).
+				...((ticket as any).pricingMode === "bid" ? { pricingMode: "bid", ...ticketBidFields(ticket as any) } : {}),
 			})),
 			// Re-pointed below: a question scoped to tickets must name the CLONE's tickets.
 			questions: source.questions,

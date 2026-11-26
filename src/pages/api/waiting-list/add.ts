@@ -25,15 +25,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		}
 
 		// Transform tickets to match schema
-		// A bid ticket has no waiting list: approving an entry creates a booking with no payment,
-		// at whatever price the browser sent — and a bid's price is the guest's own (`ticket-bid.ts`).
+		// A BID has no waiting list: approving an entry creates a booking with no payment, at
+		// whatever price the browser sent — and a bid's price is the guest's own (`ticket-bid.ts`).
+		// A normal entry for a ticket that also takes bids is an ordinary waiting-list entry.
 		{
-			const { Events } = await import("@/models/events")
-			const { isBidTicket } = await import("@/lib/ticket-bid")
-			const ev: any = mongoose.Types.ObjectId.isValid(eventId) ? await Events.findById(eventId).select("tickets").lean() : null
-			const ids = (Array.isArray(tickets) ? tickets : []).map((t: any) => String(t?.id || t?.ticketId))
-			if ((ev?.tickets || []).some((t: any) => ids.includes(String(t._id)) && isBidTicket(t))) {
-				return sendResponse(res, null, "Bid tickets don't have a waiting list — please place a bid instead.", false, ResCode.BAD_REQUEST)
+			const { isBidOrderRow } = await import("@/lib/ticket-bid")
+			if ((Array.isArray(tickets) ? tickets : []).some((t: any) => isBidOrderRow(t))) {
+				return sendResponse(res, null, "Bids don't have a waiting list — choose the normal price to join it.", false, ResCode.BAD_REQUEST)
 			}
 		}
 

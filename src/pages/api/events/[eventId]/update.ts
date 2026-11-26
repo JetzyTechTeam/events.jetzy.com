@@ -1,6 +1,6 @@
 // Next.js API route support: https://nextjs.org/docs/api-routes/introduction
 import { generateRandomId, sendResponse } from "@Jetzy/lib/helpers"
-import { bidRangeProblem } from "@/lib/ticket-bid"
+import { bidSuggestedProblem } from "@/lib/ticket-bid"
 import { ResCode } from "@Jetzy/lib/responseCodes"
 import type { NextApiRequest, NextApiResponse } from "next"
 import { Events } from "@/models/events"
@@ -133,8 +133,8 @@ const schema = zod.object({
 			bidSuggested: zod.number().optional(),
 		}).superRefine((t, ctx) => {
 			if (t.pricingMode !== "bid") return
-			const problem = bidRangeProblem({ min: t.bidMin, max: t.bidMax, suggested: t.bidSuggested })
-			if (problem) ctx.addIssue({ code: zod.ZodIssueCode.custom, message: `"${t.title}": ${problem}`, path: ["bidMin"] })
+			const problem = bidSuggestedProblem(t.bidSuggested)
+			if (problem) ctx.addIssue({ code: zod.ZodIssueCode.custom, message: `"${t.title}": ${problem}`, path: ["bidSuggested"] })
 		}),
 	),
 	isPaid: zod.boolean(),

@@ -41,13 +41,15 @@ import { useAnalytics } from "@/hooks/useAnalytics";
 import { isPreviewQuery } from "@/lib/event-preview";
 import { LOW_STOCK_THRESHOLD, notEnoughLeftMessage, remainingMessage } from "@/lib/ticket-quantity";
 import type { EventAvailability } from "@/lib/ticket-availability";
-import { BID_STEP, bidRange, clampBid, formatBidMoney } from "@/lib/ticket-bid";
+import { BID_APPROVAL_NOTICE, BID_STEP, bidRange, clampBid, formatBidMoney } from "@/lib/ticket-bid";
 
 type Props = {
   event: IEvent;
   /** Renders the host's "Edit tickets" control in the header. Omitted for guests. */
   canManage?: boolean;
   onEditTickets?: () => void;
+  /** Opens ONE ticket's editor (admin or host), from the Edit button on its card. */
+  onEditTicket?: (ticketId: string) => void;
 };
 
 /**
@@ -86,7 +88,7 @@ const TicketDescription: React.FC<{ description: string }> = ({ description }) =
   );
 };
 
-const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEditTickets }) => {
+const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEditTickets, onEditTicket }) => {
   const dispatcher = useAppDispatch();
   const { isPremium, memberships: heldMembershipRecords } = usePremiumStatus();
   // Everything the logged-in viewer holds, entitlements included (Concierge → Premium). Checkout
@@ -133,15 +135,20 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
         // Free months the host put on this ticket, given with no code typed. Display and
         // selection state only, re-read server-side for the same reason as the interval.
         membershipFreeMonths: ticket.membershipFreeMonths,
-        // Bid ticket ("name your price", `src/lib/ticket-bid.ts`): the guest's own amount, one
-        // seat per bid. Null for an ordinary ticket. The server re-validates every bid.
+        // Takes bids ("name your price", `src/lib/ticket-bid.ts`) beside its normal price: the
+        // guest may bid their own amount instead, one seat per bid. Null when it takes none.
+        // The server re-validates every bid.
         bid: bidRange(ticket as any),
       };
     });
 
   // State for ticket quantities
   const [tickets, setTickets] = useState(ticketsItems);
-  // The amount on each bid ticket's slider — starts at the host's suggested bid.
+  // Which ticket the guest chose to BID on instead of paying its normal price. One at most (the
+  // selection is single-select). A card click always means the normal price and clears it.
+  const [bidMode, setBidMode] = useState<Record<string, boolean>>({});
+  const isBidding = (id: string) => !!bidMode[id];
+  // The amount the guest is bidding on each ticket — starts at the host's suggested bid.
   const [bidAmounts, setBidAmounts] = useState<Record<string, number>>(() =>
     Object.fromEntries(ticketsItems.filter((t) => t.bid).map((t) => [t.id, t.bid!.suggested])),
   );
@@ -154,7 +161,7 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
     const ticket = ticketsItems.find((t) => t.id === id);
     const value = parseFloat(bidDrafts[id] ?? "");
     if (!ticket?.bid || !Number.isFinite(value)) return bidFor(id);
-    return clampBid({ pricingMode: "bid", bidMin: ticket.bid.min, bidMax: ticket.bid.max, bidSuggested: ticket.bid.suggested }, value);
+    return clampBid({ pricingMode: "bid", bidSuggested: ticket.bid.suggested }, value);
   };
   const commitBidDraft = (id: string) => {
     const draft = bidDrafts[id];
@@ -171,7 +178,7 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
   const setBid = (id: string, raw: number) => {
     const ticket = ticketsItems.find((t) => t.id === id);
     if (!ticket?.bid) return;
-    const amount = clampBid({ pricingMode: "bid", bidMin: ticket.bid.min, bidMax: ticket.bid.max, bidSuggested: ticket.bid.suggested }, raw);
+    const amount = clampBid({ pricingMode: "bid", bidSuggested: ticket.bid.suggested }, raw);
     setBidAmounts((prev) => ({ ...prev, [id]: amount }));
     // The slider / − + win over anything half-typed in the box.
     setBidDrafts((prev) => {
@@ -180,8 +187,8 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
       delete next[id];
       return next;
     });
-    // The selected bid ticket's line total IS the bid (one seat).
-    setTickets((prev) => prev.map((t) => (t.id === id && t.isSelected ? { ...t, price: amount } : t)));
+    // While bidding, the selected ticket's line total IS the bid (one seat).
+    if (bidMode[id]) setTickets((prev) => prev.map((t) => (t.id === id && t.isSelected ? { ...t, price: amount } : t)));
   };
 
   // State for loader
@@ -340,6 +347,8 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
       reportTicketSelected(id, picked.name);
     }
 
+    // A card click selects at the NORMAL price (or deselects) — never a bid.
+    setBidMode({});
     setTickets((prevTickets) =>
       prevTickets.map((ticket, index) => {
         const ticketItem = ticketsItems[index];
@@ -350,7 +359,7 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
             ...ticket,
             isSelected: newIsSelected,
             quantity: newQty,
-            price: newQty === 0 ? ticketItem.price : ticket.bid ? bidFor(ticket.id) : newQty * ticketItem.price
+            price: newQty === 0 ? ticketItem.price : newQty * ticketItem.price
           }
         }
         // Single-select: only one ticket type per checkout — reset any other selection
@@ -358,6 +367,26 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
           ? { ...ticket, isSelected: false, quantity: 0, price: ticketItem.price }
           : ticket;
       })
+    );
+  };
+
+  /**
+   * Switch a ticket between its normal price and a bid. Bidding selects the ticket for ONE seat
+   * at the bid; going back selects it for one seat at the normal price. Single-select, like a
+   * card click.
+   */
+  const chooseBid = (id: string, on: boolean) => {
+    const target = tickets.find((t) => t.id === id);
+    if (!target?.bid) return;
+    if (on && !target.isSelected && isSoldOutFor(id)) return;
+    if (!target.isSelected) reportTicketSelected(id, target.name);
+    setBidMode(on ? { [id]: true } : {});
+    setTickets((prev) =>
+      prev.map((t, index) => {
+        const item = ticketsItems[index];
+        if (t.id === id) return { ...t, isSelected: true, quantity: 1, price: on ? bidFor(id) : item.price };
+        return t.isSelected ? { ...t, isSelected: false, quantity: 0, price: item.price } : t;
+      }),
     );
   };
 
@@ -395,18 +424,21 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
     }
 
     const ticketsSelected = tickets
-      .map((ticket, index) => ({
+      .map((ticket, index) => {
+        // A BID (the guest chose "name your price"): one seat at the bid, and it always needs
+        // the host's approval whatever the ticket's own setting. Otherwise the normal ticket.
+        const asBid = !!ticket.bid && isBidding(ticket.id);
+        return {
         id: ticket.id,
         name: ticket.name,
-        // A bid ticket's unit price is the guest's bid, one seat per bid.
-        price: ticket.bid ? effectiveBid(ticket.id) : ticketsItems[index].price,
+        price: asBid ? effectiveBid(ticket.id) : ticketsItems[index].price,
         description: ticket.description,
-        quantity: ticket.bid ? 1 : ticket.quantity,
-        ...(ticket.bid ? { pricingMode: "bid", bidAmount: effectiveBid(ticket.id) } : {}),
+        quantity: asBid ? 1 : ticket.quantity,
+        ...(asBid ? { pricingMode: "bid", bidAmount: effectiveBid(ticket.id) } : {}),
         isSelected: ticket.isSelected,
         priceId: ticket.priceId,
         eventId: ticket.eventId,
-        requireApproval: ticket.requireApproval,
+        requireApproval: asBid ? true : ticket.requireApproval,
         // Must survive into redux: the checkout modal decides which memberships to check
         // the buyer against, and which recurring disclosures to show, from THIS list.
         // Dropping it made every bundled ticket look ordinary in the modal.
@@ -417,7 +449,8 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
         // Same rule again: without this the modal offers no free months on a ticket that
         // gives them, and the buyer reads a price the server is not going to charge.
         membershipFreeMonths: ticket.membershipFreeMonths,
-      }))
+        };
+      })
       .filter((ticket) => ticket.isSelected);
 
     dispatcher(setSelectedTickets(ticketsSelected));
@@ -643,16 +676,31 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
                       <h3 className={`font-semibold text-base sm:text-lg leading-snug min-w-0 break-words ${ticket.isSelected ? 'text-white' : 'text-gray-200'}`}>
                         {ticket.name}
                       </h3>
-                      <p className={`font-bold text-xl sm:text-2xl whitespace-nowrap leading-snug ${ticket.isSelected ? 'text-jetzy' : 'text-white'}`}>
-                        {ticket.bid
-                          ? ticket.isSelected
+                      <div className="flex items-start gap-2 flex-shrink-0">
+                        {/* The normal price — or, while the guest is bidding, their bid. */}
+                        <p className={`font-bold text-xl sm:text-2xl whitespace-nowrap leading-snug ${ticket.isSelected ? 'text-jetzy' : 'text-white'}`}>
+                          {ticket.bid && ticket.isSelected && isBidding(ticket.id)
                             ? formatBidMoney(bidFor(ticket.id))
-                            : `From ${formatBidMoney(ticket.bid.min)}`
-                          : staticTickets[index].price.toLocaleString("en-US", {
-                              style: "currency",
-                              currency: "usd",
-                            })}
-                      </p>
+                            : staticTickets[index].price.toLocaleString("en-US", {
+                                style: "currency",
+                                currency: "usd",
+                              })}
+                        </p>
+                        {/* Admin / host: edit THIS ticket straight away (CEO, 2026-11-27). */}
+                        {canManage && onEditTicket && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onEditTicket(ticket.id);
+                            }}
+                            aria-label={`Edit ${ticket.name}`}
+                            className="mt-0.5 border border-[#F79432] text-[#F79432] py-1 px-2 text-xs rounded-lg hover:bg-[#F79432] hover:text-black transition-colors"
+                          >
+                            ✎ Edit
+                          </button>
+                        )}
+                      </div>
                     </div>
 
                     {/* The long form of this pill ("card authorized, charged on approval") is
@@ -675,13 +723,7 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
                       </span>
                     ) : null}
 
-                    {ticket.bid && (
-                      <span className="inline-block mt-2 mr-2 text-[10px] font-semibold uppercase tracking-wide text-[#7DD3FC] bg-[#7DD3FC]/15 border border-[#7DD3FC]/40 rounded px-2 py-0.5">
-                        Name your price · {formatBidMoney(ticket.bid.min)}–{formatBidMoney(ticket.bid.max)}
-                      </span>
-                    )}
-
-                    {ticket.requireApproval && (
+                    {ticket.requireApproval && !(ticket.isSelected && isBidding(ticket.id)) && (
                       <span className="inline-block mt-2 text-[10px] font-semibold uppercase tracking-wide text-[#F79432] bg-[#F79432]/15 border border-[#F79432]/40 rounded px-2 py-0.5">
                         Approval required
                         {Number(staticTickets[index].price) > 0 && (
@@ -709,7 +751,23 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
 
                     {/* Bid ticket: the guest sets their price. Sealed — nobody sees anyone else's
                         bid. The card is HELD for the bid and charged only if the host accepts. */}
-                    {ticket.bid && ticket.isSelected && (
+                    {/* Takes bids: the guest may name their own price instead of the one above. */}
+                    {ticket.bid && remainingFor(ticket.id) !== 0 && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          chooseBid(ticket.id, !(ticket.isSelected && isBidding(ticket.id)));
+                        }}
+                        className="block mt-2 text-sm font-semibold text-[#7DD3FC] hover:underline text-left"
+                      >
+                        {ticket.isSelected && isBidding(ticket.id)
+                          ? `Pay the normal price instead (${staticTickets[index].price.toLocaleString("en-US", { style: "currency", currency: "usd" })})`
+                          : `Or name your price · suggested ${formatBidMoney(ticket.bid.suggested)}`}
+                      </button>
+                    )}
+
+                    {ticket.bid && ticket.isSelected && isBidding(ticket.id) && (
                       <div className="mt-3 bg-[#1e1e1e] rounded-xl p-3" onClick={(e) => e.stopPropagation()}>
                         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3 mb-2">
                           <span className="text-sm text-[#bbbbbb]">Your bid</span>
@@ -729,7 +787,6 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
                                 inputMode="decimal"
                                 step="0.01"
                                 min={ticket.bid.min}
-                                max={ticket.bid.max}
                                 value={bidDrafts[ticket.id] ?? String(bidFor(ticket.id))}
                                 onChange={(e) => setBidDrafts((prev) => ({ ...prev, [ticket.id]: e.target.value }))}
                                 onBlur={() => commitBidDraft(ticket.id)}
@@ -756,31 +813,17 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
                           const v = parseFloat(draft);
                           if (!Number.isFinite(v)) return null;
                           if (v < ticket.bid.min) return <p className="text-xs text-[#F5C518] mb-1">The lowest bid is {formatBidMoney(ticket.bid.min)}.</p>;
-                          if (v > ticket.bid.max) return <p className="text-xs text-[#F5C518] mb-1">The highest bid is {formatBidMoney(ticket.bid.max)}.</p>;
                           return null;
                         })()}
-                        <input
-                          type="range"
-                          min={ticket.bid.min}
-                          max={ticket.bid.max}
-                          step={BID_STEP}
-                          value={bidFor(ticket.id)}
-                          onChange={(e) => setBid(ticket.id, Number(e.target.value))}
-                          aria-label="Drag to set your bid"
-                          className="w-full accent-[#F79432] cursor-pointer"
-                        />
-                        <div className="flex justify-between text-[11px] text-gray-400 mt-1">
-                          <span>{formatBidMoney(ticket.bid.min)}</span>
-                          <span>Suggested {formatBidMoney(ticket.bid.suggested)}</span>
-                          <span>{formatBidMoney(ticket.bid.max)}</span>
-                        </div>
-                        <p className="text-xs text-[#bbbbbb] mt-2">
+                        <p className="text-xs text-gray-400">Suggested price {formatBidMoney(ticket.bid.suggested)}</p>
+                        <p className="text-xs font-semibold text-[#F79432] mt-2">{BID_APPROVAL_NOTICE}</p>
+                        <p className="text-xs text-[#bbbbbb] mt-1">
                           One seat per bid. Your card is held for your bid and charged only if the host accepts it. Want more seats or a different amount? Place another bid.
                         </p>
                       </div>
                     )}
 
-                    {event.isPaid && ticket.isSelected && !ticket.bid && (
+                    {event.isPaid && ticket.isSelected && !(ticket.bid && isBidding(ticket.id)) && (
                       <div className="mt-3 flex items-center gap-3 flex-wrap">
                         <div
                           className="flex items-center gap-2 bg-[#1e1e1e] p-1.5 rounded-full"
@@ -884,7 +927,7 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
               onClick={handleCheckoutClick}
               className="bg-jetzy text-black font-bold px-6 py-3 rounded-full hover:scale-105 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto shrink-0"
             >
-              {isLoading ? <Spinner /> : tickets.some((t) => t.isSelected && t.bid) ? "Place bid" : selectionNeedsApproval ? "Request to Book" : "Checkout"}
+              {isLoading ? <Spinner /> : tickets.some((t) => t.isSelected && t.bid && isBidding(t.id)) ? "Place bid" : selectionNeedsApproval ? "Request to Book" : "Checkout"}
             </button>
           </div>
         </div>

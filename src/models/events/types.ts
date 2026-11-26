@@ -7,11 +7,12 @@ export interface IEventTicket {
 	price: number
 	desc: string
 	stripeProductId: string
-	/** "bid" = the guest names their price between `bidMin` and `bidMax` (`ticket-bid.ts`). Absent = fixed price. */
+	/** "bid" = this ticket ALSO takes bids beside its normal `price` (`ticket-bid.ts`). Absent = no bids. */
 	pricingMode?: "bid"
+	/** v1 only — no longer written or read. */
 	bidMin?: number
 	bidMax?: number
-	/** Where the slider starts. `price` mirrors it on a bid ticket. */
+	/** The suggested bid shown to a guest who chooses to bid. */
 	bidSuggested?: number
 	/** Per-ticket override. `undefined` inherits the event-level `requireApproval`. */
 	requireApproval?: boolean
