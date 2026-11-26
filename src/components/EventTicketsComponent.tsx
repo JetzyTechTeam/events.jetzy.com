@@ -689,8 +689,8 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
                       {/* Price, then the Bid / Edit buttons — one row from `sm`, buttons under the
                           price on a phone so a long ticket name keeps its width. */}
                       <div className="flex flex-col items-end gap-1.5 sm:flex-row sm:items-center sm:gap-2.5 flex-shrink-0">
-                        {/* The normal price — or, while the guest is bidding, their bid with the
-                            normal price struck through beneath it. */}
+                        {/* The normal price — or, while the guest is bidding, their bid. No struck-through
+                            normal price under it: it read as a discount and confused buyers. */}
                         <div className="text-right">
                           <p className={`font-bold text-xl sm:text-2xl whitespace-nowrap leading-snug ${ticket.isSelected ? 'text-jetzy' : 'text-white'}`}>
                             {ticket.bid && ticket.isSelected && isBidding(ticket.id)
@@ -700,11 +700,6 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
                                   currency: "usd",
                                 })}
                           </p>
-                          {ticket.bid && ticket.isSelected && isBidding(ticket.id) && (
-                            <p className="text-[11px] text-gray-400 whitespace-nowrap">
-                              Your bid · <span className="line-through">{staticTickets[index].price.toLocaleString("en-US", { style: "currency", currency: "usd" })}</span>
-                            </p>
-                          )}
                         </div>
                         {(ticket.bid && remainingFor(ticket.id) !== 0) || (canManage && onEditTicket) ? (
                           <div className="flex items-center gap-2">
