@@ -1,6 +1,6 @@
 // Next.js API route support: https://nextjs.org/docs/api-routes/introduction
 import { generateRandomId, sendResponse } from "@Jetzy/lib/helpers"
-import { bidRangeProblem } from "@/lib/ticket-bid"
+import { bidSuggestedProblem } from "@/lib/ticket-bid"
 import { ResCode } from "@Jetzy/lib/responseCodes"
 import type { NextApiRequest, NextApiResponse } from "next"
 import { Events } from "@/models/events"
@@ -144,8 +144,8 @@ const schema = zod.object({
 			bidSuggested: zod.number().optional(),
 		}).superRefine((t, ctx) => {
 			if (t.pricingMode !== "bid") return
-			const problem = bidRangeProblem({ min: t.bidMin, max: t.bidMax, suggested: t.bidSuggested })
-			if (problem) ctx.addIssue({ code: zod.ZodIssueCode.custom, message: `"${t.title}": ${problem}`, path: ["bidMin"] })
+			const problem = bidSuggestedProblem(t.bidSuggested)
+			if (problem) ctx.addIssue({ code: zod.ZodIssueCode.custom, message: `"${t.title}": ${problem}`, path: ["bidSuggested"] })
 		}),
 	),
 	isPaid: zod.boolean(),
@@ -273,11 +273,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			: end
 		if (start && endForCompare && start >= endForCompare) return sendResponse(res, null, "Start date must be less than end date.", false, ResCode.BAD_REQUEST)
 
-		// A bid ticket's `price` IS its suggested bid; it always needs approval and sells no
-		// membership (`src/lib/ticket-bid.ts`). Normalised before the Stripe prices are minted.
+		// A ticket that takes bids keeps its normal price and its own approval flag (a bid is forced
+		// to approval at checkout) and sells no membership (`src/lib/ticket-bid.ts`).
 		tickets = tickets.map((t: any) =>
 			t.pricingMode === "bid"
-				? { ...t, price: Number(t.bidSuggested), requireApproval: true, memberships: [], includesPremium: false, membershipInterval: undefined, membershipFreeMonths: undefined }
+				? { ...t, memberships: [], includesPremium: false, membershipInterval: undefined, membershipFreeMonths: undefined }
 				: t,
 		)
 
@@ -351,9 +351,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					? { membershipFreeMonths: ticketMembershipFreeMonths(ticket as any) }
 					: {}),
 				includesPremium: ticketMemberships(ticket as any).includes("premium"),
-				...((ticket as any).pricingMode === "bid"
-					? { pricingMode: "bid", bidMin: (ticket as any).bidMin, bidMax: (ticket as any).bidMax, bidSuggested: (ticket as any).bidSuggested }
-					: {}),
+				...((ticket as any).pricingMode === "bid" ? { pricingMode: "bid", bidSuggested: Number((ticket as any).bidSuggested) } : {}),
 			})),
 			benefits,
 			locationDisclosedAfterBooking: locationDisclosedAfterBooking ?? false,

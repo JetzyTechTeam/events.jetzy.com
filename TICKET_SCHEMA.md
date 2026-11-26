@@ -2,6 +2,13 @@
 
 For the mobile app / backend, which writes to the same `events` collection this portal does.
 
+**Revision 8 (2026-11-27).** **Bids v2** — bidding is now an OPTION on a normal ticket, not a
+kind of ticket; see the rewritten **§15**. `price` is the ticket's NORMAL price again (it no longer
+mirrors `bidSuggested`), `bidMin` / `bidMax` are retired (no longer written or read), and the
+ticket's own `requireApproval` governs normal purchases. **The app may now sell such a ticket
+normally at `price`** — it just shouldn't offer bidding until it supports it (this replaces
+Revision 7's "hide or refuse a bid ticket").
+
 **Revision 7 (2026-11-26).** **Bid tickets** ("name your price") — new optional ticket fields
 `pricingMode`, `bidMin`, `bidMax`, `bidSuggested`; see **§15**. **Until the app supports them it
 must hide or refuse a ticket whose `pricingMode` is `"bid"`** — selling it at `price` would charge
@@ -1200,29 +1207,31 @@ An event that sells no membership returns `{ held: [], sellsPremium: false }`.
 
 ---
 
-## 15. NEW (Revision 7) — Bid tickets ("name your price")
+## 15. Bids ("name your price") — Revision 8
 
-The guest chooses what they pay, between a host-set minimum and maximum; the slider starts at the
-suggested amount. The card is **held** for the bid (the existing approval hold, manual capture,
-~7-day expiry) and **charged only when the host approves**. Sealed — no guest sees another's bid.
-Web source of truth: `src/lib/ticket-bid.ts`.
+A ticket may ALSO accept bids, beside its normal price. The guest either buys at `price` (an
+ordinary order) or names their own price. **A bid is always an approval request**, whatever the
+ticket's `requireApproval`: the card is **held** for the bid (manual capture, ~7-day expiry) and
+**charged only when the host approves**. Sealed — no guest sees another's bid. Web source of
+truth: `src/lib/ticket-bid.ts`.
 
 | Field | Type | Rule |
 |---|---|---|
-| `pricingMode` | `"bid"` \| absent | Absent = an ordinary fixed-price ticket (every ticket before this). |
-| `bidMin` | Number | `>= 0.50` (Stripe's minimum; a $0 bid has nothing to hold). |
-| `bidSuggested` | Number | `bidMin <= bidSuggested <= bidMax`. |
-| `bidMax` | Number | `>= bidMin`. All three: at most 2 decimals. |
-| `price` | Number | **Equals `bidSuggested`** on a bid ticket, so `stripeProductId` and every list display keep working. |
+| `pricingMode` | `"bid"` \| absent | `"bid"` = this ticket also takes bids. Absent = no bids (every ticket before this). |
+| `bidSuggested` | Number | The suggested bid shown to a guest who chooses to bid. `>= 0.50`, `<= 999999.99`, at most 2 decimals. |
+| `price` | Number | The ticket's **normal** price. Revision 7 tickets carry their old suggested price here. |
+| `bidMin` / `bidMax` | Number | **Retired (Revision 7 only).** May exist on stored rows; ignore them. |
 
-A bid ticket ALWAYS: `requireApproval: true`; `memberships: []` (no `membershipInterval` /
-`membershipFreeMonths`); takes **no referral code**; is **never free**; has **no waiting list**;
-is sold **one seat per bid** — more seats = more bids, each its own request and hold. No defaults
-on any of the four fields; preserve-on-omit on update (an absent `pricingMode` keeps what is
-stored, `"fixed"` turns it back into a normal ticket and drops the bid fields).
+A ticket that takes bids sells **no membership** (`memberships: []`, no `membershipInterval` /
+`membershipFreeMonths`). No defaults on either field; preserve-on-omit on update (an absent
+`pricingMode` keeps what is stored, `"fixed"` turns bidding off).
 
-Selling (web): the order carries the ticket alone, `quantity: 1`, and `bidAmount`; the server
-validates the bid against the STORED range (never trusts it), charges it as
+**A bid is decided by the ORDER ROW, never by the ticket.** A row with `pricingMode: "bid"` +
+`bidAmount` is a bid: alone on the order, `quantity: 1`, no referral code, never free, no waiting
+list; `bidAmount` must be `>= 0.50` and `<= 999999.99` with at most 2 decimals (no other range);
+the server validates it (never trusts it), charges it as
 `price_data { unit_amount: bid, product: <product of the stored price> }`, forces the approval
-hold, and the booking stores **`bidAmount`** (see `BOOKING_FLOW.md`). Anything that shows a
-booking's price must read `bidAmount` when present, never the ticket's current `price`.
+hold, and the booking stores **`bidAmount`** (see `BOOKING_FLOW.md`). A row without it on the
+same ticket is an ordinary order at the stored `price`, with the ticket's own approval setting.
+Anything that shows a booking's price must read `bidAmount` when present, never the ticket's
+current `price`.

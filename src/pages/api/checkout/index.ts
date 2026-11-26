@@ -29,7 +29,7 @@ import { MEMBERSHIPS, membershipLabelList, membershipsIncluding, type Membership
 import { validateReferralCodeForEvent, type ReferralCodeData } from "@/lib/referral-validation"
 import { REFERRAL_NOT_FOR_SELECTION_MESSAGE, referralCoversTicket, referralEligibleSubtotal } from "@/lib/referral-ticket-scope"
 import Stripe from "stripe"
-import { isBidTicket, validateBidAmount } from "@/lib/ticket-bid"
+import { isBidOrderRow, isBidTicket, validateBidAmount } from "@/lib/ticket-bid"
 import { ticketApprovalFlag } from "@/lib/ticket-approval"
 import { CHECKOUT_VERIFY_MESSAGE, sessionMayBookAs } from "@/lib/checkout-identity"
 
@@ -299,13 +299,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			;(t as any).requireApproval = ticketApprovalFlag(event as any, stored)
 		}
 
-		// ---- Bid ticket ("name your price", `src/lib/ticket-bid.ts`). The bid is validated against
-		// the STORED range, never trusted; one seat, alone on the order, no referral code, and it
-		// always needs approval — the card is HELD for the bid and charged only on approval. ----
+		// ---- Bid ("name your price", `src/lib/ticket-bid.ts`). Decided by the ORDER ROW: a ticket
+		// that takes bids is still sold normally at its price when the buyer doesn't bid. A bid is
+		// validated server-side, never trusted; one seat, alone on the order, no referral code, and
+		// it ALWAYS needs approval, whatever the ticket's own setting — the card is HELD for the bid
+		// and charged only on approval. ----
 		let bid: { amount: number; cents: number } | null = null
-		const bidRow = tickets.find((t) => isBidTicket(storedById.get(String(t.id)) as any))
+		const bidRow = tickets.find((t) => isBidOrderRow(t as any))
 		if (bidRow) {
 			const stored: any = storedById.get(String(bidRow.id))
+			if (!isBidTicket(stored)) {
+				return sendResponse(res, null, "This ticket isn't taking bids. Please refresh and try again.", false, ResCode.BAD_REQUEST)
+			}
 			if (tickets.length !== 1 || Number(bidRow.quantity) !== 1) {
 				return sendResponse(res, null, "A bid is for one seat. Place one bid at a time — you can bid again for another seat.", false, ResCode.BAD_REQUEST)
 			}
@@ -525,8 +530,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return {
 				// The STORED ticket's id decides referral eligibility, never the body's.
 				id: stored?._id ? String(stored._id) : "",
-				// A bid ticket is charged the validated bid, never its list (suggested) price.
-				price: bid && isBidTicket(stored as any) ? bid.amount : Number(stored?.price ?? ticket.price) || 0,
+				// A bid is charged the validated bid, never the ticket's normal price.
+				price: bid && ticket === bidRow ? bid.amount : Number(stored?.price ?? ticket.price) || 0,
 				quantity: Number(ticket.quantity) || 0,
 			}
 		})

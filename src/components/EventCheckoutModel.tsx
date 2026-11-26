@@ -5,6 +5,7 @@ import React, { useState, useEffect, useCallback, useRef } from "react"
 import Spinner from "./misc/Spinner"
 import { sendGAEvent } from "@next/third-parties/google"
 import { AUTH_HOLD_DAYS, selectionRequiresApproval } from "@/lib/ticket-approval"
+import { BID_APPROVAL_NOTICE, isBidOrderRow } from "@/lib/ticket-bid"
 import { buildTicketPricing } from "@/lib/ticket-pricing"
 import { membershipQuantityInSelection, premiumAllowanceMessage, resolveFreeMonthsForKey, selectionMemberships, splitBundleCharges, selectionMembershipFreeMonths, selectionMembershipInterval, ticketMemberships } from "@/lib/premium-bundle"
 import { REFERRAL_NOT_FOR_SELECTION_MESSAGE, referralAppliesToAllTickets, referralCoversTicket, referralEligibleSubtotal } from "@/lib/referral-ticket-scope"
@@ -115,9 +116,10 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 	const [referralError, setReferralError] = useState<string>("")
 	const selectedTicketIds = tickets.map((t) => String((t as any).id ?? ""))
 	const selectedTicketIdsKey = selectedTicketIds.join(",")
-	// A bid ticket ("name your price", `src/lib/ticket-bid.ts`): the price is the guest's bid, the
-	// card is held for it and charged only if the host accepts. No referral code applies to a bid.
-	const isBidOrder = tickets.some((t: any) => t.pricingMode === "bid")
+	// A bid ("name your price", `src/lib/ticket-bid.ts`): the price is the guest's bid, the card is
+	// held for it and charged only if the host accepts. Decided by the ORDER ROW — the same ticket
+	// bought at its normal price is an ordinary order. No referral code applies to a bid.
+	const isBidOrder = tickets.some((t: any) => isBidOrderRow(t))
 	// The questions asked for THESE tickets — a question may be set for specific tickets only
 	// (`question-ticket-scope.ts`). The same rule both checkout endpoints enforce.
 	const visibleQuestions: any[] = questionsForSelection(liveEventData?.questions || [], selectedTicketIds)
@@ -1129,7 +1131,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 													    The period follows the TICKET's interval — an annual bundle holds a
 													    full year, which is a materially larger authorization to disclose. */}
 													{isBidOrder
-														? `Your card will be held for your bid of ${pricing.total.toLocaleString("en-US", { style: "currency", currency: "usd" })}. You're charged only if the host accepts your bid; otherwise the hold is released automatically within ${AUTH_HOLD_DAYS} days.`
+														? `Your card will be held for your bid of ${pricing.total.toLocaleString("en-US", { style: "currency", currency: "usd" })}. You're charged only if the host accepts your bid; otherwise the hold is released automatically within ${AUTH_HOLD_DAYS} days. ${BID_APPROVAL_NOTICE}`
 														: selectionTotal <= 0
 														? giftedChargedKeys.length > 0
 															? `Your registration is subject to host approval. Nothing is charged now — your ${membershipLabelList(giftedChargedKeys)} is free for ${appliedFreeMonths} ${appliedFreeMonths === 1 ? "month" : "months"} — but we'll ask for a card so it continues afterwards rather than stopping.`

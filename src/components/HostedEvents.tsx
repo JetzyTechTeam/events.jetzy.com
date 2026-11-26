@@ -338,6 +338,9 @@ export default function HostedEvents({ event }: Props) {
 	const [ticketEditIndex, setTicketEditIndex] = useState<number | null>(null)
 	const [tempTicket, setTempTicket] = useState<TicketData>({ id: "", title: "", description: "", price: 0 })
 	const [ticketModalOpen, setTicketModalOpen] = useState(false)
+	// The ticket dialog was opened from the Edit button ON a ticket card (CEO, 2026-11-27): its
+	// Save writes straight to the server instead of into the inline tickets list.
+	const [directTicketSave, setDirectTicketSave] = useState(false)
 	const [isUploadingImage, setIsUploadingImage] = useState(false)
 	const [isUploadingVideo, setIsUploadingVideo] = useState(false)
 	const [imageUploadProgress, setImageUploadProgress] = useState(0)
@@ -446,10 +449,18 @@ export default function HostedEvents({ event }: Props) {
 		setNewPollDate("")
 		setNewPollTime("")
 		setNewPollLabel("")
-		// Same mapping the manage form makes: stored `_id` becomes the client `id`, which is what
-		// keeps a ticket's identity (and its Stripe price) across an edit.
-		setDraftTickets(
-			((shownEvent?.tickets || []) as any[]).map((ticket: any) => ({
+		setDraftTickets(seedDraftTickets())
+		setDraftLocation(shownEvent?.location || "")
+		setDraftVenueName((shownEvent as any)?.venueName || "")
+		setDraftEntrance((shownEvent as any)?.entrance || "")
+		setDraftCoords({})
+		setEditingSection(section)
+	}
+
+	// Same mapping the manage form makes: stored `_id` becomes the client `id`, which is what
+	// keeps a ticket's identity (and its Stripe price) across an edit.
+	function seedDraftTickets(): TicketData[] {
+		return ((shownEvent?.tickets || []) as any[]).map((ticket: any) => ({
 				id: ticket._id?.toString() || uniqueId(10),
 				title: stripHtml(ticket.name),
 				price: Number(ticket.price),
@@ -467,13 +478,41 @@ export default function HostedEvents({ event }: Props) {
 				quantity: ticket.quantity,
 				includesPremium: ticketMemberships(ticket).includes("premium"),
 				...ticketBidFields(ticket),
-			})) as TicketData[],
-		)
-		setDraftLocation(shownEvent?.location || "")
-		setDraftVenueName((shownEvent as any)?.venueName || "")
-		setDraftEntrance((shownEvent as any)?.entrance || "")
-		setDraftCoords({})
-		setEditingSection(section)
+			})) as TicketData[]
+	}
+
+	/**
+	 * Edit ONE ticket straight from its card (CEO, 2026-11-27): the dialog opens on that ticket and
+	 * its Save writes at once — no inline list, no second Save. Same endpoint and payload as the
+	 * inline editor, built from the full stored list so no other ticket can change.
+	 */
+	const openTicketEditor = (ticketId: string) => {
+		if (editingSection && !window.confirm("Discard the changes you're making to the other section?")) return
+		const seeded = seedDraftTickets()
+		const index = seeded.findIndex((t) => String(t.id) === String(ticketId))
+		if (index < 0) return
+		if (editingSection) setEditingSection(null)
+		setDraftTickets(seeded)
+		setTicketEditIndex(index)
+		setTempTicket(seeded[index])
+		setDirectTicketSave(true)
+		setTicketModalOpen(true)
+	}
+
+	const saveTicketDirect = async (list: TicketData[]) => {
+		setSavingEdits(true)
+		try {
+			await patchTickets(list)
+			setTicketModalOpen(false)
+			setDirectTicketSave(false)
+			toast({ title: "Ticket updated", status: "success", duration: 2500, isClosable: true })
+			router.replace(router.asPath)
+		} catch (err: any) {
+			// The dialog stays open with the host's edits, so they can fix it and save again.
+			toast({ title: "Couldn't save the ticket", description: err?.response?.data?.message, status: "error", duration: 5000, isClosable: true })
+		} finally {
+			setSavingEdits(false)
+		}
 	}
 
 	const cancelEventEdit = () => {
@@ -552,6 +591,30 @@ export default function HostedEvents({ event }: Props) {
 	 * Tickets go to their own endpoint: they mint Stripe prices and bookings reference their
 	 * ids, so they never travel with presentational fields.
 	 */
+	/** The tickets PATCH — shared by the inline editor's Save and a card's direct Edit. */
+	const patchTickets = (list: TicketData[]) =>
+		axios.patch(`/api/events/${clonedEvent?._id}/tickets`, {
+			tickets: list.map((t) => ({
+				id: t.id,
+				title: t.title,
+				description: t.description,
+				price: Number(t.price),
+				...(t.requireApproval !== undefined ? { requireApproval: t.requireApproval } : {}),
+				...((t as any).memberships !== undefined ? { memberships: (t as any).memberships } : {}),
+				...((t as any).membershipInterval !== undefined ? { membershipInterval: (t as any).membershipInterval } : {}),
+				...((t as any).membershipFreeMonths !== undefined ? { membershipFreeMonths: Number((t as any).membershipFreeMonths) || 0 } : {}),
+				// Takes bids ("name your price") — sent only when set; "fixed" turns bidding off.
+				...((t as any).pricingMode !== undefined
+					? { pricingMode: (t as any).pricingMode, ...((t as any).pricingMode === "bid" ? { bidSuggested: Number((t as any).bidSuggested) } : {}) }
+					: {}),
+				// `null` is sent through as null — it is the host clearing the cap, which
+				// is a different instruction from omitting the key.
+				...((t as any).quantity !== undefined
+					? { quantity: (t as any).quantity === null ? null : Math.max(0, Math.floor(Number((t as any).quantity))) }
+					: {}),
+			})),
+		})
+
 	const saveEventEdits = async (section: EditSection) => {
 		const name = draftName.trim()
 
@@ -575,27 +638,7 @@ export default function HostedEvents({ event }: Props) {
 		setSavingEdits(true)
 		try {
 			if (section === "tickets") {
-				await axios.patch(`/api/events/${clonedEvent?._id}/tickets`, {
-					tickets: draftTickets.map((t) => ({
-						id: t.id,
-						title: t.title,
-						description: t.description,
-						price: Number(t.price),
-						...(t.requireApproval !== undefined ? { requireApproval: t.requireApproval } : {}),
-						...((t as any).memberships !== undefined ? { memberships: (t as any).memberships } : {}),
-						...((t as any).membershipInterval !== undefined ? { membershipInterval: (t as any).membershipInterval } : {}),
-						...((t as any).membershipFreeMonths !== undefined ? { membershipFreeMonths: Number((t as any).membershipFreeMonths) || 0 } : {}),
-						// Bid ticket ("name your price") — sent only when set; "fixed" turns one back.
-						...((t as any).pricingMode !== undefined
-							? { pricingMode: (t as any).pricingMode, ...((t as any).pricingMode === "bid" ? { bidMin: Number((t as any).bidMin), bidMax: Number((t as any).bidMax), bidSuggested: Number((t as any).bidSuggested) } : {}) }
-							: {}),
-						// `null` is sent through as null — it is the host clearing the cap, which
-						// is a different instruction from omitting the key.
-						...((t as any).quantity !== undefined
-							? { quantity: (t as any).quantity === null ? null : Math.max(0, Math.floor(Number((t as any).quantity))) }
-							: {}),
-					})),
-				})
+				await patchTickets(draftTickets)
 				setEditingSection(null)
 				toast({ title: "Tickets updated", status: "success", duration: 2500, isClosable: true })
 				// Re-runs getServerSideProps, so the ticket list, the checkout modal and the
@@ -2080,6 +2123,7 @@ export default function HostedEvents({ event }: Props) {
 								key={(shownEvent?.tickets || []).map((t: any) => `${t._id || t.id}:${t.price}:${t.name}`).join("|")}
 								event={shownEvent as IEvent}
 								canManage={canManage}
+								onEditTicket={openTicketEditor}
 								onEditTickets={() => {
 									if (editingSection && !window.confirm("Discard the changes you're making to the other section?")) return
 									startEventEdit("tickets")
@@ -2272,13 +2316,25 @@ export default function HostedEvents({ event }: Props) {
 
 			<TicketEditorModal
 				isOpen={ticketModalOpen}
-				onClose={() => setTicketModalOpen(false)}
+				onClose={() => {
+					setTicketModalOpen(false)
+					setDirectTicketSave(false)
+				}}
+				isSaving={directTicketSave && savingEdits}
 				ticket={tempTicket}
 				onTicketChange={setTempTicket}
 				isEditing={ticketEditIndex !== null}
 				eventRequireApproval={!!shownEvent?.requireApproval}
 				canManageMemberships={isAdmin}
 				onSave={(normalised: TicketData) => {
+					// Opened from a ticket card: write it now.
+					if (directTicketSave && ticketEditIndex !== null) {
+						const list = [...draftTickets]
+						list[ticketEditIndex] = normalised
+						setDraftTickets(list)
+						saveTicketDirect(list)
+						return
+					}
 					setDraftTickets((prev) => {
 						if (ticketEditIndex !== null) {
 							const arr = [...prev]
