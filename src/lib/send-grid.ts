@@ -647,8 +647,13 @@ export const sendApprovalPending = async ({ event, firstName, email, tickets = [
 //                host would otherwise silently lose a paying guest.
 export const sendAdminApprovalNotice = async ({
   event, firstName, lastName, email, tickets = [], eventId, kind, amountOnHold, holdExpiresAt, amountCharged,
-  audience = "admin", to, memberships = [],
+  audience = "admin", to, memberships = [], bid = null,
 }: ApprovalEmailData & {
+  /**
+   * The request is a BID ("name your price"). `previous` = the same guest's earlier pending bid
+   * on that ticket — the notice then reads "Bid Raised" (or "New Bid" when it is lower).
+   */
+  bid?: { amount: number; suggested?: number; normalPrice?: number; previous?: number | null } | null
   /** What the hold covers beyond the ticket — same rows the guest's email describes. */
   memberships?: NonNullable<NonNullable<ApprovalEmailData["payment"]>["memberships"]>
   kind: "request" | "approved" | "expired"
@@ -696,9 +701,20 @@ export const sendAdminApprovalNotice = async ({
   const isExpired = kind === "expired"
   const deadline = formatHoldDeadline(holdExpiresAt)
 
-  const heading = isRequest ? "New Approval Request" : isExpired ? "Card Hold Expired" : "Request Approved"
+  const isBid = isRequest && !!bid
+  const hasPrevious = isBid && bid!.previous !== undefined && bid!.previous !== null
+  const raised = hasPrevious && bid!.amount > Number(bid!.previous)
+  const heading = isBid
+    ? raised ? "Bid Raised" : "New Bid"
+    : isRequest ? "New Approval Request" : isExpired ? "Card Hold Expired" : "Request Approved"
   const accent = isExpired ? "#DC2626" : "#F79432"
-  const intro = isRequest
+  const intro = isBid
+    ? raised
+      ? `${firstName} ${lastName} raised their bid from ${formatMoney(Number(bid!.previous))} to <strong>${formatMoney(bid!.amount)}</strong>:`
+      : hasPrevious
+        ? `${firstName} ${lastName} placed another bid of <strong>${formatMoney(bid!.amount)}</strong>:`
+        : `${firstName} ${lastName} placed a bid of <strong>${formatMoney(bid!.amount)}</strong>:`
+    : isRequest
     ? isHost
       ? "You have a request to review for your event:"
       : "A new attendee is awaiting approval for the following event:"
@@ -734,6 +750,23 @@ export const sendAdminApprovalNotice = async ({
     .map((line) => `\n  includes ${line.what}${line.amount > 0 ? `: ${formatMoney(line.amount)}` : ""}`)
     .join("")
 
+  // The bid itself, beside what the ticket normally costs — the host is deciding whether it is
+  // too low. An earlier pending bid is still a request of its own, with its own hold.
+  const bidHtml = isBid
+    ? `<p style="margin: 5px 0;"><strong>Bid:</strong> ${formatMoney(bid!.amount)}</p>${
+        bid!.suggested !== undefined ? `<p style="margin: 5px 0;"><strong>Suggested bid:</strong> ${formatMoney(bid!.suggested)}</p>` : ""
+      }${bid!.normalPrice !== undefined ? `<p style="margin: 5px 0;"><strong>Normal price:</strong> ${formatMoney(bid!.normalPrice)}</p>` : ""}${
+        hasPrevious
+          ? `<p style="margin: 5px 0;"><strong>Previous bid:</strong> ${formatMoney(Number(bid!.previous))} &mdash; still pending as its own request. Approve the one you want and reject the other (or approve both for two seats).</p>`
+          : ""
+      }`
+    : ""
+  const bidText = isBid
+    ? `\nBid: ${formatMoney(bid!.amount)}${bid!.suggested !== undefined ? `\nSuggested bid: ${formatMoney(bid!.suggested)}` : ""}${
+        bid!.normalPrice !== undefined ? `\nNormal price: ${formatMoney(bid!.normalPrice)}` : ""
+      }${hasPrevious ? `\nPrevious bid: ${formatMoney(Number(bid!.previous))} (still pending as its own request)` : ""}`
+    : ""
+
   const urgencyBanner = isRequest && amountOnHold && deadline
     ? `<div style="background-color: #fff3cd; padding: 12px 15px; border-radius: 8px; margin: 0 0 20px 0; border-left: 4px solid #ffc107;">
             <p style="color: #856404; margin: 0; font-size: 14px;">
@@ -749,7 +782,11 @@ export const sendAdminApprovalNotice = async ({
       // mail must use the standard "Jetzy" sender, and be replyable straight to the guest.
       from: isHost ? mailFrom() : mailFrom(adminEmail),
       ...(isHost ? { replyTo: email } : {}),
-      subject: isRequest
+      subject: isBid
+        ? raised
+          ? `[Bid Raised] ${formatMoney(Number(bid!.previous))} → ${formatMoney(bid!.amount)} — ${firstName} ${lastName} — ${eventName}`
+          : `[New Bid] ${formatMoney(bid!.amount)} — ${firstName} ${lastName} — ${eventName}`
+        : isRequest
         ? `[Approval Needed] ${firstName} ${lastName} — ${eventName}`
         : isExpired
           ? `[Hold Expired] ${firstName} ${lastName} — ${eventName}`
@@ -764,6 +801,7 @@ export const sendAdminApprovalNotice = async ({
             <p style="margin: 5px 0;"><strong>Name:</strong> ${firstName} ${lastName}</p>
             <p style="margin: 5px 0;"><strong>Email:</strong> ${email}</p>
             ${totalTickets ? `<p style="margin: 5px 0;"><strong>Tickets:</strong> ${totalTickets}</p>` : ""}
+            ${bidHtml}
             ${moneyLine}
             ${membershipHtml}
           </div>
@@ -779,7 +817,7 @@ export const sendAdminApprovalNotice = async ({
         </div>
       `),
       text: isRequest
-        ? `New approval request for "${eventName}"\nName: ${firstName} ${lastName}\nEmail: ${email}\nTickets: ${totalTickets}${amountOnHold ? `\nOn hold: ${formatMoney(amountOnHold)}${deadline ? ` (expires ${deadline})` : ""}` : ""}${membershipText}\nReview: ${manageUrl}`
+        ? `${isBid ? (raised ? "Bid raised" : "New bid") : "New approval request"} for "${eventName}"\nName: ${firstName} ${lastName}\nEmail: ${email}\nTickets: ${totalTickets}${bidText}${amountOnHold ? `\nOn hold: ${formatMoney(amountOnHold)}${deadline ? ` (expires ${deadline})` : ""}` : ""}${membershipText}\nReview: ${manageUrl}`
         : isExpired
           ? `Card hold expired for "${eventName}"\nName: ${firstName} ${lastName}\nEmail: ${email}${amountOnHold ? `\nReleased (never charged): ${formatMoney(amountOnHold)}` : ""}\nThe guest was not charged and must book again.`
           : `Approved & confirmed for "${eventName}"\nName: ${firstName} ${lastName}\nEmail: ${email}\nTickets: ${totalTickets}${amountCharged ? `\nCharged: ${formatMoney(amountCharged)}` : ""}`
