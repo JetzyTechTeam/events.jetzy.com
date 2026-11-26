@@ -146,11 +146,40 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
     Object.fromEntries(ticketsItems.filter((t) => t.bid).map((t) => [t.id, t.bid!.suggested])),
   );
   const bidFor = (id: string) => bidAmounts[id] ?? ticketsItems.find((t) => t.id === id)?.bid?.suggested ?? 0;
+  // What the guest is TYPING in the amount box, before it is checked. Kept apart from the bid so
+  // the box can be cleared completely and retyped (QA, 2026-11-27) — and so a half-typed "9" on a
+  // $10 minimum never shows as the price on the card. Committed on blur / Enter.
+  const [bidDrafts, setBidDrafts] = useState<Record<string, string>>({});
+  const effectiveBid = (id: string) => {
+    const ticket = ticketsItems.find((t) => t.id === id);
+    const value = parseFloat(bidDrafts[id] ?? "");
+    if (!ticket?.bid || !Number.isFinite(value)) return bidFor(id);
+    return clampBid({ pricingMode: "bid", bidMin: ticket.bid.min, bidMax: ticket.bid.max, bidSuggested: ticket.bid.suggested }, value);
+  };
+  const commitBidDraft = (id: string) => {
+    const draft = bidDrafts[id];
+    if (draft === undefined) return;
+    const value = parseFloat(draft);
+    // Left empty or not a number: keep the bid they had. Otherwise clamp into the range.
+    if (Number.isFinite(value)) setBid(id, value);
+    setBidDrafts((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  };
   const setBid = (id: string, raw: number) => {
     const ticket = ticketsItems.find((t) => t.id === id);
     if (!ticket?.bid) return;
     const amount = clampBid({ pricingMode: "bid", bidMin: ticket.bid.min, bidMax: ticket.bid.max, bidSuggested: ticket.bid.suggested }, raw);
     setBidAmounts((prev) => ({ ...prev, [id]: amount }));
+    // The slider / − + win over anything half-typed in the box.
+    setBidDrafts((prev) => {
+      if (prev[id] === undefined) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
     // The selected bid ticket's line total IS the bid (one seat).
     setTickets((prev) => prev.map((t) => (t.id === id && t.isSelected ? { ...t, price: amount } : t)));
   };
@@ -370,10 +399,10 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
         id: ticket.id,
         name: ticket.name,
         // A bid ticket's unit price is the guest's bid, one seat per bid.
-        price: ticket.bid ? bidFor(ticket.id) : ticketsItems[index].price,
+        price: ticket.bid ? effectiveBid(ticket.id) : ticketsItems[index].price,
         description: ticket.description,
         quantity: ticket.bid ? 1 : ticket.quantity,
-        ...(ticket.bid ? { pricingMode: "bid", bidAmount: bidFor(ticket.id) } : {}),
+        ...(ticket.bid ? { pricingMode: "bid", bidAmount: effectiveBid(ticket.id) } : {}),
         isSelected: ticket.isSelected,
         priceId: ticket.priceId,
         eventId: ticket.eventId,
@@ -701,12 +730,12 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
                                 step="0.01"
                                 min={ticket.bid.min}
                                 max={ticket.bid.max}
-                                value={bidFor(ticket.id)}
-                                onChange={(e) => {
-                                  const v = parseFloat(e.target.value);
-                                  setBidAmounts((prev) => ({ ...prev, [ticket.id]: Number.isFinite(v) ? v : ticket.bid!.min }));
+                                value={bidDrafts[ticket.id] ?? String(bidFor(ticket.id))}
+                                onChange={(e) => setBidDrafts((prev) => ({ ...prev, [ticket.id]: e.target.value }))}
+                                onBlur={() => commitBidDraft(ticket.id)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") (e.target as HTMLInputElement).blur();
                                 }}
-                                onBlur={(e) => setBid(ticket.id, parseFloat(e.target.value))}
                                 aria-label="Your bid in dollars"
                                 className="w-20 bg-transparent text-white text-base font-semibold outline-none"
                               />
@@ -721,6 +750,15 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
                             </button>
                           </div>
                         </div>
+                        {(() => {
+                          const draft = bidDrafts[ticket.id];
+                          if (draft === undefined || draft.trim() === "") return null;
+                          const v = parseFloat(draft);
+                          if (!Number.isFinite(v)) return null;
+                          if (v < ticket.bid.min) return <p className="text-xs text-[#F5C518] mb-1">The lowest bid is {formatBidMoney(ticket.bid.min)}.</p>;
+                          if (v > ticket.bid.max) return <p className="text-xs text-[#F5C518] mb-1">The highest bid is {formatBidMoney(ticket.bid.max)}.</p>;
+                          return null;
+                        })()}
                         <input
                           type="range"
                           min={ticket.bid.min}
