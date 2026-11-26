@@ -8,7 +8,7 @@ import { AUTH_HOLD_DAYS } from "@/lib/ticket-approval"
 import { resolveEventLocation } from "@/lib/event-helpers"
 import { generateQRCodeForBooking } from "@/lib/qr-generator"
 import { sendTicketConfirmation, sendApprovalPending } from "@/lib/send-grid"
-import { notifyApprovalRequest, notifyTicketSold } from "@/lib/booking-notify"
+import { notifyApprovalRequest, notifyTicketSold, resolveBidNotice } from "@/lib/booking-notify"
 import { Events } from "@/models/events"
 import { Bookings } from "@/models/events/bookings"
 import { BookingStatus, IBookings, IEvent } from "@/models/events/types"
@@ -598,6 +598,9 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 			// than the card carries. The approved and expired notices already quote the full amount.
 			amountOnHold: chargedAmount,
 			holdExpiresAt: booking.payment?.authExpiresAt,
+			// A bid: the notice says so (and whether it raises an earlier one), and the admin
+			// inbox gets it on every event.
+			bid: await resolveBidNotice(booking, event),
 			memberships: membershipLines.map((line) => ({
 				key: line.key,
 				label: MEMBERSHIPS[line.key].label,

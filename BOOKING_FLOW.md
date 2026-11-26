@@ -1975,6 +1975,8 @@ from the app (§5.0); then act on them from the app **and** confirm the web show
 
 ## 18. Changelog
 
+**2026-11-27 (bid emails):** every bid emails the ADMIN inbox (`ADMIN_NOTIFICATION_EMAIL`), on host-owned events too (the host still gets their notice). Subject `[New Bid] $X — …`, or `[Bid Raised] $A → $B — …` when the same email already has a PENDING bid on that ticket at a lower amount (the earlier bid stays its own request). Body adds Bid / Suggested bid / Normal price / Previous bid.
+
 **2026-11-27 (bids v2):** bidding is an option on a normal ticket (`TICKET_SCHEMA.md` §15, Rev 8).
 **A bid is decided by the ORDER ROW** (`pricingMode: "bid"` + `bidAmount`), never by the ticket:
 a row without it on a ticket that takes bids is an ordinary order at the ticket's normal `price`,
