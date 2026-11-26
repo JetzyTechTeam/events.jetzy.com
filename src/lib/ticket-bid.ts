@@ -19,7 +19,9 @@
 
 export const BID_MIN_FLOOR = 0.5 // Stripe's smallest charge — and a $0 bid would have nothing to hold
 export const BID_MAX = 999999.99 // Stripe's largest single USD charge
-export const BID_STEP = 1 // the − / + buttons; a typed amount may carry cents
+export const BID_STEP = 1 // the slider moves in whole dollars; a typed amount may carry cents
+export const BID_BUTTON_STEP = 5 // each tap of − / + (QA, 2026-11-27: $1 taps were too slow)
+export const BID_SLIDER_MULTIPLE = 10 // the slider runs to 10× the ticket's price — a convenience, not a cap
 
 /** Shown with every bid — the card, and the checkout modal. */
 export const BID_APPROVAL_NOTICE = "Bids need host approval — a bid that's too low won't be accepted."

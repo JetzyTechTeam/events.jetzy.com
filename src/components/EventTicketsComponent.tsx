@@ -41,7 +41,7 @@ import { useAnalytics } from "@/hooks/useAnalytics";
 import { isPreviewQuery } from "@/lib/event-preview";
 import { LOW_STOCK_THRESHOLD, notEnoughLeftMessage, remainingMessage } from "@/lib/ticket-quantity";
 import type { EventAvailability } from "@/lib/ticket-availability";
-import { BID_APPROVAL_NOTICE, BID_STEP, bidRange, clampBid, formatBidMoney } from "@/lib/ticket-bid";
+import { BID_APPROVAL_NOTICE, BID_BUTTON_STEP, BID_SLIDER_MULTIPLE, BID_STEP, bidRange, clampBid, formatBidMoney } from "@/lib/ticket-bid";
 
 type Props = {
   event: IEvent;
@@ -159,12 +159,12 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
   const [bidDrafts, setBidDrafts] = useState<Record<string, string>>({});
   // Where the drag slider ends. There is no maximum bid (CEO, 2026-11-27) — the typed box takes
   // any amount up to Stripe's limit — so the slider spans a range that makes dragging useful:
-  // $0.50 up to twice the higher of the normal price and the suggested bid, rounded up to a
-  // whole dollar. A bid typed above it simply pins the thumb at the end.
+  // $1 up to BID_SLIDER_MULTIPLE (10×) the higher of the normal price and the suggested bid,
+  // rounded up to a whole dollar. A bid typed above it simply pins the thumb at the end.
   const sliderMaxFor = (id: string) => {
     const ticket = ticketsItems.find((t) => t.id === id);
     if (!ticket?.bid) return 0;
-    const top = Math.max(Number(ticket.price) || 0, ticket.bid.suggested) * 2;
+    const top = Math.max(Number(ticket.price) || 0, ticket.bid.suggested) * BID_SLIDER_MULTIPLE;
     return Math.max(Math.ceil(ticket.bid.min) + BID_STEP, Math.ceil(top));
   };
   const effectiveBid = (id: string) => {
@@ -800,7 +800,7 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
                           <div className="flex items-center gap-2 w-full sm:w-auto">
                             <button
                               aria-label="Lower bid"
-                              onClick={() => setBid(ticket.id, bidFor(ticket.id) - BID_STEP)}
+                              onClick={() => setBid(ticket.id, bidFor(ticket.id) - BID_BUTTON_STEP)}
                               disabled={bidFor(ticket.id) <= ticket.bid.min}
                               className="flex-shrink-0 bg-black text-white w-9 h-9 rounded-full flex items-center justify-center text-lg hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                             >
@@ -825,7 +825,7 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
                             </div>
                             <button
                               aria-label="Raise bid"
-                              onClick={() => setBid(ticket.id, bidFor(ticket.id) + BID_STEP)}
+                              onClick={() => setBid(ticket.id, bidFor(ticket.id) + BID_BUTTON_STEP)}
                               disabled={bidFor(ticket.id) >= ticket.bid.max}
                               className="flex-shrink-0 bg-black text-white w-9 h-9 rounded-full flex items-center justify-center text-lg hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                             >
