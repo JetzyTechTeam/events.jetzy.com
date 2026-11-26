@@ -783,25 +783,10 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
                       </span>
                     )}
 
-                    {/* Descriptions are host-authored and often carry a raw URL, which used to
-                        push the card wider than the viewport — `break-all` on anchors only, so
-                        ordinary prose still wraps on word boundaries. Collapsed by default so a
-                        long blurb can't bury the tickets below it. */}
-                    {ticket.description && (
-                      <TicketDescription description={ticket.description} />
-                    )}
-
-                    {/* The membership notice that used to sit here — "+ Jetzy Premium
-                        $20/month, renews until cancelled" — was removed by decision: it is
-                        not wanted on the browse view of the ticket.
-
-                        The recurring terms are STILL disclosed before purchase, in the
-                        checkout modal and the order summary. That is the point of sale and
-                        where the card-network requirement actually applies, so do not treat
-                        this removal as licence to drop them there too. */}
-
                     {/* Bid ticket: the guest sets their price. Sealed — nobody sees anyone else's
                         bid. The card is HELD for the bid and charged only if the host accepts. */}
+                    {/* ABOVE the description (QA, 2026-11-27): a long description pushed the bid box
+                        off the screen, so tapping Bid seemed to do nothing. */}
                     {ticket.bid && ticket.isSelected && isBidding(ticket.id) && (
                       <div className="mt-3 bg-[#1e1e1e] border border-[#7DD3FC]/30 rounded-xl p-3 sm:p-4" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-between gap-3 mb-3">
@@ -886,6 +871,23 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
                         </button>
                       </div>
                     )}
+
+                    {/* Descriptions are host-authored and often carry a raw URL, which used to
+                        push the card wider than the viewport — `break-all` on anchors only, so
+                        ordinary prose still wraps on word boundaries. Collapsed by default so a
+                        long blurb can't bury the tickets below it. */}
+                    {ticket.description && (
+                      <TicketDescription description={ticket.description} />
+                    )}
+
+                    {/* The membership notice that used to sit here — "+ Jetzy Premium
+                        $20/month, renews until cancelled" — was removed by decision: it is
+                        not wanted on the browse view of the ticket.
+
+                        The recurring terms are STILL disclosed before purchase, in the
+                        checkout modal and the order summary. That is the point of sale and
+                        where the card-network requirement actually applies, so do not treat
+                        this removal as licence to drop them there too. */}
 
                     {event.isPaid && ticket.isSelected && !(ticket.bid && isBidding(ticket.id)) && (
                       <div className="mt-3 flex items-center gap-3 flex-wrap">
