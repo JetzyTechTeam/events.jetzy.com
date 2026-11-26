@@ -41,14 +41,29 @@ export async function chatPostAllowed(session: SessionLike, eventId: string): Pr
 
 const b64url = (input: Buffer | string) => Buffer.from(input).toString("base64").replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_")
 
-/** HS256 JWT `{ eventId, email, canPost, iat, exp }`, or null when the secret isn't configured. */
-export function signChatAccess(claims: { eventId: string; email: string; canPost: boolean }): { token: string; exp: number } | null {
+/**
+ * HS256 JWT `{ eventId, email, canPost, iat, exp, jetzyUserId? }`, or null when the secret isn't
+ * configured. `jetzyUserId` = the viewer's MAIN Jetzy account (`users._id`), when they have one:
+ * JetzyChat signs them into the chat under that id, which is the id the Jetzy app looks members up
+ * by — the portal id made a booked guest read "not a member" in the app (JetzyChat, 2026-11-27).
+ * Trusted by them only from this signed token, never the url.
+ */
+export function signChatAccess(claims: { eventId: string; email: string; canPost: boolean; jetzyUserId?: string }): { token: string; exp: number } | null {
 	const secret = String(process.env.JETZYCHAT_MEMBERS_SECRET || "").trim()
 	if (!secret || !Types.ObjectId.isValid(claims.eventId)) return null
 	const iat = Math.floor(Date.now() / 1000)
 	const exp = iat + CHAT_ACCESS_TTL_SECONDS
 	const header = b64url(JSON.stringify({ alg: "HS256", typ: "JWT" }))
-	const payload = b64url(JSON.stringify({ eventId: claims.eventId, email: claims.email, canPost: claims.canPost, iat, exp }))
+	const payload = b64url(
+		JSON.stringify({
+			eventId: claims.eventId,
+			email: claims.email,
+			canPost: claims.canPost,
+			iat,
+			exp,
+			...(claims.jetzyUserId ? { jetzyUserId: claims.jetzyUserId } : {}),
+		}),
+	)
 	const signature = b64url(crypto.createHmac("sha256", secret).update(`${header}.${payload}`).digest())
 	return { token: `${header}.${payload}.${signature}`, exp }
 }
