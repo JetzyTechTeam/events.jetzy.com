@@ -25,7 +25,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 	try {
 		const { canPost, reason } = await chatPostAllowed(session as any, eventId)
-		const signed = signChatAccess({ eventId, email: session.user.email, canPost })
+		// The viewer's MAIN Jetzy account id, so JetzyChat signs them in under the id the app uses.
+		// A lookup failure or no account just leaves it out — the token is still issued.
+		let jetzyUserId: string | undefined
+		try {
+			const { chatMemberForEmail } = await import("@/lib/event-chat-members")
+			jetzyUserId = (await chatMemberForEmail(session.user.email))?.jetzyUserId
+		} catch {}
+		const signed = signChatAccess({ eventId, email: session.user.email, canPost, jetzyUserId })
 		return res.status(200).json({
 			data: { canPost, reason, enforced: !!signed, ...(signed ? { chatAccess: signed.token, exp: signed.exp } : {}) },
 		})

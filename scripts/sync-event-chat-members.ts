@@ -3,6 +3,11 @@
  * event's JetzyChat room. See `src/lib/event-chat-members.ts`.
  *
  *   npx tsx scripts/sync-event-chat-members.ts --event <eventId | slug> [--prune] [--dry-run] [--force]
+ *   npx tsx scripts/sync-event-chat-members.ts --booking <bookingRef> [--dry-run]
+ *
+ * --booking: re-sends ONE booking's add call (host as admin + that guest, with their Jetzy app id)
+ * — the same call a confirmed booking makes. Not a backfill: no once-per-event record, no --force.
+ * Used when a guest was stored in the chat under their portal id and must move to their app id.
  *
  * ONCE PER EVENT (JetzyChat, 2026-11-26): a host can remove people inside the chat, and an add
  * call brings a removed person back — so a second full run would undo the host's removals. Each
@@ -28,16 +33,39 @@ const arg = (name: string) => {
 
 async function main() {
 	const target = (arg("event") || "").trim()
+	const bookingRef = (arg("booking") || "").trim()
 	const dryRun = process.argv.includes("--dry-run")
 	const prune = process.argv.includes("--prune")
 	const force = process.argv.includes("--force")
-	if (!target) throw new Error("Usage: --event <eventId | slug> [--dry-run]")
+	if (!target && !bookingRef) throw new Error("Usage: --event <eventId | slug> [--prune] [--dry-run] [--force]  |  --booking <bookingRef> [--dry-run]")
 
 	const { ensureDbConnected, dbconn } = await import("../src/configs/database")
 	await ensureDbConnected()
 	const runs = dbconn.collection("event-chat-backfills")
 	const { Events } = await import("../src/models/events")
 	const chat = await import("../src/lib/event-chat-members")
+
+	// ---- One booking: the same add call a confirmed booking makes (host as admin + the guest). ----
+	if (bookingRef) {
+		if (!dryRun && !chat.eventChatSyncEnabled()) throw new Error("JETZYCHAT_MEMBERS_URL and JETZYCHAT_MEMBERS_SECRET must be set (or pass --dry-run).")
+		const { Bookings } = await import("../src/models/events/bookings")
+		const booking: any = await Bookings.findOne({ bookingRef }).select("_id eventId customerEmail customerName status").lean()
+		if (!booking) throw new Error(`No booking found for "${bookingRef}"`)
+		const ev: any = await Events.findById(booking.eventId).select("name ownerId").lean()
+		if (!ev) throw new Error("The booking's event no longer exists.")
+		const [host, guest] = await Promise.all([chat.chatHostMember(ev), chat.chatMemberForEmail(booking.customerEmail, { name: booking.customerName })])
+		console.log(`Booking ${bookingRef} (${booking.status}) on "${String(ev.name).replace(/<[^>]+>/g, "")}" (${booking.eventId})`)
+		console.log(`Host (admin): ${host ? `${host.email}${host.jetzyUserId ? ` · ${host.jetzyUserId}` : " · no Jetzy account"}` : "not resolved"}`)
+		console.log(`Guest: ${guest ? `${guest.email}${guest.jetzyUserId ? ` · ${guest.jetzyUserId}` : " · no Jetzy account (sent by email)"}` : "none"}`)
+		if (dryRun) {
+			console.log("Dry run — nothing sent.")
+			return
+		}
+		const r = await chat.addMembersToEventChat(String(booking.eventId), String(ev.name).replace(/<[^>]+>/g, ""), [host, guest])
+		console.log(r.ok ? `Sent ${r.sent}.` : `FAILED ${r.failed}: ${r.error}`)
+		if (!r.ok) process.exitCode = 1
+		return
+	}
 
 	// --prune reads the chat even on a dry run, so it needs the URL + secret either way.
 	if ((!dryRun || prune) && !chat.eventChatSyncEnabled()) {
