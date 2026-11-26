@@ -157,6 +157,16 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
   // the box can be cleared completely and retyped (QA, 2026-11-27) — and so a half-typed "9" on a
   // $10 minimum never shows as the price on the card. Committed on blur / Enter.
   const [bidDrafts, setBidDrafts] = useState<Record<string, string>>({});
+  // Where the drag slider ends. There is no maximum bid (CEO, 2026-11-27) — the typed box takes
+  // any amount up to Stripe's limit — so the slider spans a range that makes dragging useful:
+  // $0.50 up to twice the higher of the normal price and the suggested bid, rounded up to a
+  // whole dollar. A bid typed above it simply pins the thumb at the end.
+  const sliderMaxFor = (id: string) => {
+    const ticket = ticketsItems.find((t) => t.id === id);
+    if (!ticket?.bid) return 0;
+    const top = Math.max(Number(ticket.price) || 0, ticket.bid.suggested) * 2;
+    return Math.max(Math.ceil(ticket.bid.min) + BID_STEP, Math.ceil(top));
+  };
   const effectiveBid = (id: string) => {
     const ticket = ticketsItems.find((t) => t.id === id);
     const value = parseFloat(bidDrafts[id] ?? "");
@@ -851,6 +861,23 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
                           if (v < ticket.bid.min) return <p className="text-xs text-[#F5C518] mb-1">The lowest bid is {formatBidMoney(ticket.bid.min)}.</p>;
                           return null;
                         })()}
+                        {/* Drag to raise or lower the bid. Its end is a convenience, not a cap —
+                            see sliderMaxFor; the box above takes any amount. */}
+                        <input
+                          type="range"
+                          min={Math.ceil(ticket.bid.min)}
+                          max={sliderMaxFor(ticket.id)}
+                          step={BID_STEP}
+                          value={Math.min(Math.max(bidFor(ticket.id), Math.ceil(ticket.bid.min)), sliderMaxFor(ticket.id))}
+                          onChange={(e) => setBid(ticket.id, Number(e.target.value))}
+                          aria-label="Drag to raise or lower your bid"
+                          className="w-full mt-1 accent-[#7DD3FC] cursor-pointer"
+                        />
+                        <div className="flex justify-between text-[11px] text-gray-400 mt-1 mb-2">
+                          <span>{formatBidMoney(Math.ceil(ticket.bid.min))}</span>
+                          <span>Suggested {formatBidMoney(ticket.bid.suggested)}</span>
+                          <span>{formatBidMoney(sliderMaxFor(ticket.id))}+</span>
+                        </div>
                         <p className="text-xs font-semibold text-[#F79432] mt-1">{BID_APPROVAL_NOTICE}</p>
                         <p className="text-xs text-[#bbbbbb] mt-1">
                           One seat per bid. Your card is held for your bid and charged only if the host accepts it. Want more seats or a different amount? Place another bid.
