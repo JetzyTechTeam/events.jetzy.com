@@ -1975,6 +1975,8 @@ from the app (§5.0); then act on them from the app **and** confirm the web show
 
 ## 18. Changelog
 
+**2026-11-28 (bid box):** the slider is removed from the bid box; guests type their bid (−/+ still step $5). UI only — checkout, bookings and limits unchanged. `TICKET_SCHEMA.md` Rev 12.
+
 **2026-11-28 (bid limits):** minimum bid is **$2.00** (`BID_MIN_FLOOR`, was $0.50) for `bidAmount` and `bidSuggested`; message "Bids start at $2.00 — please enter $2.00 or more." **At most 5 bids per person per ticket** (`BID_LIMIT_PER_TICKET`): `api/checkout` counts that email's bid bookings on the ticket — every status — and refuses the 6th with "You've placed 5 bids on this ticket — that's the most one person can place." Bid refusals return `data.bidRefused: true`. `TICKET_SCHEMA.md` Rev 11.
 
 **2026-11-28 (optional / hidden suggested bid):** `bidSuggested` is optional (`null` clears it) and new ticket field `bidShowSuggested` (no default, absent = show) hides it from guests. The admin bid email still shows a hidden suggestion. Booking and checkout behaviour unchanged — `validateBidAmount` never used the suggestion. `TICKET_SCHEMA.md` Rev 10.
