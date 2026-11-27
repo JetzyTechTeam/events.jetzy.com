@@ -1975,6 +1975,8 @@ from the app (§5.0); then act on them from the app **and** confirm the web show
 
 ## 18. Changelog
 
+**2026-11-27 (bid only):** a ticket that takes bids with `price` 0 / absent is BID ONLY — `api/checkout`, `free-events.ts` and `waiting-list/add.ts` refuse a normal (non-bid) row on it (400, "This ticket only takes bids — place a bid to book it."). Before this a $0 normal order booked it free.
+
 **2026-11-27 (bid emails):** every bid emails the ADMIN inbox (`ADMIN_NOTIFICATION_EMAIL`), on host-owned events too (the host still gets their notice). Subject `[New Bid] $X — …`, or `[Bid Raised] $A → $B — …` when the same email already has a PENDING bid on that ticket at a lower amount (the earlier bid stays its own request). Body adds Bid / Suggested bid / Normal price / Previous bid.
 
 **2026-11-27 (bids v2):** bidding is an option on a normal ticket (`TICKET_SCHEMA.md` §15, Rev 8).

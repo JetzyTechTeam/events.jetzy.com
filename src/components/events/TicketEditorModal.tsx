@@ -265,6 +265,12 @@ export default function TicketEditorModal({
 								</Box>
 								<Switch colorScheme="orange" isChecked={isBid} onChange={(e) => setAcceptsBids(e.target.checked)} />
 							</Flex>
+							{/* No normal price → bid only (`isBidOnlyTicket`): guests see "Bid", not $0.00. */}
+							{isBid && !(Number(ticket.price) > 0) && (
+								<Text fontSize="12px" color="#F79432" mt={2} fontWeight={600}>
+									Bid only: guests can only place a bid.
+								</Text>
+							)}
 						</FormControl>
 						{isBid && (
 							<FormControl mb={4} maxW={{ md: "50%" }} pr={{ md: 2 }}>

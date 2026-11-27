@@ -28,10 +28,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// A BID has no waiting list: approving an entry creates a booking with no payment, at
 		// whatever price the browser sent — and a bid's price is the guest's own (`ticket-bid.ts`).
 		// A normal entry for a ticket that also takes bids is an ordinary waiting-list entry.
+		// A BID-ONLY ticket has no waiting list either: an approved entry would be a free ticket.
 		{
-			const { isBidOrderRow } = await import("@/lib/ticket-bid")
-			if ((Array.isArray(tickets) ? tickets : []).some((t: any) => isBidOrderRow(t))) {
+			const { isBidOrderRow, isBidOnlyTicket } = await import("@/lib/ticket-bid")
+			const rows = Array.isArray(tickets) ? tickets : []
+			if (rows.some((t: any) => isBidOrderRow(t))) {
 				return sendResponse(res, null, "Bids don't have a waiting list — choose the normal price to join it.", false, ResCode.BAD_REQUEST)
+			}
+			const { Events } = await import("@/models/events")
+			const ev: any = mongoose.Types.ObjectId.isValid(eventId) ? await Events.findById(eventId).select("tickets").lean() : null
+			const ids = rows.map((t: any) => String(t?.id || t?.ticketId))
+			if ((ev?.tickets || []).some((t: any) => ids.includes(String(t._id)) && isBidOnlyTicket(t))) {
+				return sendResponse(res, null, "This ticket only takes bids, so it has no waiting list.", false, ResCode.BAD_REQUEST)
 			}
 		}
 

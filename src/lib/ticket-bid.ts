@@ -15,6 +15,10 @@
  *   `price` is the normal price. `bidMin` / `bidMax` (v1) are no longer written or read.
  *
  * WHETHER AN ORDER IS A BID is decided by the ORDER ROW (`isBidOrderRow`), never by the ticket.
+ *
+ * BID ONLY (2026-11-27): a ticket that takes bids and has NO normal price (`price` empty or 0) can
+ * only be bought with a bid. The card says "Bid" instead of $0.00, and every endpoint refuses a
+ * normal order on it (`BID_ONLY_REFUSAL`) — otherwise a $0 normal order would book it FREE.
  */
 
 export const BID_MIN_FLOOR = 0.5 // Stripe's smallest charge — and a $0 bid would have nothing to hold
@@ -38,6 +42,12 @@ const clampToBounds = (n: number) => Math.min(BID_MAX, Math.max(BID_MIN_FLOOR, n
 
 /** Does this ticket accept bids (beside its normal price)? */
 export const isBidTicket = (t: BidTicketLike): boolean => t?.pricingMode === "bid"
+
+/** Does this ticket take ONLY bids — bids on, and no normal price? */
+export const isBidOnlyTicket = (t: BidTicketLike): boolean => isBidTicket(t) && !(Number(t?.price) > 0)
+
+/** What every endpoint answers a normal (non-bid) order on a bid-only ticket. */
+export const BID_ONLY_REFUSAL = "This ticket only takes bids — place a bid to book it."
 
 /** Is this ORDER ROW a bid? Only a row the buyer sent as a bid is one. */
 export const isBidOrderRow = (row: { pricingMode?: string | null } | null | undefined): boolean => row?.pricingMode === "bid"

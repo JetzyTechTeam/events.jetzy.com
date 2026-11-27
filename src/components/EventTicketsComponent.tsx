@@ -41,7 +41,7 @@ import { useAnalytics } from "@/hooks/useAnalytics";
 import { isPreviewQuery } from "@/lib/event-preview";
 import { LOW_STOCK_THRESHOLD, notEnoughLeftMessage, remainingMessage } from "@/lib/ticket-quantity";
 import type { EventAvailability } from "@/lib/ticket-availability";
-import { BID_APPROVAL_NOTICE, BID_BUTTON_STEP, BID_SLIDER_MULTIPLE, BID_STEP, bidRange, clampBid, formatBidMoney } from "@/lib/ticket-bid";
+import { BID_APPROVAL_NOTICE, BID_BUTTON_STEP, BID_SLIDER_MULTIPLE, BID_STEP, bidRange, clampBid, formatBidMoney, isBidOnlyTicket } from "@/lib/ticket-bid";
 
 type Props = {
   event: IEvent;
@@ -139,6 +139,11 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
         // guest may bid their own amount instead, one seat per bid. Null when it takes none.
         // The server re-validates every bid.
         bid: bidRange(ticket as any),
+        // Takes ONLY bids (no normal price): the card says "Bid", never $0.00, and tapping it
+        // opens the bid box. The server refuses a normal order on it.
+        bidOnly: isBidOnlyTicket(ticket as any),
+        // The host's suggested bid as stored — `bid.suggested` falls back to the floor when unset.
+        hasSuggested: Number.isFinite(Number((ticket as any).bidSuggested)) && (ticket as any).bidSuggested !== null && (ticket as any).bidSuggested !== "",
       };
     });
 
@@ -389,6 +394,12 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
     const target = tickets.find((t) => t.id === id);
     if (!target?.bid) return;
     if (on && !target.isSelected && isSoldOutFor(id)) return;
+    // Bid only: there is no normal price to fall back to — leaving bid mode deselects it.
+    if (!on && target.bidOnly) {
+      setBidMode({});
+      setTickets((prev) => prev.map((t, index) => (t.id === id ? { ...t, isSelected: false, quantity: 0, price: ticketsItems[index].price } : t)));
+      return;
+    }
     if (!target.isSelected) reportTicketSelected(id, target.name);
     setBidMode(on ? { [id]: true } : {});
     setTickets((prev) =>
@@ -648,7 +659,9 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
                 key={ticket.id}
                 className="cursor-pointer"
                 onClick={() => {
-                  handleTicketSelection(ticket.id)
+                  // A bid-only ticket is selected BY bidding — the card opens / closes its bid box.
+                  if (ticket.bid && ticket.bidOnly) chooseBid(ticket.id, !ticket.isSelected);
+                  else handleTicketSelection(ticket.id)
                   sendGAEvent({
                     category: "Event",
                     action: "Ticket Selected",
@@ -695,17 +708,24 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
                           <p className={`font-bold text-xl sm:text-2xl whitespace-nowrap leading-snug ${ticket.isSelected ? 'text-jetzy' : 'text-white'}`}>
                             {ticket.bid && ticket.isSelected && isBidding(ticket.id)
                               ? formatBidMoney(bidFor(ticket.id))
-                              : staticTickets[index].price.toLocaleString("en-US", {
-                                  style: "currency",
-                                  currency: "usd",
-                                })}
+                              : ticket.bid && ticket.bidOnly
+                                ? "Bid"
+                                : staticTickets[index].price.toLocaleString("en-US", {
+                                    style: "currency",
+                                    currency: "usd",
+                                  })}
                           </p>
+                          {/* Bid only: no price to show, so the host's suggestion sits under "Bid". */}
+                          {ticket.bid && ticket.bidOnly && ticket.hasSuggested && !(ticket.isSelected && isBidding(ticket.id)) && (
+                            <p className="text-[11px] text-gray-400 whitespace-nowrap">Suggested {formatBidMoney(ticket.bid.suggested)}</p>
+                          )}
                         </div>
-                        {(ticket.bid && remainingFor(ticket.id) !== 0) || (canManage && onEditTicket) ? (
+                        {(ticket.bid && !ticket.bidOnly && remainingFor(ticket.id) !== 0) || (canManage && onEditTicket) ? (
                           <div className="flex items-center gap-2">
                             {/* Takes bids: name your own price instead of the one shown. A toggle —
                                 pressing it again goes back to the normal price. */}
-                            {ticket.bid && remainingFor(ticket.id) !== 0 && (
+                            {/* Not on a bid-only ticket: "Bid" already sits where the price is. */}
+                            {ticket.bid && !ticket.bidOnly && remainingFor(ticket.id) !== 0 && (
                               <button
                                 type="button"
                                 onClick={(e) => {
@@ -774,10 +794,11 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
                       </span>
                     ) : null}
 
-                    {ticket.requireApproval && !(ticket.isSelected && isBidding(ticket.id)) && (
+                    {(ticket.requireApproval || ticket.bidOnly) && !(ticket.isSelected && isBidding(ticket.id)) && (
                       <span className="inline-block mt-2 text-[10px] font-semibold uppercase tracking-wide text-[#F79432] bg-[#F79432]/15 border border-[#F79432]/40 rounded px-2 py-0.5">
                         Approval required
-                        {Number(staticTickets[index].price) > 0 && (
+                        {/* A bid-only ticket's bid is always a card hold, even at a $0 list price. */}
+                        {(Number(staticTickets[index].price) > 0 || ticket.bidOnly) && (
                           <span className="hidden sm:inline"> · card authorized, charged on approval</span>
                         )}
                       </span>
@@ -862,6 +883,7 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
                         <p className="text-xs text-[#bbbbbb] mt-1">
                           One seat per bid. Your card is held for your bid and charged only if the host accepts it. Want more seats or a different amount? Place another bid.
                         </p>
+                        {!ticket.bidOnly && (
                         <button
                           type="button"
                           onClick={() => chooseBid(ticket.id, false)}
@@ -869,6 +891,7 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
                         >
                           Pay the normal price instead ({staticTickets[index].price.toLocaleString("en-US", { style: "currency", currency: "usd" })})
                         </button>
+                        )}
                       </div>
                     )}
 

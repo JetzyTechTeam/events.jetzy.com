@@ -1222,6 +1222,11 @@ truth: `src/lib/ticket-bid.ts`.
 | `price` | Number | The ticket's **normal** price. Revision 7 tickets carry their old suggested price here. |
 | `bidMin` / `bidMax` | Number | **Retired (Revision 7 only).** May exist on stored rows; ignore them. |
 
+**Bid only:** a ticket with `pricingMode: "bid"` and `price` 0 or absent has no normal price — it
+can ONLY be bought with a bid. The web refuses a normal (non-bid) order on it everywhere, including
+the free path and the waiting list; **the app must not sell it as a free ticket** (hide it until
+bidding is supported).
+
 A ticket that takes bids sells **no membership** (`memberships: []`, no `membershipInterval` /
 `membershipFreeMonths`). No defaults on either field; preserve-on-omit on update (an absent
 `pricingMode` keeps what is stored, `"fixed"` turns bidding off).

@@ -93,7 +93,7 @@ import { stripHtml } from "@/utils/text";
 import { FiShare2, FiChevronDown, FiChevronUp, FiMoreHorizontal } from "react-icons/fi"
 import MarketingSourceTag from "@/components/bookings/MarketingSourceTag"
 import { bookingMarketingSource } from "@/lib/marketing-link"
-import { ticketBidFields } from "@/lib/ticket-bid"
+import { isBidOnlyTicket, isBidTicket, ticketBidFields } from "@/lib/ticket-bid"
 
 /**
  * Which block of the event page is in edit mode.
@@ -1054,7 +1054,11 @@ export default function HostedEvents({ event }: Props) {
 											<Badge colorScheme="orange">Approval</Badge>
 										)}
 									</Flex>
-									<Text color="#9C9C9C" fontSize="sm">${ticket.price}</Text>
+									<Text color="#9C9C9C" fontSize="sm">
+										{isBidOnlyTicket(ticket as any)
+											? `Bid only${Number.isFinite(Number((ticket as any).bidSuggested)) ? ` · suggested $${Number((ticket as any).bidSuggested)}` : ""}`
+											: `$${ticket.price}${isBidTicket(ticket as any) ? " · takes bids" : ""}`}
+									</Text>
 								</Box>
 								<Flex gap={2} flexShrink={0}>
 									<button
