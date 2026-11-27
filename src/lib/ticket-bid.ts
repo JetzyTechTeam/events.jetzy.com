@@ -113,6 +113,10 @@ export const formatBidMoney = (n: number) => n.toLocaleString("en-US", { style: 
  *  and from the server. (The minimum is Stripe's smallest charge; the guest needn't hear that.) */
 export const BID_TOO_LOW_MESSAGE = `Bids start at ${formatBidMoney(BID_MIN_FLOOR)} — please enter ${formatBidMoney(BID_MIN_FLOOR)} or more.`
 
+/** What a guest is told when their bid is over the most a card can be charged at once
+ *  (Stripe's limit — the guest needn't hear that). Shown as an error, never cut down quietly. */
+export const BID_TOO_HIGH_MESSAGE = `The highest bid is ${formatBidMoney(BID_MAX)} — please enter ${formatBidMoney(BID_MAX)} or less.`
+
 /** What a guest is told once they have placed `BID_LIMIT_PER_TICKET` bids on a ticket. */
 export const BID_LIMIT_MESSAGE = `You've placed ${BID_LIMIT_PER_TICKET} bids on this ticket — that's the most one person can place.`
 
@@ -136,7 +140,7 @@ export function validateBidAmount(t: BidTicketLike, amount: unknown): { ok: true
 	if (!Number.isFinite(a)) return { ok: false, error: "Enter your bid." }
 	if (round2(a) !== a) return { ok: false, error: "A bid can have at most 2 decimals." }
 	if (a < range.min) return { ok: false, error: BID_TOO_LOW_MESSAGE }
-	if (a > range.max) return { ok: false, error: `The highest bid is ${formatBidMoney(range.max)}.` }
+	if (a > range.max) return { ok: false, error: BID_TOO_HIGH_MESSAGE }
 	return { ok: true, amount: a, cents: Math.round(a * 100) }
 }
 

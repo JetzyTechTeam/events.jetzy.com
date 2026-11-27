@@ -5,7 +5,9 @@ For the mobile app / backend, which writes to the same `events` collection this 
 **Revision 12 (2026-11-28).** The bid box has **no slider** any more (CEO). The guest types
 their bid in the amount box, under "Name your price", and `−` / `+` still move it by $5. Nothing
 about the data or the checkout changed. See §15.2. `BID_STEP`, `BID_SLIDER_MULTIPLE` and
-`bidSliderReference` are still in §15.6, but no screen uses them now.
+`bidSliderReference` are still in §15.6, but no screen uses them now. **Over $999,999.99 is an
+error too**, never cut down quietly: *"The highest bid is $999,999.99 — please enter $999,999.99 or
+less."* (`BID_TOO_HIGH_MESSAGE`, which the server returns too).
 
 **Revision 11 (2026-11-28).** Two limits on bids. **The minimum bid is $2.00** (was $0.50,
 Stripe's floor) — for `bidAmount` and for `bidSuggested`; a stored suggestion under $2 is treated
@@ -1323,6 +1325,9 @@ Three kinds of ticket:
      *"Bids start at $2.00 — please enter $2.00 or more."* (`BID_TOO_LOW_MESSAGE`; the server
      returns the same text). The typed value is kept so the guest can fix it, the last valid bid
      stays in place, and "Place bid" stops with that message. Never mention Stripe to the guest.
+   - **Over $999,999.99 (the most a card can be charged at once): same treatment** — red outline,
+     *"The highest bid is $999,999.99 — please enter $999,999.99 or less."* (`BID_TOO_HIGH_MESSAGE`),
+     the typed value is kept, "Place bid" stops. Never cut a bid down quietly.
 3. In orange, always: **"Bids need host approval — bids that are too low may not be approved."**
    (`BID_APPROVAL_NOTICE`)
 4. *"One seat per bid. Your card is held for your bid and charged only if the host accepts it.
@@ -1486,6 +1491,10 @@ export const formatBidMoney = (n: number) => n.toLocaleString("en-US", { style: 
  *  and from the server. (The minimum is Stripe's smallest charge; the guest needn't hear that.) */
 export const BID_TOO_LOW_MESSAGE = `Bids start at ${formatBidMoney(BID_MIN_FLOOR)} — please enter ${formatBidMoney(BID_MIN_FLOOR)} or more.`
 
+/** What a guest is told when their bid is over the most a card can be charged at once
+ *  (Stripe's limit — the guest needn't hear that). Shown as an error, never cut down quietly. */
+export const BID_TOO_HIGH_MESSAGE = `The highest bid is ${formatBidMoney(BID_MAX)} — please enter ${formatBidMoney(BID_MAX)} or less.`
+
 /** What a guest is told once they have placed `BID_LIMIT_PER_TICKET` bids on a ticket. */
 export const BID_LIMIT_MESSAGE = `You've placed ${BID_LIMIT_PER_TICKET} bids on this ticket — that's the most one person can place.`
 
@@ -1509,7 +1518,7 @@ export function validateBidAmount(t: BidTicketLike, amount: unknown): { ok: true
 	if (!Number.isFinite(a)) return { ok: false, error: "Enter your bid." }
 	if (round2(a) !== a) return { ok: false, error: "A bid can have at most 2 decimals." }
 	if (a < range.min) return { ok: false, error: BID_TOO_LOW_MESSAGE }
-	if (a > range.max) return { ok: false, error: `The highest bid is ${formatBidMoney(range.max)}.` }
+	if (a > range.max) return { ok: false, error: BID_TOO_HIGH_MESSAGE }
 	return { ok: true, amount: a, cents: Math.round(a * 100) }
 }
 
