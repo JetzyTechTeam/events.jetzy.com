@@ -1,6 +1,6 @@
 // Next.js API route support: https://nextjs.org/docs/api-routes/introduction
 import { generateRandomId, sendResponse } from "@Jetzy/lib/helpers"
-import { bidSuggestedProblem } from "@/lib/ticket-bid"
+import { bidSuggestedProblem, ticketBidFields } from "@/lib/ticket-bid"
 import { ResCode } from "@Jetzy/lib/responseCodes"
 import type { NextApiRequest, NextApiResponse } from "next"
 import { Events } from "@/models/events"
@@ -141,7 +141,9 @@ const schema = zod.object({
 			pricingMode: zod.enum(["bid", "fixed"]).optional(),
 			bidMin: zod.number().optional(),
 			bidMax: zod.number().optional(),
-			bidSuggested: zod.number().optional(),
+			// Optional, and `null` CLEARS it (absent = unchanged).
+			bidSuggested: zod.number().nullable().optional(),
+			bidShowSuggested: zod.boolean().optional(),
 		}).superRefine((t, ctx) => {
 			if (t.pricingMode !== "bid") return
 			const problem = bidSuggestedProblem(t.bidSuggested)
@@ -351,7 +353,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					? { membershipFreeMonths: ticketMembershipFreeMonths(ticket as any) }
 					: {}),
 				includesPremium: ticketMemberships(ticket as any).includes("premium"),
-				...((ticket as any).pricingMode === "bid" ? { pricingMode: "bid", bidSuggested: Number((ticket as any).bidSuggested) } : {}),
+				// Takes bids: the suggestion only when set, the visibility only when hidden.
+				...((ticket as any).pricingMode === "bid" ? { pricingMode: "bid", ...ticketBidFields(ticket as any) } : {}),
 			})),
 			benefits,
 			locationDisclosedAfterBooking: locationDisclosedAfterBooking ?? false,

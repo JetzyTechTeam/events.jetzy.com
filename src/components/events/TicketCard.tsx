@@ -44,7 +44,10 @@ export type TicketData = {
    * its normal `price`, around `bidSuggested`; "fixed" turns bidding off; absent = unchanged.
    */
   pricingMode?: "bid" | "fixed"
-  bidSuggested?: number
+  /** Optional. `null` = the host cleared it (sent so the server clears the stored one). */
+  bidSuggested?: number | null
+  /** `false` hides the suggestion from guests. Absent = show. */
+  bidShowSuggested?: boolean
 }
 
 export interface TicketCardProps {

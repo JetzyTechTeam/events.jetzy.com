@@ -2,6 +2,14 @@
 
 For the mobile app / backend, which writes to the same `events` collection this portal does.
 
+**Revision 10 (2026-11-28).** The suggested bid is now **OPTIONAL**, and new field
+**`bidShowSuggested`** (Boolean, no default — absent = show) lets the host hide it from guests. A
+hidden suggestion is never shown to a guest, nor used as the bid's starting amount or the slider's
+end. With nothing visible, a priced ticket's bid starts at its normal price and a bid-only ticket's
+bid box starts EMPTY. `bidSuggested: null` on a write CLEARS it. §15, §15.1, §15.2, §15.4 and the
+helper code (§15.6: `bidSuggestedValue`, `bidSuggestedVisible`, `bidStartAmount`,
+`bidSliderReference`) are updated.
+
 **Revision 9 (2026-11-28).** No schema change. §15 now also specifies **how the app must look
 and behave** so it matches the web: the host editor (§15.1), the guest ticket card and bid box
 (§15.2), the order + Stripe session (§15.3), the booking and notifications (§15.4), the host's
@@ -1224,7 +1232,8 @@ truth: `src/lib/ticket-bid.ts`.
 | Field | Type | Rule |
 |---|---|---|
 | `pricingMode` | `"bid"` \| absent | `"bid"` = this ticket also takes bids. Absent = no bids (every ticket before this). |
-| `bidSuggested` | Number | The suggested bid shown to a guest who chooses to bid. `>= 0.50`, `<= 999999.99`, at most 2 decimals. |
+| `bidSuggested` | Number | **Optional** (Rev 10). The host's suggested bid: `>= 0.50`, `<= 999999.99`, at most 2 decimals. On a write: a number sets it, `null` clears it, absent leaves it unchanged. |
+| `bidShowSuggested` | Boolean | **Optional, no default** (Rev 10). `false` = guests never see the suggestion (the host and the admin bid emails still do). Absent = show. Preserve-on-omit. |
 | `price` | Number | The ticket's **normal** price. Revision 7 tickets carry their old suggested price here. |
 | `bidMin` / `bidMax` | Number | **Retired (Revision 7 only).** May exist on stored rows; ignore them. |
 
@@ -1253,9 +1262,13 @@ current `price`.
 - Under it, a switch **"Let guests bid on this ticket"** with the help text: *"Guests can pay the
   price above, or name their own price. Bids always come to you for approval — the card is held for
   the bid and charged only if you accept."*
-- Switch ON shows one field, **"Suggested bid (USD)"**, defaulting to the price when that is
-  `>= 0.50`, else `10`. Validate with `bidSuggestedProblem` (§15.6). Help text under it: *"Shown to a
-  guest who chooses to bid. Guests are told bids that are too low may not be approved."*
+- Switch ON shows **"Suggested bid (USD) — optional"**, empty by default (placeholder "Optional").
+  Validate with `bidSuggestedProblem` (§15.6) only when a value is entered; blank is fine and is
+  saved as `bidSuggested: null`. Help text: *"A starting point for guests. Leave blank for none.
+  Guests are told bids that are too low may not be approved."*
+- Only when a suggestion is entered: a switch **"Show suggested price to guests"** (default ON →
+  `bidShowSuggested` absent / `true`; OFF → `false`). Help text when OFF: *"Only you see it (it's in
+  your bid emails). Guests start from the ticket price, or an empty box on a bid-only ticket."*
 - Switch ON with price 0 / empty shows, in orange: **"Bid only: guests can only place a bid."**
 - Switch ON hides the Membership section and clears `memberships` (a ticket that takes bids sells
   none). **Require Approval stays editable** — it governs NORMAL purchases only; its help text adds
@@ -1273,7 +1286,7 @@ Three kinds of ticket:
 |---|---|---|
 | No bids (`pricingMode` absent) | the price, e.g. **$50.00** | — (unchanged) |
 | Price + bids (`isBidTicket`, price > 0) | **$50.00** | a blue **Bid** pill beside it |
-| Bid only (`isBidOnlyTicket`) | *(nothing — no $0.00, ever)* | the blue **Bid** pill, with grey **"Suggested $20.00"** under it (only when `bidSuggested` is set) |
+| Bid only (`isBidOnlyTicket`) | *(nothing — no $0.00, ever)* | the blue **Bid** pill, with grey **"Suggested $20.00"** under it (only when `bidSuggestedVisible` is not null) |
 
 - **Bid pill**: outlined light blue (`#7DD3FC`), text only, no icon. Tapping it enters **bid mode**:
   the ticket is selected for **one seat**, the pill turns solid blue and reads **"Bidding"**, and the
@@ -1288,15 +1301,16 @@ Three kinds of ticket:
 
 **The bid box** — opens directly under the ticket name/price, **above** the description:
 
-1. Header **"Name your price"** with a chip **"Suggested $X"**.
+1. Header **"Name your price"** with a chip **"Suggested $X"** — only when `bidSuggestedVisible`.
 2. **Your bid**: a `−` button, an amount box, a `+` button.
    - `−` / `+` move the bid by **$5** (`BID_BUTTON_STEP`); `−` stops at $0.50, `+` at the max.
    - The amount box accepts any amount with up to 2 decimals. It can be cleared and retyped; the
      typed value is applied on blur / Enter, clamped with `clampBid` (below $0.50 → $0.50). While
      the typed value is under $0.50 show *"The lowest bid is $0.50."*
-3. A **slider**: from **$1** (`ceil(min)`) to **10× the higher of the normal price and the
-   suggested bid**, rounded up to a whole dollar (`BID_SLIDER_MULTIPLE`), step **$1**. Labels under
-   it: `$1.00 · Suggested $X · $<end>+`. The end is NOT a cap — a typed bid above it is valid and the
+3. A **slider**: from **$1** (`ceil(min)`) to **10× `bidSliderReference`** (the higher of the
+   normal price and the VISIBLE suggestion; **$100** when there is neither), rounded up to a whole
+   dollar (`BID_SLIDER_MULTIPLE`), step **$1**. Labels under it: `$1.00 · Suggested $X · $<end>+`
+   (the middle label only when the suggestion is visible). The end is NOT a cap — a typed bid above it is valid and the
    thumb just sits at the end.
 4. In orange, always: **"Bids need host approval — bids that are too low may not be approved."**
    (`BID_APPROVAL_NOTICE`)
@@ -1304,7 +1318,11 @@ Three kinds of ticket:
    Want more seats or a different amount? Place another bid."*
 6. On a priced ticket only: a link **"Pay the normal price instead ($50.00)"**.
 
-The bid starts at the suggested bid. All three controls change the same value. The checkout
+**Where the bid starts — `bidStartAmount`:** the visible suggestion, else the normal price, else
+**empty** (a bid-only ticket with nothing visible): the amount box shows the placeholder *"Enter
+your bid"*, the price spot shows "—", `−` is disabled, `+` starts at $5, the slider thumb sits at
+the start, and "Place bid" stops with *"Enter your bid"* until an amount is entered. A hidden
+suggestion must never leak through any of these. All three controls change the same value. The checkout
 button reads **"Place bid"**. In the checkout screen: the referral-code field is hidden, the total
 row reads "Your bid", and the hold text is *"Your card will be held for your bid of $X. You're
 charged only if the host accepts your bid; otherwise the hold is released automatically within 7
@@ -1376,6 +1394,7 @@ export const BID_APPROVAL_NOTICE = "Bids need host approval — bids that are to
 export type BidTicketLike = {
 	pricingMode?: string | null
 	bidSuggested?: number | string | null
+	bidShowSuggested?: boolean | null
 	price?: number | string | null
 } | null | undefined
 
@@ -1395,24 +1414,57 @@ export const BID_ONLY_REFUSAL = "This ticket only takes bids — place a bid to 
 /** Is this ORDER ROW a bid? Only a row the buyer sent as a bid is one. */
 export const isBidOrderRow = (row: { pricingMode?: string | null } | null | undefined): boolean => row?.pricingMode === "bid"
 
+/** The host's suggested bid as stored, when it is a valid one — whether or not guests see it. */
+export function bidSuggestedValue(t: BidTicketLike): number | null {
+	if (!isBidTicket(t)) return null
+	const s = num(t!.bidSuggested)
+	return Number.isFinite(s) && s >= BID_MIN_FLOOR && s <= BID_MAX ? round2(s) : null
+}
+
+/** The suggested bid a GUEST may see: null when there is none or the host hid it. */
+export const bidSuggestedVisible = (t: BidTicketLike): number | null => (t?.bidShowSuggested === false ? null : bidSuggestedValue(t))
+
 /**
- * What a bid on this ticket may be: Stripe's bounds, and the host's suggested price (falling back
- * to the ticket price, then the floor — always inside the bounds). Null when it takes no bids.
+ * Where a guest's bid starts: the visible suggestion, else the normal price, else null — an empty
+ * box (a bid-only ticket with nothing to show). Never a hidden suggestion.
+ */
+export function bidStartAmount(t: BidTicketLike): number | null {
+	if (!isBidTicket(t)) return null
+	const visible = bidSuggestedVisible(t)
+	if (visible !== null) return visible
+	const p = num(t!.price)
+	return Number.isFinite(p) && p > 0 ? round2(clampToBounds(p)) : null
+}
+
+/**
+ * What the slider's end is measured from: the higher of the normal price and the VISIBLE
+ * suggestion. Null when neither exists (the UI then uses a fixed range).
+ */
+export function bidSliderReference(t: BidTicketLike): number | null {
+	if (!isBidTicket(t)) return null
+	const p = num(t!.price)
+	const top = Math.max(Number.isFinite(p) && p > 0 ? p : 0, bidSuggestedVisible(t) ?? 0)
+	return top > 0 ? top : null
+}
+
+/**
+ * What a bid on this ticket may be: Stripe's bounds. `suggested` is where a bid starts
+ * (`bidStartAmount`, the floor when the box starts empty) — used for clamping only.
+ * Null when it takes no bids.
  */
 export function bidRange(t: BidTicketLike): { min: number; max: number; suggested: number } | null {
 	if (!isBidTicket(t)) return null
-	const s = num(t!.bidSuggested)
-	const p = num(t!.price)
-	const suggested = Number.isFinite(s) ? s : Number.isFinite(p) && p > 0 ? p : BID_MIN_FLOOR
-	return { min: BID_MIN_FLOOR, max: BID_MAX, suggested: round2(clampToBounds(suggested)) }
+	return { min: BID_MIN_FLOOR, max: BID_MAX, suggested: bidStartAmount(t) ?? BID_MIN_FLOOR }
 }
 
 export const formatBidMoney = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "usd" })
 
-/** Host side: is this a valid suggested bid? Returns the problem, or null. */
+/** Host side: is this a valid suggested bid? Returns the problem, or null. The suggestion is
+ *  OPTIONAL — blank / null is fine; only a value that is set is checked. */
 export function bidSuggestedProblem(value: unknown): string | null {
 	const v = num(value)
-	if (!Number.isFinite(v)) return "Set a suggested bid."
+	if (value === null || value === undefined || value === "") return null
+	if (!Number.isFinite(v)) return "Enter a valid suggested bid."
 	if (v < BID_MIN_FLOOR) return `The suggested bid must be at least ${formatBidMoney(BID_MIN_FLOOR)}.`
 	if (v > BID_MAX) return `The suggested bid can't be more than ${formatBidMoney(BID_MAX)}.`
 	if (round2(v) !== v) return "The suggested bid can have at most 2 decimals."
@@ -1449,7 +1501,18 @@ export function bookingUnitPrice(booking: { bidAmount?: number | null } | null |
 	return Number(ticket?.price) || 0
 }
 
-/** The bid fields to carry when a ticket is mapped into a form (every ticket surface uses this). */
-export const ticketBidFields = (t: BidTicketLike): { pricingMode?: "bid"; bidSuggested?: number } =>
-	isBidTicket(t) ? { pricingMode: "bid", bidSuggested: bidRange(t)!.suggested } : {}
+/**
+ * The bid fields to carry when a stored ticket is mapped into a form or copied (every ticket
+ * surface uses this). Only what is SET: no suggestion → no key; shown → no key (absent = show).
+ * A form that CLEARS a suggestion sends `bidSuggested: null` itself — this never invents one.
+ */
+export const ticketBidFields = (t: BidTicketLike): { pricingMode?: "bid"; bidSuggested?: number; bidShowSuggested?: false } => {
+	if (!isBidTicket(t)) return {}
+	const suggested = bidSuggestedValue(t)
+	return {
+		pricingMode: "bid",
+		...(suggested !== null ? { bidSuggested: suggested } : {}),
+		...(t?.bidShowSuggested === false ? { bidShowSuggested: false as const } : {}),
+	}
+}
 ```

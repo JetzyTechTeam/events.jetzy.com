@@ -26,6 +26,8 @@
  * as a raised (or new) bid naming the previous amount (`resolveBidNotice`).
  */
 
+import { bidSuggestedValue } from "@/lib/ticket-bid"
+
 type NotifiableEvent = { _id: any; ownerId?: any; name: string; slug?: string }
 
 type TicketRow = { name: string; quantity: number; price?: number }
@@ -48,7 +50,8 @@ export async function resolveBidNotice(booking: any, event: any): Promise<BidNot
 	const stored: any = (event?.tickets || []).find((t: any) => String(t?._id) === String(ticketId))
 	const notice: BidNotice = {
 		amount,
-		...(stored && Number.isFinite(Number(stored.bidSuggested)) ? { suggested: Number(stored.bidSuggested) } : {}),
+		// The host's suggestion even when hidden from guests — this email goes to the host / admin.
+		...(stored && bidSuggestedValue(stored) !== null ? { suggested: bidSuggestedValue(stored)! } : {}),
 		...(stored && Number.isFinite(Number(stored.price)) ? { normalPrice: Number(stored.price) } : {}),
 	}
 	try {

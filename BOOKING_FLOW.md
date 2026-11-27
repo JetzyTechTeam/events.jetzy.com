@@ -1975,6 +1975,8 @@ from the app (§5.0); then act on them from the app **and** confirm the web show
 
 ## 18. Changelog
 
+**2026-11-28 (optional / hidden suggested bid):** `bidSuggested` is optional (`null` clears it) and new ticket field `bidShowSuggested` (no default, absent = show) hides it from guests. The admin bid email still shows a hidden suggestion. Booking and checkout behaviour unchanged — `validateBidAmount` never used the suggestion. `TICKET_SCHEMA.md` Rev 10.
+
 **2026-11-28 (bids — app parity spec):** `TICKET_SCHEMA.md` Revision 9 adds §15.1–15.6: the host editor, the guest card + bid box (Bid pill, $5 −/+, slider to 10× price, `BID_APPROVAL_NOTICE`), the exact bid Checkout Session, booking + emails, Approvals, and `ticket-bid.ts` to port verbatim. No behaviour change.
 
 **2026-11-27 (bid only):** a ticket that takes bids with `price` 0 / absent is BID ONLY — `api/checkout`, `free-events.ts` and `waiting-list/add.ts` refuse a normal (non-bid) row on it (400, "This ticket only takes bids — place a bid to book it."). Before this a $0 normal order booked it free.

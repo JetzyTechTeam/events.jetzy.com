@@ -107,14 +107,16 @@ export default function TicketEditorModal({
 	const isBid = ticket.pricingMode === "bid"
 	const setAcceptsBids = (on: boolean) => {
 		if (on && !isBid) {
-			const start = Number(ticket.price) >= BID_MIN_FLOOR ? Number(ticket.price) : 10
-			// A ticket that takes bids sells no membership — a bid order never carries one.
-			onTicketChange({ ...ticket, pricingMode: "bid", bidSuggested: ticket.bidSuggested ?? start, memberships: [], includesPremium: false } as any)
+			// The suggestion is OPTIONAL — nothing is pre-filled. A ticket that takes bids sells no
+			// membership — a bid order never carries one.
+			onTicketChange({ ...ticket, pricingMode: "bid", memberships: [], includesPremium: false } as any)
 		} else if (!on && isBid) {
 			onTicketChange({ ...ticket, pricingMode: "fixed" })
 		}
 	}
-	const bidProblem = isBid ? bidSuggestedProblem(ticket.bidSuggested) : null
+	// The suggestion is optional: only a value that is entered is checked.
+	const hasSuggested = typeof ticket.bidSuggested === "number" && Number.isFinite(ticket.bidSuggested)
+	const bidProblem = isBid && hasSuggested ? bidSuggestedProblem(ticket.bidSuggested) : null
 
 	const save = () => {
 		// Only the title is required — description is optional server-side (zod `.optional()`),
@@ -140,7 +142,8 @@ export default function TicketEditorModal({
 			title: ticket.title.trim(),
 			price: Number.isFinite(ticket.price) ? ticket.price : 0,
 			// A ticket that takes bids sells no membership.
-			...(isBid ? { pricingMode: "bid" as const, bidSuggested: Number(ticket.bidSuggested), memberships: [], includesPremium: false } : {}),
+			// An empty suggestion is sent as `null` so a cleared one is cleared on the server.
+			...(isBid ? { pricingMode: "bid" as const, bidSuggested: hasSuggested ? Number(ticket.bidSuggested) : null, memberships: [], includesPremium: false } : {}),
 		})
 	}
 
@@ -274,7 +277,12 @@ export default function TicketEditorModal({
 						</FormControl>
 						{isBid && (
 							<FormControl mb={4} maxW={{ md: "50%" }} pr={{ md: 2 }}>
-								<FormLabel>Suggested bid (USD)</FormLabel>
+								<FormLabel>
+									Suggested bid (USD){" "}
+									<Text as="span" color="#868686" fontWeight={400}>
+										— optional
+									</Text>
+								</FormLabel>
 								<Input
 									type="number"
 									onWheel={blurOnWheel}
@@ -284,14 +292,35 @@ export default function TicketEditorModal({
 									bg="#090C10"
 									border="1px solid #444"
 									{...ticketField}
-									value={Number.isFinite(ticket.bidSuggested as number) ? (ticket.bidSuggested as number) : ""}
+									placeholder="Optional"
+									value={hasSuggested ? (ticket.bidSuggested as number) : ""}
 									onChange={(e) =>
-										onTicketChange({ ...ticket, bidSuggested: e.target.value === "" ? (undefined as unknown as number) : Math.max(0, parseFloat(e.target.value)) })
+										onTicketChange({ ...ticket, bidSuggested: e.target.value === "" ? null : Math.max(0, parseFloat(e.target.value)) })
 									}
 								/>
 								<Text fontSize="12px" color={bidProblem ? "#FC8181" : "#868686"} mt={1} lineHeight="140%">
-									{bidProblem || "Shown to a guest who chooses to bid. Guests are told bids that are too low may not be approved."}
+									{bidProblem || "A starting point for guests. Leave blank for none. Guests are told bids that are too low may not be approved."}
 								</Text>
+							</FormControl>
+						)}
+						{/* Only meaningful once a suggestion exists. Absent = show (every older ticket). */}
+						{isBid && hasSuggested && (
+							<FormControl mb={4}>
+								<Flex align="center" justify="space-between" gap={4}>
+									<Box>
+										<FormLabel mb={0}>Show suggested price to guests</FormLabel>
+										<Text fontSize="12px" color="#868686" mt={1} lineHeight="140%">
+											{ticket.bidShowSuggested === false
+												? "Only you see it (it's in your bid emails). Guests start from the ticket price, or an empty box on a bid-only ticket."
+												: "Guests see it in the bid box, and the bid starts there."}
+										</Text>
+									</Box>
+									<Switch
+										colorScheme="orange"
+										isChecked={ticket.bidShowSuggested !== false}
+										onChange={(e) => onTicketChange({ ...ticket, bidShowSuggested: e.target.checked })}
+									/>
+								</Flex>
 							</FormControl>
 						)}
 					</Box>
