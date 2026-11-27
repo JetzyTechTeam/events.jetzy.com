@@ -41,7 +41,7 @@ import { useAnalytics } from "@/hooks/useAnalytics";
 import { isPreviewQuery } from "@/lib/event-preview";
 import { LOW_STOCK_THRESHOLD, notEnoughLeftMessage, remainingMessage } from "@/lib/ticket-quantity";
 import type { EventAvailability } from "@/lib/ticket-availability";
-import { BID_APPROVAL_NOTICE, BID_BUTTON_STEP, BID_SLIDER_MULTIPLE, BID_STEP, bidRange, clampBid, formatBidMoney, isBidOnlyTicket, BID_TOO_LOW_MESSAGE, BID_LIMIT_PER_TICKET, bidStartAmount, bidSliderReference, bidSuggestedVisible } from "@/lib/ticket-bid";
+import { BID_APPROVAL_NOTICE, BID_BUTTON_STEP, bidRange, clampBid, formatBidMoney, isBidOnlyTicket, BID_TOO_LOW_MESSAGE, BID_LIMIT_PER_TICKET, bidStartAmount, bidSuggestedVisible } from "@/lib/ticket-bid";
 
 type Props = {
   event: IEvent;
@@ -143,12 +143,10 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
         // opens the bid box. The server refuses a normal order on it.
         bidOnly: isBidOnlyTicket(ticket as any),
         // The suggested bid a guest may SEE — null when none is set or the host hid it. A hidden
-        // suggestion is never shown, nor used as the starting amount or the slider's end.
+        // suggestion is never shown, nor used as the starting amount.
         bidVisibleSuggested: bidSuggestedVisible(ticket as any),
         // Where the bid starts: visible suggestion → normal price → null (an empty box).
         bidStart: bidStartAmount(ticket as any),
-        // What the slider's end is measured from (null → a fixed $1–$100 range).
-        sliderRef: bidSliderReference(ticket as any),
       };
     });
 
@@ -170,17 +168,6 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
   // the box can be cleared completely and retyped (QA, 2026-11-27) — and so a half-typed "9" on a
   // $10 minimum never shows as the price on the card. Committed on blur / Enter.
   const [bidDrafts, setBidDrafts] = useState<Record<string, string>>({});
-  // Where the drag slider ends. There is no maximum bid (CEO, 2026-11-27) — the typed box takes
-  // any amount up to Stripe's limit — so the slider spans a range that makes dragging useful:
-  // $1 up to BID_SLIDER_MULTIPLE (10×) the higher of the normal price and the suggested bid,
-  // rounded up to a whole dollar. A bid typed above it simply pins the thumb at the end.
-  const sliderMaxFor = (id: string) => {
-    const ticket = ticketsItems.find((t) => t.id === id);
-    if (!ticket?.bid) return 0;
-    // Never measured from a hidden suggestion. Nothing to measure from → $1–$100.
-    const top = ticket.sliderRef !== null ? ticket.sliderRef * BID_SLIDER_MULTIPLE : 100;
-    return Math.max(Math.ceil(ticket.bid.min) + BID_STEP, Math.ceil(top));
-  };
   const effectiveBid = (id: string): number | null => {
     const ticket = ticketsItems.find((t) => t.id === id);
     const value = parseFloat(bidDrafts[id] ?? "");
@@ -230,7 +217,7 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
     if (!ticket?.bid) return;
     const amount = clampBid({ pricingMode: "bid", bidSuggested: ticket.bid.suggested }, raw);
     setBidAmounts((prev) => ({ ...prev, [id]: amount }));
-    // The slider / − + win over anything half-typed in the box.
+    // − / + win over anything half-typed in the box.
     setBidDrafts((prev) => {
       if (prev[id] === undefined) return prev;
       const next = { ...prev };
@@ -894,9 +881,8 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
                             </span>
                           )}
                         </div>
-                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3 mb-2">
-                          <span className="text-sm text-[#bbbbbb]">Your bid</span>
-                          <div className="flex items-center gap-2 w-full sm:w-auto">
+                        <div className="mb-2">
+                          <div className="flex items-center gap-2 w-full">
                             <button
                               aria-label="Lower bid"
                               onClick={() => setBid(ticket.id, (bidFor(ticket.id) ?? 0) - BID_BUTTON_STEP)}
@@ -905,7 +891,7 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
                             >
                               -
                             </button>
-                            <div className={`flex flex-1 sm:flex-none min-w-0 items-center bg-black rounded-full px-3 h-9 ${draftTooLow(ticket.id) ? "ring-1 ring-red-400" : ""}`}>
+                            <div className={`flex flex-1 min-w-0 items-center bg-black rounded-full px-3 h-9 ${draftTooLow(ticket.id) ? "ring-1 ring-red-400" : ""}`}>
                               <span className="text-gray-400 mr-1">$</span>
                               <input
                                 type="number"
@@ -920,7 +906,7 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
                                   if (e.key === "Enter") (e.target as HTMLInputElement).blur();
                                 }}
                                 aria-label="Your bid in dollars"
-                                className="w-full sm:w-20 min-w-0 bg-transparent text-white text-base font-semibold outline-none"
+                                className="w-full min-w-0 bg-transparent text-white text-base font-semibold outline-none"
                               />
                             </div>
                             <button
@@ -936,23 +922,6 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
                         {draftTooLow(ticket.id) && (
                           <p role="alert" className="text-xs text-red-400 mb-1">{BID_TOO_LOW_MESSAGE}</p>
                         )}
-                        {/* Drag to raise or lower the bid. Its end is a convenience, not a cap —
-                            see sliderMaxFor; the box above takes any amount. */}
-                        <input
-                          type="range"
-                          min={Math.ceil(ticket.bid.min)}
-                          max={sliderMaxFor(ticket.id)}
-                          step={BID_STEP}
-                          value={Math.min(Math.max(bidFor(ticket.id) ?? Math.ceil(ticket.bid.min), Math.ceil(ticket.bid.min)), sliderMaxFor(ticket.id))}
-                          onChange={(e) => setBid(ticket.id, Number(e.target.value))}
-                          aria-label="Drag to raise or lower your bid"
-                          className="w-full mt-1 accent-[#7DD3FC] cursor-pointer"
-                        />
-                        <div className="flex justify-between text-[11px] text-gray-400 mt-1 mb-2">
-                          <span>{formatBidMoney(Math.ceil(ticket.bid.min))}</span>
-                          {ticket.bidVisibleSuggested !== null && <span>Suggested {formatBidMoney(ticket.bidVisibleSuggested)}</span>}
-                          <span>{formatBidMoney(sliderMaxFor(ticket.id))}+</span>
-                        </div>
                         <p className="text-xs font-semibold text-[#F79432] mt-1">{BID_APPROVAL_NOTICE}</p>
                         <p className="text-xs text-[#bbbbbb] mt-1">
                           One seat per bid. Your card is held for your bid and charged only if the host accepts it. Want more seats or a different amount? Place another bid.

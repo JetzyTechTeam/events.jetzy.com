@@ -2,6 +2,11 @@
 
 For the mobile app / backend, which writes to the same `events` collection this portal does.
 
+**Revision 12 (2026-11-28).** The bid box has **no slider** any more (CEO). The guest types
+their bid in the amount box, under "Name your price", and `−` / `+` still move it by $5. Nothing
+about the data or the checkout changed. See §15.2. `BID_STEP`, `BID_SLIDER_MULTIPLE` and
+`bidSliderReference` are still in §15.6, but no screen uses them now.
+
 **Revision 11 (2026-11-28).** Two limits on bids. **The minimum bid is $2.00** (was $0.50,
 Stripe's floor) — for `bidAmount` and for `bidSuggested`; a stored suggestion under $2 is treated
 as no suggestion. **At most 5 bids per person per ticket** (`BID_LIMIT_PER_TICKET`), by checkout
@@ -1308,7 +1313,8 @@ Three kinds of ticket:
 **The bid box** — opens directly under the ticket name/price, **above** the description:
 
 1. Header **"Name your price"** with a chip **"Suggested $X"** — only when `bidSuggestedVisible`.
-2. **Your bid**: a `−` button, an amount box, a `+` button.
+2. Directly under the header, full width: a `−` button, the amount box, a `+` button (Rev 12: no
+   separate "Your bid" label).
    - `−` / `+` move the bid by **$5** (`BID_BUTTON_STEP`); `−` stops at $2.00, `+` at the max.
    - The amount box accepts any amount with up to 2 decimals. It can be cleared and retyped. Every
      keystroke that forms a VALID amount ($2.00 – $999,999.99) becomes the bid at once — the price
@@ -1317,23 +1323,17 @@ Three kinds of ticket:
      *"Bids start at $2.00 — please enter $2.00 or more."* (`BID_TOO_LOW_MESSAGE`; the server
      returns the same text). The typed value is kept so the guest can fix it, the last valid bid
      stays in place, and "Place bid" stops with that message. Never mention Stripe to the guest.
-3. A **slider**: from **$1** (`ceil(min)`) to **10× `bidSliderReference`** (the higher of the
-   normal price and the VISIBLE suggestion; **$100** when there is neither), rounded up to a whole
-   dollar (`BID_SLIDER_MULTIPLE`), step **$1**. Labels under it: `$1.00 · Suggested $X · $<end>+`
-   (the middle label only when the suggestion is visible). The end is NOT a cap — a typed bid above it is valid and the
-   thumb just sits at the end.
-4. In orange, always: **"Bids need host approval — bids that are too low may not be approved."**
+3. In orange, always: **"Bids need host approval — bids that are too low may not be approved."**
    (`BID_APPROVAL_NOTICE`)
-5. *"One seat per bid. Your card is held for your bid and charged only if the host accepts it.
+4. *"One seat per bid. Your card is held for your bid and charged only if the host accepts it.
    Want more seats or a different amount? Place another bid."* and under it *"Up to 5 bids per
    person on this ticket."*
-6. On a priced ticket only: a link **"Pay the normal price instead ($50.00)"**.
+5. On a priced ticket only: a link **"Pay the normal price instead ($50.00)"**.
 
 **Where the bid starts — `bidStartAmount`:** the visible suggestion, else the normal price, else
 **empty** (a bid-only ticket with nothing visible): the amount box shows the placeholder *"Enter
-your bid"*, the price spot shows "—", `−` is disabled, `+` starts at $5, the slider thumb sits at
-the start, and "Place bid" stops with *"Enter your bid"* until an amount is entered. A hidden
-suggestion must never leak through any of these. All three controls change the same value. The checkout
+your bid"*, the price spot shows "—", `−` is disabled, `+` starts at $5, and "Place bid" stops with *"Enter your bid"* until an amount is entered. A hidden
+suggestion must never leak through any of these. The box and `−` / `+` change the same value. The checkout
 button reads **"Place bid"**. In the checkout screen: the referral-code field is hidden, the total
 row reads "Your bid", and the hold text is *"Your card will be held for your bid of $X. You're
 charged only if the host accepts your bid; otherwise the hold is released automatically within 7
