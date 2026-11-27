@@ -290,7 +290,7 @@ export default function TicketEditorModal({
 									}
 								/>
 								<Text fontSize="12px" color={bidProblem ? "#FC8181" : "#868686"} mt={1} lineHeight="140%">
-									{bidProblem || "Shown to a guest who chooses to bid. Guests are told a bid that's too low won't be accepted."}
+									{bidProblem || "Shown to a guest who chooses to bid. Guests are told bids that are too low may not be approved."}
 								</Text>
 							</FormControl>
 						)}
