@@ -41,7 +41,7 @@ import { useAnalytics } from "@/hooks/useAnalytics";
 import { isPreviewQuery } from "@/lib/event-preview";
 import { LOW_STOCK_THRESHOLD, notEnoughLeftMessage, remainingMessage } from "@/lib/ticket-quantity";
 import type { EventAvailability } from "@/lib/ticket-availability";
-import { BID_APPROVAL_NOTICE, BID_BUTTON_STEP, BID_SLIDER_MULTIPLE, BID_STEP, bidRange, clampBid, formatBidMoney, isBidOnlyTicket, BID_TOO_LOW_MESSAGE, bidStartAmount, bidSliderReference, bidSuggestedVisible } from "@/lib/ticket-bid";
+import { BID_APPROVAL_NOTICE, BID_BUTTON_STEP, BID_SLIDER_MULTIPLE, BID_STEP, bidRange, clampBid, formatBidMoney, isBidOnlyTicket, BID_TOO_LOW_MESSAGE, BID_LIMIT_PER_TICKET, bidStartAmount, bidSliderReference, bidSuggestedVisible } from "@/lib/ticket-bid";
 
 type Props = {
   event: IEvent;
@@ -214,7 +214,7 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
     const draft = bidDrafts[id];
     if (draft === undefined) return;
     // Under the minimum: keep what they typed and show the error, so they can correct it —
-    // it used to be raised to $0.50 without a word.
+    // it used to be raised to the minimum without a word.
     if (draftTooLow(id)) return;
     const value = parseFloat(draft);
     // Left empty or not a number: keep the bid they had. Otherwise clamp into the range.
@@ -935,6 +935,7 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
                         <p className="text-xs text-[#bbbbbb] mt-1">
                           One seat per bid. Your card is held for your bid and charged only if the host accepts it. Want more seats or a different amount? Place another bid.
                         </p>
+                        <p className="text-xs text-[#bbbbbb] mt-1">Up to {BID_LIMIT_PER_TICKET} bids per person on this ticket.</p>
                         {!ticket.bidOnly && (
                         <button
                           type="button"

@@ -27,11 +27,16 @@
  * normal order on it (`BID_ONLY_REFUSAL`) — otherwise a $0 normal order would book it FREE.
  */
 
-export const BID_MIN_FLOOR = 0.5 // Stripe's smallest charge — and a $0 bid would have nothing to hold
+// Jetzy's minimum bid (2026-11-28). Stripe's own floor is $0.50, but an approved $0.50 bid nets
+// about $0.19 after Stripe's 30¢ fee. A suggested bid must clear it too.
+export const BID_MIN_FLOOR = 2
 export const BID_MAX = 999999.99 // Stripe's largest single USD charge
 export const BID_STEP = 1 // the slider moves in whole dollars; a typed amount may carry cents
 export const BID_BUTTON_STEP = 5 // each tap of − / + (QA, 2026-11-27: $1 taps were too slow)
 export const BID_SLIDER_MULTIPLE = 10 // the slider runs to 10× the ticket's price — a convenience, not a cap
+// One person (by checkout email) may place at most this many bids on ONE ticket — every bid
+// counts, whatever became of it (pending, approved, rejected, expired, cancelled). 2026-11-28.
+export const BID_LIMIT_PER_TICKET = 5
 
 /** Shown with every bid — the card, and the checkout modal. */
 export const BID_APPROVAL_NOTICE = "Bids need host approval — bids that are too low may not be approved."
@@ -107,6 +112,9 @@ export const formatBidMoney = (n: number) => n.toLocaleString("en-US", { style: 
 /** What a guest is told when their bid is under the minimum — friendly, and the same on the page
  *  and from the server. (The minimum is Stripe's smallest charge; the guest needn't hear that.) */
 export const BID_TOO_LOW_MESSAGE = `Bids start at ${formatBidMoney(BID_MIN_FLOOR)} — please enter ${formatBidMoney(BID_MIN_FLOOR)} or more.`
+
+/** What a guest is told once they have placed `BID_LIMIT_PER_TICKET` bids on a ticket. */
+export const BID_LIMIT_MESSAGE = `You've placed ${BID_LIMIT_PER_TICKET} bids on this ticket — that's the most one person can place.`
 
 /** Host side: is this a valid suggested bid? Returns the problem, or null. The suggestion is
  *  OPTIONAL — blank / null is fine; only a value that is set is checked. */

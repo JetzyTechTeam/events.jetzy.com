@@ -29,7 +29,8 @@ import { MEMBERSHIPS, membershipLabelList, membershipsIncluding, type Membership
 import { validateReferralCodeForEvent, type ReferralCodeData } from "@/lib/referral-validation"
 import { REFERRAL_NOT_FOR_SELECTION_MESSAGE, referralCoversTicket, referralEligibleSubtotal } from "@/lib/referral-ticket-scope"
 import Stripe from "stripe"
-import { BID_ONLY_REFUSAL, isBidOnlyTicket, isBidOrderRow, isBidTicket, validateBidAmount } from "@/lib/ticket-bid"
+import { BID_LIMIT_MESSAGE, BID_LIMIT_PER_TICKET, BID_ONLY_REFUSAL, isBidOnlyTicket, isBidOrderRow, isBidTicket, validateBidAmount } from "@/lib/ticket-bid"
+import { countBidsOnTicket } from "@/lib/bid-limit"
 import { ticketApprovalFlag } from "@/lib/ticket-approval"
 import { CHECKOUT_VERIFY_MESSAGE, sessionMayBookAs } from "@/lib/checkout-identity"
 
@@ -298,7 +299,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			}
 			// A bid-only ticket has no normal price to buy at — a bid is the only way in.
 			if (isBidOnlyTicket(stored) && !isBidOrderRow(t as any)) {
-				return sendResponse(res, null, BID_ONLY_REFUSAL, false, ResCode.BAD_REQUEST)
+				// `bidRefused`: the modal shows the reason itself, not the generic error toast.
+				return sendResponse(res, { bidRefused: true }, BID_ONLY_REFUSAL, false, ResCode.BAD_REQUEST)
 			}
 			;(t as any).requireApproval = ticketApprovalFlag(event as any, stored)
 		}
@@ -313,7 +315,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (bidRow) {
 			const stored: any = storedById.get(String(bidRow.id))
 			if (!isBidTicket(stored)) {
-				return sendResponse(res, null, "This ticket isn't taking bids. Please refresh and try again.", false, ResCode.BAD_REQUEST)
+				return sendResponse(res, { bidRefused: true }, "This ticket isn't taking bids. Please refresh and try again.", false, ResCode.BAD_REQUEST)
 			}
 			if (tickets.length !== 1 || Number(bidRow.quantity) !== 1) {
 				return sendResponse(res, null, "A bid is for one seat. Place one bid at a time — you can bid again for another seat.", false, ResCode.BAD_REQUEST)
@@ -322,7 +324,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				return sendResponse(res, null, "Referral codes don't apply to bids.", false, ResCode.BAD_REQUEST)
 			}
 			const check = validateBidAmount(stored, (bidRow as any).bidAmount)
-			if (!check.ok) return sendResponse(res, null, check.error, false, ResCode.BAD_REQUEST)
+			if (!check.ok) return sendResponse(res, { bidRefused: true }, check.error, false, ResCode.BAD_REQUEST)
+			// At most BID_LIMIT_PER_TICKET bids per person per ticket, every outcome counting. By the
+			// checkout email, which `sessionMayBookAs` has already tied to this session.
+			if ((await countBidsOnTicket(String(event._id), String(bidRow.id), user.email)) >= BID_LIMIT_PER_TICKET) {
+				return sendResponse(res, { bidRefused: true }, BID_LIMIT_MESSAGE, false, ResCode.BAD_REQUEST)
+			}
 			bid = { amount: check.amount, cents: check.cents }
 			// Normalised in place, so every step below — charge rows, metadata, the receipt — reads
 			// the validated bid rather than whatever the body said the price was.

@@ -14,6 +14,9 @@ export const CreateCheckoutSessionThunk = createAsyncThunk("checkouts/create", a
 		// down to its message — losing the flag — and toasted as "something went wrong", so it is
 		// RESOLVED instead and the modal reads `payload.data.needsVerification`.
 		if (err?.data?.needsVerification) return err
+		// A refused BID (too low, the per-ticket limit, …) carries its own sentence for the guest;
+		// resolved so the modal can show it under its own title, not "something went wrong".
+		if (err?.data?.bidRefused) return err
 		throw err
 	}
 })
