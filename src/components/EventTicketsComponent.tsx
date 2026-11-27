@@ -397,8 +397,10 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
       reportTicketSelected(id, picked.name);
     }
 
-    // A card click selects at the NORMAL price (or deselects) — never a bid.
+    // A card click selects at the NORMAL price (or deselects) — never a bid. Any bid the guest
+    // was making is cleared, so it doesn't come back if they open the bid box again.
     setBidMode({});
+    resetBids();
     setTickets((prevTickets) =>
       prevTickets.map((ticket, index) => {
         const ticketItem = ticketsItems[index];
@@ -425,10 +427,30 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
    * at the bid; going back selects it for one seat at the normal price. Single-select, like a
    * card click.
    */
+  /**
+   * Put every bid (except `keepId`'s) back where it starts — the visible suggestion, the normal
+   * price, or an empty box — and drop anything half-typed. Run whenever a guest LEAVES bid mode,
+   * so reopening the bid box never shows an amount they abandoned (QA, 2026-11-28).
+   */
+  const resetBids = (keepId?: string) => {
+    setBidAmounts((prev) => {
+      const next = { ...prev };
+      for (const t of ticketsItems) {
+        if (!t.bid || t.id === keepId) continue;
+        if (t.bidStart !== null) next[t.id] = t.bidStart;
+        else delete next[t.id];
+      }
+      return next;
+    });
+    setBidDrafts((prev) => (keepId !== undefined && prev[keepId] !== undefined ? { [keepId]: prev[keepId] } : {}));
+  };
+
   const chooseBid = (id: string, on: boolean) => {
     const target = tickets.find((t) => t.id === id);
     if (!target?.bid) return;
     if (on && !target.isSelected && isSoldOutFor(id)) return;
+    // Leaving bid mode starts the next bid fresh; entering one resets any OTHER ticket's bid.
+    resetBids(on ? id : undefined);
     // Bid only: there is no normal price to fall back to — leaving bid mode deselects it.
     if (!on && target.bidOnly) {
       setBidMode({});
