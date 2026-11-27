@@ -104,6 +104,10 @@ export function bidRange(t: BidTicketLike): { min: number; max: number; suggeste
 
 export const formatBidMoney = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "usd" })
 
+/** What a guest is told when their bid is under the minimum — friendly, and the same on the page
+ *  and from the server. (The minimum is Stripe's smallest charge; the guest needn't hear that.) */
+export const BID_TOO_LOW_MESSAGE = `Bids start at ${formatBidMoney(BID_MIN_FLOOR)} — please enter ${formatBidMoney(BID_MIN_FLOOR)} or more.`
+
 /** Host side: is this a valid suggested bid? Returns the problem, or null. The suggestion is
  *  OPTIONAL — blank / null is fine; only a value that is set is checked. */
 export function bidSuggestedProblem(value: unknown): string | null {
@@ -123,7 +127,7 @@ export function validateBidAmount(t: BidTicketLike, amount: unknown): { ok: true
 	const a = num(amount)
 	if (!Number.isFinite(a)) return { ok: false, error: "Enter your bid." }
 	if (round2(a) !== a) return { ok: false, error: "A bid can have at most 2 decimals." }
-	if (a < range.min) return { ok: false, error: `The lowest bid is ${formatBidMoney(range.min)}.` }
+	if (a < range.min) return { ok: false, error: BID_TOO_LOW_MESSAGE }
 	if (a > range.max) return { ok: false, error: `The highest bid is ${formatBidMoney(range.max)}.` }
 	return { ok: true, amount: a, cents: Math.round(a * 100) }
 }
