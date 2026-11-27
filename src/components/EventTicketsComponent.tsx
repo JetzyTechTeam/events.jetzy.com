@@ -41,7 +41,7 @@ import { useAnalytics } from "@/hooks/useAnalytics";
 import { isPreviewQuery } from "@/lib/event-preview";
 import { LOW_STOCK_THRESHOLD, notEnoughLeftMessage, remainingMessage } from "@/lib/ticket-quantity";
 import type { EventAvailability } from "@/lib/ticket-availability";
-import { BID_APPROVAL_NOTICE, BID_BUTTON_STEP, bidRange, clampBid, formatBidMoney, isBidOnlyTicket, BID_TOO_LOW_MESSAGE, BID_LIMIT_PER_TICKET, bidStartAmount, bidSuggestedVisible } from "@/lib/ticket-bid";
+import { BID_APPROVAL_NOTICE, BID_BUTTON_STEP, bidRange, clampBid, formatBidMoney, isBidOnlyTicket, BID_TOO_LOW_MESSAGE, BID_TOO_HIGH_MESSAGE, BID_LIMIT_PER_TICKET, bidStartAmount, bidSuggestedVisible } from "@/lib/ticket-bid";
 
 type Props = {
   event: IEvent;
@@ -174,19 +174,26 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
     if (!ticket?.bid || !Number.isFinite(value)) return bidFor(id);
     return clampBid({ pricingMode: "bid", bidSuggested: ticket.bid.suggested }, value);
   };
-  /** Is what the guest typed a number under the minimum bid? Shown as an error, never raised quietly. */
-  const draftTooLow = (id: string) => {
+  /**
+   * What is wrong with what the guest typed: under the minimum, or over the most a card can be
+   * charged at once. Shown as an error under the box — never raised or cut down quietly (a huge
+   * number used to become $999,999.99 without a word). Null when the typed amount is fine.
+   */
+  const draftProblem = (id: string): string | null => {
     const ticket = ticketsItems.find((t) => t.id === id);
     const draft = bidDrafts[id];
-    if (!ticket?.bid || draft === undefined || draft.trim() === "") return false;
+    if (!ticket?.bid || draft === undefined || draft.trim() === "") return null;
     const value = parseFloat(draft);
-    return Number.isFinite(value) && value < ticket.bid.min;
+    if (!Number.isFinite(value)) return null;
+    if (value < ticket.bid.min) return BID_TOO_LOW_MESSAGE;
+    if (value > ticket.bid.max) return BID_TOO_HIGH_MESSAGE;
+    return null;
   };
   /**
    * Typing in the amount box. What they type stays as typed; a VALID amount also becomes the bid
    * at once, so the price on the card and the total beside "Place bid" follow every keystroke
    * (QA, 2026-11-28 — they used to change only after leaving the box). An amount under the
-   * minimum leaves the last valid bid in place and shows the error under the box.
+   * minimum or over the maximum leaves the last valid bid in place and shows the error under the box.
    */
   const typeBid = (id: string, text: string) => {
     setBidDrafts((prev) => ({ ...prev, [id]: text }));
@@ -200,9 +207,9 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
   const commitBidDraft = (id: string) => {
     const draft = bidDrafts[id];
     if (draft === undefined) return;
-    // Under the minimum: keep what they typed and show the error, so they can correct it —
-    // it used to be raised to the minimum without a word.
-    if (draftTooLow(id)) return;
+    // Under the minimum or over the maximum: keep what they typed and show the error, so they
+    // can correct it — it used to be raised / cut down without a word.
+    if (draftProblem(id)) return;
     const value = parseFloat(draft);
     // Left empty or not a number: keep the bid they had. Otherwise clamp into the range.
     if (Number.isFinite(value)) setBid(id, value);
@@ -466,11 +473,12 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
     }
 
     // A bid whose box is still empty (a bid-only ticket with no visible suggestion).
-    // A bid under the minimum — stop and say so (the box shows the same message).
-    const lowBid = tickets.find((t) => t.isSelected && t.bid && isBidding(t.id) && draftTooLow(t.id));
-    if (lowBid) {
+    // A bid under the minimum or over the maximum — stop and say so (the box shows the same message).
+    const badBid = tickets.find((t) => t.isSelected && t.bid && isBidding(t.id) && draftProblem(t.id));
+    if (badBid) {
       setLoader(false);
-      Error("Bid too low", BID_TOO_LOW_MESSAGE);
+      const problem = draftProblem(badBid.id)!;
+      Error(problem === BID_TOO_HIGH_MESSAGE ? "Bid too high" : "Bid too low", problem);
       return;
     }
     const emptyBid = tickets.find((t) => t.isSelected && t.bid && isBidding(t.id) && effectiveBid(t.id) === null);
@@ -891,7 +899,7 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
                             >
                               -
                             </button>
-                            <div className={`flex flex-1 min-w-0 items-center bg-black rounded-full px-3 h-9 ${draftTooLow(ticket.id) ? "ring-1 ring-red-400" : ""}`}>
+                            <div className={`flex flex-1 min-w-0 items-center bg-black rounded-full px-3 h-9 ${draftProblem(ticket.id) ? "ring-1 ring-red-400" : ""}`}>
                               <span className="text-gray-400 mr-1">$</span>
                               <input
                                 type="number"
@@ -919,8 +927,8 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
                             </button>
                           </div>
                         </div>
-                        {draftTooLow(ticket.id) && (
-                          <p role="alert" className="text-xs text-red-400 mb-1">{BID_TOO_LOW_MESSAGE}</p>
+                        {draftProblem(ticket.id) && (
+                          <p role="alert" className="text-xs text-red-400 mb-1">{draftProblem(ticket.id)}</p>
                         )}
                         <p className="text-xs font-semibold text-[#F79432] mt-1">{BID_APPROVAL_NOTICE}</p>
                         <p className="text-xs text-[#bbbbbb] mt-1">
