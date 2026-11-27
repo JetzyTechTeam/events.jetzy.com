@@ -701,77 +701,79 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
                       </h3>
                       {/* Price, then the Bid / Edit buttons — one row from `sm`, buttons under the
                           price on a phone so a long ticket name keeps its width. */}
-                      <div className="flex flex-col items-end gap-1.5 sm:flex-row sm:items-center sm:gap-2.5 flex-shrink-0">
-                        {/* The normal price — or, while the guest is bidding, their bid. No struck-through
-                            normal price under it: it read as a discount and confused buyers. */}
-                        <div className="text-right">
-                          <p className={`font-bold text-xl sm:text-2xl whitespace-nowrap leading-snug ${ticket.isSelected ? 'text-jetzy' : 'text-white'}`}>
-                            {ticket.bid && ticket.isSelected && isBidding(ticket.id)
-                              ? formatBidMoney(bidFor(ticket.id))
-                              : ticket.bid && ticket.bidOnly
-                                ? "Bid"
-                                : staticTickets[index].price.toLocaleString("en-US", {
-                                    style: "currency",
-                                    currency: "usd",
-                                  })}
-                          </p>
-                          {/* Bid only: no price to show, so the host's suggestion sits under "Bid". */}
-                          {ticket.bid && ticket.bidOnly && ticket.hasSuggested && !(ticket.isSelected && isBidding(ticket.id)) && (
-                            <p className="text-[11px] text-gray-400 whitespace-nowrap">Suggested {formatBidMoney(ticket.bid.suggested)}</p>
-                          )}
-                        </div>
-                        {(ticket.bid && !ticket.bidOnly && remainingFor(ticket.id) !== 0) || (canManage && onEditTicket) ? (
-                          <div className="flex items-center gap-2">
-                            {/* Takes bids: name your own price instead of the one shown. A toggle —
-                                pressing it again goes back to the normal price. */}
-                            {/* Not on a bid-only ticket: "Bid" already sits where the price is. */}
-                            {ticket.bid && !ticket.bidOnly && remainingFor(ticket.id) !== 0 && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  chooseBid(ticket.id, !(ticket.isSelected && isBidding(ticket.id)));
-                                }}
-                                aria-pressed={ticket.isSelected && isBidding(ticket.id)}
-                                title={ticket.isSelected && isBidding(ticket.id) ? "Pay the normal price instead" : "Name your own price"}
-                                className={`inline-flex items-center gap-1.5 rounded-full border px-4 py-1.5 text-sm font-semibold transition-colors ${
-                                  ticket.isSelected && isBidding(ticket.id)
-                                    ? "bg-[#7DD3FC] border-[#7DD3FC] text-black hover:bg-[#a5e1fd]"
-                                    : "bg-[#7DD3FC]/10 border-[#7DD3FC] text-[#7DD3FC] hover:bg-[#7DD3FC] hover:text-black"
-                                }`}
-                              >
-                                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                                  {ticket.isSelected && isBidding(ticket.id) ? (
-                                    <path d="M5 13l4 4L19 7" />
-                                  ) : (
-                                    <>
-                                      <path d="M14 13l-7.5 7.5a2.12 2.12 0 0 1-3-3L11 10" />
-                                      <path d="M16 16l6-6" />
-                                      <path d="M8 8l6-6" />
-                                      <path d="M9 7l8 8" />
-                                    </>
-                                  )}
-                                </svg>
-                                {ticket.isSelected && isBidding(ticket.id) ? "Bidding" : "Bid"}
-                              </button>
+                      {(() => {
+                        const bidding = !!ticket.bid && ticket.isSelected && isBidding(ticket.id);
+                        // Bid only: no price until the guest bids — the Bid pill takes its place.
+                        const showPrice = !(ticket.bid && ticket.bidOnly) || bidding;
+                        // The Bid pill. A bid-only ticket keeps it when sold out (disabled), so its
+                        // price spot is never empty.
+                        const soldOut = remainingFor(ticket.id) === 0;
+                        const showBid = !!ticket.bid && (ticket.bidOnly || !soldOut);
+                        const showEdit = canManage && !!onEditTicket;
+                        return (
+                          <div className="flex flex-col items-end gap-1.5 sm:flex-row sm:items-center sm:gap-2.5 flex-shrink-0">
+                            {/* The normal price — or, while the guest is bidding, their bid. */}
+                            {showPrice && (
+                              <p className={`font-bold text-xl sm:text-2xl whitespace-nowrap leading-snug ${ticket.isSelected ? 'text-jetzy' : 'text-white'}`}>
+                                {bidding
+                                  ? formatBidMoney(bidFor(ticket.id))
+                                  : staticTickets[index].price.toLocaleString("en-US", {
+                                      style: "currency",
+                                      currency: "usd",
+                                    })}
+                              </p>
                             )}
-                            {/* Admin / host: edit THIS ticket straight away (CEO, 2026-11-27). */}
-                            {canManage && onEditTicket && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onEditTicket(ticket.id);
-                                }}
-                                aria-label={`Edit ${ticket.name}`}
-                                className="inline-flex items-center rounded-full border border-[#F79432] text-[#F79432] py-1.5 px-3 text-sm hover:bg-[#F79432] hover:text-black transition-colors"
-                              >
-                                ✎ Edit
-                              </button>
-                            )}
+                            {showBid || showEdit ? (
+                              <div className="flex items-start gap-2">
+                                {showBid && (
+                                  <div className="flex flex-col items-center">
+                                    {/* A toggle: pressing it again goes back to the normal price (or, on a
+                                        bid-only ticket, deselects it). Same blue pill on every ticket that
+                                        takes bids. */}
+                                    <button
+                                      type="button"
+                                      disabled={soldOut && !ticket.isSelected}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        chooseBid(ticket.id, !bidding);
+                                      }}
+                                      aria-pressed={bidding}
+                                      title={bidding ? (ticket.bidOnly ? "Cancel your bid" : "Pay the normal price instead") : "Name your own price"}
+                                      className={`inline-flex items-center rounded-full border px-4 py-1.5 text-sm font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                                        bidding
+                                          ? "bg-[#7DD3FC] border-[#7DD3FC] text-black hover:bg-[#a5e1fd]"
+                                          : "bg-[#7DD3FC]/10 border-[#7DD3FC] text-[#7DD3FC] hover:bg-[#7DD3FC] hover:text-black"
+                                      }`}
+                                    >
+                                      {bidding ? "Bidding" : "Bid"}
+                                    </button>
+                                    {/* Bid only: the host's suggestion, under the pill. */}
+                                    {ticket.bidOnly && ticket.hasSuggested && !bidding && (
+                                      <p className="text-[11px] text-gray-400 whitespace-nowrap mt-1">
+                                        Suggested {formatBidMoney(ticket.bid!.suggested)}
+                                      </p>
+                                    )}
+                                  </div>
+                                )}
+                                {/* Admin / host: edit THIS ticket straight away (CEO, 2026-11-27). */}
+                                {showEdit && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onEditTicket!(ticket.id);
+                                    }}
+                                    aria-label={`Edit ${ticket.name}`}
+                                    className="inline-flex items-center rounded-full border border-[#F79432] text-[#F79432] py-1.5 px-3 text-sm hover:bg-[#F79432] hover:text-black transition-colors"
+                                  >
+                                    ✎ Edit
+                                  </button>
+                                )}
+                              </div>
+                            ) : null}
                           </div>
-                        ) : null}
-                      </div>
+                        );
+                      })()}
                     </div>
 
                     {/* The long form of this pill ("card authorized, charged on approval") is
