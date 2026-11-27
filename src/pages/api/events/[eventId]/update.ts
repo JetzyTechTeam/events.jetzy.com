@@ -130,7 +130,9 @@ const schema = zod.object({
 			pricingMode: zod.enum(["bid", "fixed"]).optional(),
 			bidMin: zod.number().optional(),
 			bidMax: zod.number().optional(),
-			bidSuggested: zod.number().optional(),
+			// Optional, and `null` CLEARS it (absent = unchanged).
+			bidSuggested: zod.number().nullable().optional(),
+			bidShowSuggested: zod.boolean().optional(),
 		}).superRefine((t, ctx) => {
 			if (t.pricingMode !== "bid") return
 			const problem = bidSuggestedProblem(t.bidSuggested)

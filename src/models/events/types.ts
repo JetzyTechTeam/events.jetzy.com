@@ -12,8 +12,10 @@ export interface IEventTicket {
 	/** v1 only — no longer written or read. */
 	bidMin?: number
 	bidMax?: number
-	/** The suggested bid shown to a guest who chooses to bid. */
+	/** The host's suggested bid — OPTIONAL. */
 	bidSuggested?: number
+	/** `false` hides the suggestion from guests (admin emails still show it). Absent = show. */
+	bidShowSuggested?: boolean
 	/** Per-ticket override. `undefined` inherits the event-level `requireApproval`. */
 	requireApproval?: boolean
 	/**

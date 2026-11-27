@@ -30,6 +30,9 @@ const eventTicketsSchema = new Schema<IEventTicket>(
 		bidMin: { type: Number, required: false },
 		bidMax: { type: Number, required: false },
 		bidSuggested: { type: Number, required: false },
+		// `false` = the suggestion is the host's own (bid emails), never shown to guests. NO
+		// default: absent = show, which every ticket written before this toggle needs.
+		bidShowSuggested: { type: Boolean, required: false },
 		// Per-ticket approval override. Deliberately has NO default: `undefined` means
 		// "inherit event.requireApproval", which is what keeps every pre-existing ticket
 		// working without a migration. A default of `false` would pin legacy tickets to

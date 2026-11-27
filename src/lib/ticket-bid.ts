@@ -16,6 +16,12 @@
  *
  * WHETHER AN ORDER IS A BID is decided by the ORDER ROW (`isBidOrderRow`), never by the ticket.
  *
+ * SUGGESTED BID (2026-11-28): OPTIONAL, and the host may hide it from guests
+ * (`bidShowSuggested: false`, NO default — absent = show). A hidden suggestion is the host's own
+ * reference (it is in the admin bid emails) and is NEVER revealed to a guest — not as the label,
+ * the bid's starting amount, or the slider's end. With no visible suggestion a priced ticket's bid
+ * starts at its normal price and a bid-only ticket's bid box starts EMPTY (`bidStartAmount` null).
+ *
  * BID ONLY (2026-11-27): a ticket that takes bids and has NO normal price (`price` empty or 0) can
  * only be bought with a bid. The card says "Bid" instead of $0.00, and every endpoint refuses a
  * normal order on it (`BID_ONLY_REFUSAL`) — otherwise a $0 normal order would book it FREE.
@@ -33,6 +39,7 @@ export const BID_APPROVAL_NOTICE = "Bids need host approval — bids that are to
 export type BidTicketLike = {
 	pricingMode?: string | null
 	bidSuggested?: number | string | null
+	bidShowSuggested?: boolean | null
 	price?: number | string | null
 } | null | undefined
 
@@ -52,24 +59,57 @@ export const BID_ONLY_REFUSAL = "This ticket only takes bids — place a bid to 
 /** Is this ORDER ROW a bid? Only a row the buyer sent as a bid is one. */
 export const isBidOrderRow = (row: { pricingMode?: string | null } | null | undefined): boolean => row?.pricingMode === "bid"
 
+/** The host's suggested bid as stored, when it is a valid one — whether or not guests see it. */
+export function bidSuggestedValue(t: BidTicketLike): number | null {
+	if (!isBidTicket(t)) return null
+	const s = num(t!.bidSuggested)
+	return Number.isFinite(s) && s >= BID_MIN_FLOOR && s <= BID_MAX ? round2(s) : null
+}
+
+/** The suggested bid a GUEST may see: null when there is none or the host hid it. */
+export const bidSuggestedVisible = (t: BidTicketLike): number | null => (t?.bidShowSuggested === false ? null : bidSuggestedValue(t))
+
 /**
- * What a bid on this ticket may be: Stripe's bounds, and the host's suggested price (falling back
- * to the ticket price, then the floor — always inside the bounds). Null when it takes no bids.
+ * Where a guest's bid starts: the visible suggestion, else the normal price, else null — an empty
+ * box (a bid-only ticket with nothing to show). Never a hidden suggestion.
+ */
+export function bidStartAmount(t: BidTicketLike): number | null {
+	if (!isBidTicket(t)) return null
+	const visible = bidSuggestedVisible(t)
+	if (visible !== null) return visible
+	const p = num(t!.price)
+	return Number.isFinite(p) && p > 0 ? round2(clampToBounds(p)) : null
+}
+
+/**
+ * What the slider's end is measured from: the higher of the normal price and the VISIBLE
+ * suggestion. Null when neither exists (the UI then uses a fixed range).
+ */
+export function bidSliderReference(t: BidTicketLike): number | null {
+	if (!isBidTicket(t)) return null
+	const p = num(t!.price)
+	const top = Math.max(Number.isFinite(p) && p > 0 ? p : 0, bidSuggestedVisible(t) ?? 0)
+	return top > 0 ? top : null
+}
+
+/**
+ * What a bid on this ticket may be: Stripe's bounds. `suggested` is where a bid starts
+ * (`bidStartAmount`, the floor when the box starts empty) — used for clamping only.
+ * Null when it takes no bids.
  */
 export function bidRange(t: BidTicketLike): { min: number; max: number; suggested: number } | null {
 	if (!isBidTicket(t)) return null
-	const s = num(t!.bidSuggested)
-	const p = num(t!.price)
-	const suggested = Number.isFinite(s) ? s : Number.isFinite(p) && p > 0 ? p : BID_MIN_FLOOR
-	return { min: BID_MIN_FLOOR, max: BID_MAX, suggested: round2(clampToBounds(suggested)) }
+	return { min: BID_MIN_FLOOR, max: BID_MAX, suggested: bidStartAmount(t) ?? BID_MIN_FLOOR }
 }
 
 export const formatBidMoney = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "usd" })
 
-/** Host side: is this a valid suggested bid? Returns the problem, or null. */
+/** Host side: is this a valid suggested bid? Returns the problem, or null. The suggestion is
+ *  OPTIONAL — blank / null is fine; only a value that is set is checked. */
 export function bidSuggestedProblem(value: unknown): string | null {
 	const v = num(value)
-	if (!Number.isFinite(v)) return "Set a suggested bid."
+	if (value === null || value === undefined || value === "") return null
+	if (!Number.isFinite(v)) return "Enter a valid suggested bid."
 	if (v < BID_MIN_FLOOR) return `The suggested bid must be at least ${formatBidMoney(BID_MIN_FLOOR)}.`
 	if (v > BID_MAX) return `The suggested bid can't be more than ${formatBidMoney(BID_MAX)}.`
 	if (round2(v) !== v) return "The suggested bid can have at most 2 decimals."
@@ -106,6 +146,17 @@ export function bookingUnitPrice(booking: { bidAmount?: number | null } | null |
 	return Number(ticket?.price) || 0
 }
 
-/** The bid fields to carry when a ticket is mapped into a form (every ticket surface uses this). */
-export const ticketBidFields = (t: BidTicketLike): { pricingMode?: "bid"; bidSuggested?: number } =>
-	isBidTicket(t) ? { pricingMode: "bid", bidSuggested: bidRange(t)!.suggested } : {}
+/**
+ * The bid fields to carry when a stored ticket is mapped into a form or copied (every ticket
+ * surface uses this). Only what is SET: no suggestion → no key; shown → no key (absent = show).
+ * A form that CLEARS a suggestion sends `bidSuggested: null` itself — this never invents one.
+ */
+export const ticketBidFields = (t: BidTicketLike): { pricingMode?: "bid"; bidSuggested?: number; bidShowSuggested?: false } => {
+	if (!isBidTicket(t)) return {}
+	const suggested = bidSuggestedValue(t)
+	return {
+		pricingMode: "bid",
+		...(suggested !== null ? { bidSuggested: suggested } : {}),
+		...(t?.bidShowSuggested === false ? { bidShowSuggested: false as const } : {}),
+	}
+}

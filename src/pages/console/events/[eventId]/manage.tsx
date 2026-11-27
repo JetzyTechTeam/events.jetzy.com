@@ -269,6 +269,8 @@ const mapDraftTicket = (t: any) => ({
 	quantity: t.quantity,
 	includesPremium: ticketMemberships(t).includes("premium"),
 	...ticketBidFields(t),
+	// A cleared suggestion must reach the server as `null`, or preserve-on-omit keeps the old one.
+	...(t.pricingMode === "bid" && t.bidSuggested === null ? { bidSuggested: null } : {}),
 	...(t.pricingMode === "fixed" ? { pricingMode: "fixed" } : {}),
 })
 

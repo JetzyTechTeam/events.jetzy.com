@@ -93,7 +93,7 @@ import { stripHtml } from "@/utils/text";
 import { FiShare2, FiChevronDown, FiChevronUp, FiMoreHorizontal } from "react-icons/fi"
 import MarketingSourceTag from "@/components/bookings/MarketingSourceTag"
 import { bookingMarketingSource } from "@/lib/marketing-link"
-import { isBidOnlyTicket, isBidTicket, ticketBidFields } from "@/lib/ticket-bid"
+import { bidSuggestedValue, isBidOnlyTicket, isBidTicket, ticketBidFields } from "@/lib/ticket-bid"
 
 /**
  * Which block of the event page is in edit mode.
@@ -590,7 +590,15 @@ export default function HostedEvents({ event }: Props) {
 				...((t as any).membershipFreeMonths !== undefined ? { membershipFreeMonths: Number((t as any).membershipFreeMonths) || 0 } : {}),
 				// Takes bids ("name your price") — sent only when set; "fixed" turns bidding off.
 				...((t as any).pricingMode !== undefined
-					? { pricingMode: (t as any).pricingMode, ...((t as any).pricingMode === "bid" ? { bidSuggested: Number((t as any).bidSuggested) } : {}) }
+					? {
+							pricingMode: (t as any).pricingMode,
+							// Suggestion: a number sets it, `null` clears it, absent leaves it alone.
+							...((t as any).pricingMode === "bid" && (t as any).bidSuggested === null ? { bidSuggested: null } : {}),
+							...((t as any).pricingMode === "bid" && typeof (t as any).bidSuggested === "number" && Number.isFinite((t as any).bidSuggested)
+								? { bidSuggested: Number((t as any).bidSuggested) }
+								: {}),
+							...((t as any).pricingMode === "bid" && typeof (t as any).bidShowSuggested === "boolean" ? { bidShowSuggested: (t as any).bidShowSuggested } : {}),
+						}
 					: {}),
 				// `null` is sent through as null — it is the host clearing the cap, which
 				// is a different instruction from omitting the key.
@@ -1056,7 +1064,7 @@ export default function HostedEvents({ event }: Props) {
 									</Flex>
 									<Text color="#9C9C9C" fontSize="sm">
 										{isBidOnlyTicket(ticket as any)
-											? `Bid only${Number.isFinite(Number((ticket as any).bidSuggested)) ? ` · suggested $${Number((ticket as any).bidSuggested)}` : ""}`
+											? `Bid only${bidSuggestedValue(ticket as any) !== null ? ` · suggested $${bidSuggestedValue(ticket as any)}${(ticket as any).bidShowSuggested === false ? " (hidden)" : ""}` : ""}`
 											: `$${ticket.price}${isBidTicket(ticket as any) ? " · takes bids" : ""}`}
 									</Text>
 								</Box>

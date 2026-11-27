@@ -2,7 +2,7 @@ import Stripe from "stripe"
 import { ticketMemberships, ticketMembershipFreeMonths } from "@/lib/premium-bundle"
 import { sanitizeMembershipKeys } from "@/lib/memberships"
 import { ticketQuantityLimit } from "@/lib/ticket-quantity"
-import { isBidTicket } from "@/lib/ticket-bid"
+import { bidSuggestedValue, isBidTicket } from "@/lib/ticket-bid"
 
 const stripe = new Stripe(process.env.NEXT_STRIPE_SECRET_KEY as string)
 
@@ -26,7 +26,10 @@ export type IncomingTicket = {
 	/** v1 fields — still accepted from an old tab, never stored. */
 	bidMin?: number
 	bidMax?: number
-	bidSuggested?: number
+	/** Optional; `null` clears it, absent keeps what is stored. */
+	bidSuggested?: number | null
+	/** `false` hides the suggestion from guests; absent keeps what is stored (absent = show). */
+	bidShowSuggested?: boolean
 }
 
 /**
@@ -71,12 +74,30 @@ export async function resolveTickets(existingTickets: any[] | undefined, tickets
 			// stored; "fixed" turns bidding off. `price` stays the NORMAL price and the ticket's own
 			// approval flag governs normal purchases (a bid is forced to approval at checkout). A
 			// ticket that takes bids sells no membership (`ticket-bid.ts`). v1's min/max are dropped.
-			const bid =
-				ticket.pricingMode === "bid"
-					? { bidSuggested: Number(ticket.bidSuggested) }
-					: ticket.pricingMode === undefined && isBidTicket(existing)
-						? { bidSuggested: Number(ticket.bidSuggested ?? existing.bidSuggested ?? existing.price) }
-						: null
+			// The suggestion is OPTIONAL: a number sets it, `null` clears it, absent keeps the stored
+			// one. `bidShowSuggested` is preserve-on-omit too and only ever written as a boolean.
+			const takesBids = ticket.pricingMode === "bid" || (ticket.pricingMode === undefined && isBidTicket(existing))
+			let bid: { bidSuggested?: number; bidShowSuggested?: boolean } | null = null
+			if (takesBids) {
+				const suggested =
+					ticket.bidSuggested === null
+						? null
+						: ticket.bidSuggested !== undefined
+							? Number(ticket.bidSuggested)
+							: isBidTicket(existing)
+								? bidSuggestedValue(existing)
+								: null
+				const show =
+					typeof ticket.bidShowSuggested === "boolean"
+						? ticket.bidShowSuggested
+						: isBidTicket(existing) && typeof existing.bidShowSuggested === "boolean"
+							? existing.bidShowSuggested
+							: undefined
+				bid = {
+					...(suggested !== null && Number.isFinite(suggested) ? { bidSuggested: suggested } : {}),
+					...(show !== undefined ? { bidShowSuggested: show } : {}),
+				}
+			}
 			if (bid) ticket = { ...ticket, memberships: [], includesPremium: false }
 
 			const priceChanged = !existing || Number(existing.price) !== ticket.price
