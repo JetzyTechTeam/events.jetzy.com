@@ -2,6 +2,12 @@
 
 For the mobile app / backend, which writes to the same `events` collection this portal does.
 
+**Revision 9 (2026-11-28).** No schema change. §15 now also specifies **how the app must look
+and behave** so it matches the web: the host editor (§15.1), the guest ticket card and bid box
+(§15.2), the order + Stripe session (§15.3), the booking and notifications (§15.4), the host's
+Approvals view (§15.5), and the helper code to port verbatim (§15.6). Bid-only tickets (price 0 /
+absent) are new since Revision 8's first draft — the app must never sell one as a free ticket.
+
 **Revision 8 (2026-11-27).** **Bids v2** — bidding is now an OPTION on a normal ticket, not a
 kind of ticket; see the rewritten **§15**. `price` is the ticket's NORMAL price again (it no longer
 mirrors `bidSuggested`), `bidMin` / `bidMax` are retired (no longer written or read), and the
@@ -1240,3 +1246,210 @@ hold, and the booking stores **`bidAmount`** (see `BOOKING_FLOW.md`). A row with
 same ticket is an ordinary order at the stored `price`, with the ticket's own approval setting.
 Anything that shows a booking's price must read `bidAmount` when present, never the ticket's
 current `price`.
+
+### 15.1 Host — ticket editor
+
+- **Price (USD)** is always shown; it is the ticket's normal price. Empty = 0.
+- Under it, a switch **"Let guests bid on this ticket"** with the help text: *"Guests can pay the
+  price above, or name their own price. Bids always come to you for approval — the card is held for
+  the bid and charged only if you accept."*
+- Switch ON shows one field, **"Suggested bid (USD)"**, defaulting to the price when that is
+  `>= 0.50`, else `10`. Validate with `bidSuggestedProblem` (§15.6). Help text under it: *"Shown to a
+  guest who chooses to bid. Guests are told bids that are too low may not be approved."*
+- Switch ON with price 0 / empty shows, in orange: **"Bid only: guests can only place a bid."**
+- Switch ON hides the Membership section and clears `memberships` (a ticket that takes bids sells
+  none). **Require Approval stays editable** — it governs NORMAL purchases only; its help text adds
+  *"Bids always need your approval, whatever this is set to."*
+- Save sends `pricingMode: "bid"` + `bidSuggested` + the real `price`. Switching OFF sends
+  `pricingMode: "fixed"`. Never send `bidMin` / `bidMax`.
+- The web event page also has an **Edit** button on every ticket card (admin or the event's owner)
+  that opens this editor for that one ticket and saves immediately.
+
+### 15.2 Guest — ticket card and bid box
+
+Three kinds of ticket:
+
+| Ticket | Price spot on the card | Buttons |
+|---|---|---|
+| No bids (`pricingMode` absent) | the price, e.g. **$50.00** | — (unchanged) |
+| Price + bids (`isBidTicket`, price > 0) | **$50.00** | a blue **Bid** pill beside it |
+| Bid only (`isBidOnlyTicket`) | *(nothing — no $0.00, ever)* | the blue **Bid** pill, with grey **"Suggested $20.00"** under it (only when `bidSuggested` is set) |
+
+- **Bid pill**: outlined light blue (`#7DD3FC`), text only, no icon. Tapping it enters **bid mode**:
+  the ticket is selected for **one seat**, the pill turns solid blue and reads **"Bidding"**, and the
+  price spot shows the guest's bid. Tapping "Bidding" again leaves bid mode — back to the normal
+  price on a priced ticket, **deselected** on a bid-only ticket.
+- **Bid only**: tapping anywhere on the card does the same as the pill (it is selected BY bidding).
+  On a priced ticket a card tap always means the normal price.
+- Sold out: a priced ticket hides the pill; a bid-only ticket shows it disabled.
+- **Approval pill** on the card ("Approval required · card authorized, charged on approval") shows
+  when the ticket's `requireApproval` is on, **or the ticket is bid only**; hidden while bidding.
+- Only one ticket can be in bid mode at a time (selection is single-select).
+
+**The bid box** — opens directly under the ticket name/price, **above** the description:
+
+1. Header **"Name your price"** with a chip **"Suggested $X"**.
+2. **Your bid**: a `−` button, an amount box, a `+` button.
+   - `−` / `+` move the bid by **$5** (`BID_BUTTON_STEP`); `−` stops at $0.50, `+` at the max.
+   - The amount box accepts any amount with up to 2 decimals. It can be cleared and retyped; the
+     typed value is applied on blur / Enter, clamped with `clampBid` (below $0.50 → $0.50). While
+     the typed value is under $0.50 show *"The lowest bid is $0.50."*
+3. A **slider**: from **$1** (`ceil(min)`) to **10× the higher of the normal price and the
+   suggested bid**, rounded up to a whole dollar (`BID_SLIDER_MULTIPLE`), step **$1**. Labels under
+   it: `$1.00 · Suggested $X · $<end>+`. The end is NOT a cap — a typed bid above it is valid and the
+   thumb just sits at the end.
+4. In orange, always: **"Bids need host approval — bids that are too low may not be approved."**
+   (`BID_APPROVAL_NOTICE`)
+5. *"One seat per bid. Your card is held for your bid and charged only if the host accepts it.
+   Want more seats or a different amount? Place another bid."*
+6. On a priced ticket only: a link **"Pay the normal price instead ($50.00)"**.
+
+The bid starts at the suggested bid. All three controls change the same value. The checkout
+button reads **"Place bid"**. In the checkout screen: the referral-code field is hidden, the total
+row reads "Your bid", and the hold text is *"Your card will be held for your bid of $X. You're
+charged only if the host accepts your bid; otherwise the hold is released automatically within 7
+days. Bids need host approval — bids that are too low may not be approved."*
+
+### 15.3 Order + Stripe session (mobile back-end)
+
+A bid order row: `{ id, priceId, quantity: 1, pricingMode: "bid", bidAmount }`. Server rules, in
+this order:
+
+1. Every row's `id` must be a ticket of this event AND its `priceId` must equal that ticket's stored
+   `stripeProductId` (else 400). Re-read `requireApproval` from the stored ticket — never trust the
+   body.
+2. A **normal** row (not `pricingMode: "bid"`) on a **bid-only** ticket → 400
+   **"This ticket only takes bids — place a bid to book it."** (`BID_ONLY_REFUSAL`). Same refusal on
+   the free-ticket path and the waiting list — a $0 normal order would otherwise book it free.
+3. A bid row: the stored ticket must take bids (else 400 "This ticket isn't taking bids."); the order
+   holds ONLY that row with `quantity: 1`; no referral code; `validateBidAmount(storedTicket,
+   bidAmount)` must pass (else 400 with its message). Bids never go to the free path or the waiting
+   list.
+4. Stripe Checkout Session, `mode: "payment"`:
+   - `line_items: [{ price_data: { currency: "usd", unit_amount: <bid in cents>, product: <the
+     PRODUCT of the stored price — stripe.prices.retrieve(stripeProductId).product> }, quantity: 1 }]`
+   - `payment_intent_data: { capture_method: "manual", description: "Approval hold — <event>",
+     metadata: { bookingRef, eventId, requiresApproval: "true" } }`, `submit_type: "book"`
+   - session `metadata` as for any approval order, plus **`bidAmount`** = the bid as a 2-decimal
+     string, and `requiresApproval: "true"`.
+5. A normal row on a priced ticket that takes bids is an ordinary order at the stored `price`, with
+   the ticket's own approval setting (and may use a referral code, the free path or the waiting list
+   like any ticket).
+
+### 15.4 Booking + notifications
+
+- Fulfilment stores **`booking.bidAmount`** (Number, no default) from the session metadata; status
+  `pending` with the card hold, exactly like any approval order (BOOKING_FLOW.md shape B). Approve
+  captures the hold, reject releases it, expiry after ~7 days — all unchanged.
+- **Anywhere a booking's price is shown** (receipts, emails, booking details, cancellation) use
+  `bookingUnitPrice(booking, ticket)` — the bid when present, never the ticket's current price.
+- Emails on a new bid: the guest gets the usual "Pending Approval" email; the event owner gets the
+  approval notice (host-owned events) — and **the admin inbox (`ADMIN_NOTIFICATION_EMAIL`) gets
+  EVERY bid**, host-owned events included. Subject **`[New Bid] $X — <name> — <event>`**, or
+  **`[Bid Raised] $A → $B — …`** when the same guest (email, case-insensitive) already has a PENDING
+  bid on that ticket at a lower amount. Body adds Bid, Suggested bid, Normal price, Previous bid
+  ("still pending as its own request").
+- Sealed: no endpoint a guest can reach returns another guest's `bidAmount`.
+
+### 15.5 Host — Approvals
+
+- A pending bid shows **"Bid $X"** under the ticket name.
+- When any pending request is a bid, a sort control: **Soonest expiring** (default) / **Highest
+  bid**.
+- A guest who "raises" a bid has placed a second, separate request with its own hold; the host
+  approves the one they want and rejects the other (or approves both for two seats).
+
+### 15.6 Helper code — port verbatim
+
+The web's `src/lib/ticket-bid.ts` (pure, no dependencies). Behaviour must match exactly.
+
+```ts
+export const BID_MIN_FLOOR = 0.5 // Stripe's smallest charge — and a $0 bid would have nothing to hold
+export const BID_MAX = 999999.99 // Stripe's largest single USD charge
+export const BID_STEP = 1 // the slider moves in whole dollars; a typed amount may carry cents
+export const BID_BUTTON_STEP = 5 // each tap of − / + (QA, 2026-11-27: $1 taps were too slow)
+export const BID_SLIDER_MULTIPLE = 10 // the slider runs to 10× the ticket's price — a convenience, not a cap
+
+/** Shown with every bid — the card, and the checkout modal. */
+export const BID_APPROVAL_NOTICE = "Bids need host approval — bids that are too low may not be approved."
+
+export type BidTicketLike = {
+	pricingMode?: string | null
+	bidSuggested?: number | string | null
+	price?: number | string | null
+} | null | undefined
+
+const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100
+const num = (v: unknown) => (v === null || v === undefined || v === "" ? NaN : Number(v))
+const clampToBounds = (n: number) => Math.min(BID_MAX, Math.max(BID_MIN_FLOOR, n))
+
+/** Does this ticket accept bids (beside its normal price)? */
+export const isBidTicket = (t: BidTicketLike): boolean => t?.pricingMode === "bid"
+
+/** Does this ticket take ONLY bids — bids on, and no normal price? */
+export const isBidOnlyTicket = (t: BidTicketLike): boolean => isBidTicket(t) && !(Number(t?.price) > 0)
+
+/** What every endpoint answers a normal (non-bid) order on a bid-only ticket. */
+export const BID_ONLY_REFUSAL = "This ticket only takes bids — place a bid to book it."
+
+/** Is this ORDER ROW a bid? Only a row the buyer sent as a bid is one. */
+export const isBidOrderRow = (row: { pricingMode?: string | null } | null | undefined): boolean => row?.pricingMode === "bid"
+
+/**
+ * What a bid on this ticket may be: Stripe's bounds, and the host's suggested price (falling back
+ * to the ticket price, then the floor — always inside the bounds). Null when it takes no bids.
+ */
+export function bidRange(t: BidTicketLike): { min: number; max: number; suggested: number } | null {
+	if (!isBidTicket(t)) return null
+	const s = num(t!.bidSuggested)
+	const p = num(t!.price)
+	const suggested = Number.isFinite(s) ? s : Number.isFinite(p) && p > 0 ? p : BID_MIN_FLOOR
+	return { min: BID_MIN_FLOOR, max: BID_MAX, suggested: round2(clampToBounds(suggested)) }
+}
+
+export const formatBidMoney = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "usd" })
+
+/** Host side: is this a valid suggested bid? Returns the problem, or null. */
+export function bidSuggestedProblem(value: unknown): string | null {
+	const v = num(value)
+	if (!Number.isFinite(v)) return "Set a suggested bid."
+	if (v < BID_MIN_FLOOR) return `The suggested bid must be at least ${formatBidMoney(BID_MIN_FLOOR)}.`
+	if (v > BID_MAX) return `The suggested bid can't be more than ${formatBidMoney(BID_MAX)}.`
+	if (round2(v) !== v) return "The suggested bid can have at most 2 decimals."
+	return null
+}
+
+/** Server + client: is `amount` a bid this ticket accepts? */
+export function validateBidAmount(t: BidTicketLike, amount: unknown): { ok: true; amount: number; cents: number } | { ok: false; error: string } {
+	const range = bidRange(t)
+	if (!range) return { ok: false, error: "This ticket isn't taking bids." }
+	const a = num(amount)
+	if (!Number.isFinite(a)) return { ok: false, error: "Enter your bid." }
+	if (round2(a) !== a) return { ok: false, error: "A bid can have at most 2 decimals." }
+	if (a < range.min) return { ok: false, error: `The lowest bid is ${formatBidMoney(range.min)}.` }
+	if (a > range.max) return { ok: false, error: `The highest bid is ${formatBidMoney(range.max)}.` }
+	return { ok: true, amount: a, cents: Math.round(a * 100) }
+}
+
+/** Clamp a typed / stepped value into the bounds (UI only — the server validates, never clamps). */
+export function clampBid(t: BidTicketLike, amount: number): number {
+	const range = bidRange(t)
+	if (!range || !Number.isFinite(amount)) return range?.suggested ?? 0
+	return round2(Math.min(range.max, Math.max(range.min, amount)))
+}
+
+/**
+ * The price ONE ticket on this booking was bought at: the bid when the booking carries one, else
+ * the ticket's list price. Every reader that used to rebuild a booking's money from the CURRENT
+ * list price goes through this — a bid booking would otherwise read as the normal price.
+ */
+export function bookingUnitPrice(booking: { bidAmount?: number | null } | null | undefined, ticket: { price?: number | string | null } | null | undefined): number {
+	const bid = Number(booking?.bidAmount)
+	if (booking?.bidAmount !== undefined && booking?.bidAmount !== null && Number.isFinite(bid)) return bid
+	return Number(ticket?.price) || 0
+}
+
+/** The bid fields to carry when a ticket is mapped into a form (every ticket surface uses this). */
+export const ticketBidFields = (t: BidTicketLike): { pricingMode?: "bid"; bidSuggested?: number } =>
+	isBidTicket(t) ? { pricingMode: "bid", bidSuggested: bidRange(t)!.suggested } : {}
+```
