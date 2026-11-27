@@ -29,7 +29,7 @@ import { MEMBERSHIPS, membershipLabelList, membershipsIncluding, type Membership
 import { validateReferralCodeForEvent, type ReferralCodeData } from "@/lib/referral-validation"
 import { REFERRAL_NOT_FOR_SELECTION_MESSAGE, referralCoversTicket, referralEligibleSubtotal } from "@/lib/referral-ticket-scope"
 import Stripe from "stripe"
-import { isBidOrderRow, isBidTicket, validateBidAmount } from "@/lib/ticket-bid"
+import { BID_ONLY_REFUSAL, isBidOnlyTicket, isBidOrderRow, isBidTicket, validateBidAmount } from "@/lib/ticket-bid"
 import { ticketApprovalFlag } from "@/lib/ticket-approval"
 import { CHECKOUT_VERIFY_MESSAGE, sessionMayBookAs } from "@/lib/checkout-identity"
 
@@ -295,6 +295,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			const stored: any = storedById.get(String(t.id))
 			if (!stored || String(stored.stripeProductId) !== String(t.priceId)) {
 				return sendResponse(res, null, "One of the selected tickets is no longer available. Please refresh and try again.", false, ResCode.BAD_REQUEST)
+			}
+			// A bid-only ticket has no normal price to buy at — a bid is the only way in.
+			if (isBidOnlyTicket(stored) && !isBidOrderRow(t as any)) {
+				return sendResponse(res, null, BID_ONLY_REFUSAL, false, ResCode.BAD_REQUEST)
 			}
 			;(t as any).requireApproval = ticketApprovalFlag(event as any, stored)
 		}

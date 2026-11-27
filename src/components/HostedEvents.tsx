@@ -94,7 +94,7 @@ import { FiShare2, FiChevronDown, FiChevronUp, FiMoreHorizontal } from "react-ic
 import MarketingSourceTag from "@/components/bookings/MarketingSourceTag"
 import { bookingMarketingSource } from "@/lib/marketing-link"
 import { useAnalytics } from "@/hooks/useAnalytics"
-import { ticketBidFields } from "@/lib/ticket-bid"
+import { isBidOnlyTicket, isBidTicket, ticketBidFields } from "@/lib/ticket-bid"
 import { CHAT_LINK_SHARED, CHAT_OPEN, CHAT_QR_OPENED, DISCUSSION_LINK_VISIT, DISCUSSION_QR_PARAM } from "@/lib/discussion-events"
 
 /**
@@ -1080,7 +1080,11 @@ export default function HostedEvents({ event }: Props) {
 											<Badge colorScheme="orange">Approval</Badge>
 										)}
 									</Flex>
-									<Text color="#9C9C9C" fontSize="sm">${ticket.price}</Text>
+									<Text color="#9C9C9C" fontSize="sm">
+										{isBidOnlyTicket(ticket as any)
+											? `Bid only${Number.isFinite(Number((ticket as any).bidSuggested)) ? ` · suggested $${Number((ticket as any).bidSuggested)}` : ""}`
+											: `$${ticket.price}${isBidTicket(ticket as any) ? " · takes bids" : ""}`}
+									</Text>
 								</Box>
 								<Flex gap={2} flexShrink={0}>
 									<button

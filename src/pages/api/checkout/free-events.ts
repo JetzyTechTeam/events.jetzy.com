@@ -1,5 +1,5 @@
 import { isPendingAdminApproval } from "@/lib/event-approval"
-import { isBidOrderRow } from "@/lib/ticket-bid"
+import { BID_ONLY_REFUSAL, isBidOnlyTicket, isBidOrderRow } from "@/lib/ticket-bid"
 import { answersForQuestions, questionsForSelection } from "@/lib/question-ticket-scope"
 import { createOrUpdateUser } from "@/lib/user-utils"
 import { sendResponse } from "@/lib/helpers"
@@ -173,6 +173,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		// ---- Pricing. This endpoint hands out a booking with no payment step, so every
 		// figure below comes from the database, never from the request body. ----
+		// A bid-only ticket has no normal price: a $0 order here would book it FREE, skipping the
+		// bid. A bid is the only way in (and bids never come here — resolveOrder refuses them).
+		const bidOnlyHit = (Array.isArray(tickets) ? tickets : []).some((t: any) =>
+			isBidOnlyTicket(((event as any).tickets || []).find((et: any) => String(et?._id) === String(t?.id) || (!!t?.priceId && et?.stripeProductId === t.priceId))),
+		)
+		if (bidOnlyHit) return sendResponse(res, null, BID_ONLY_REFUSAL, false, 400)
 		const order = resolveOrder(event, tickets)
 		if (!order) {
 			return sendResponse(res, null, "One of the selected tickets is no longer available.", false, 400)
