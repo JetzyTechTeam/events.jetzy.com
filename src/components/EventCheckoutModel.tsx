@@ -711,6 +711,11 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 			await startEmailVerification()
 			return
 		}
+		// A bid the server refused (too low, already 5 bids on this ticket, …): its own reason.
+		if (res.payload?.data?.bidRefused) {
+			Error("Couldn't place your bid", res.payload?.message || "Please check your bid and try again.")
+			return
+		}
 		if (!res.payload?.status) return
 		// Nothing chargeable after the server's own membership check: the ticket is free and
 		// every membership on it is already held.

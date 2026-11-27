@@ -2,6 +2,12 @@
 
 For the mobile app / backend, which writes to the same `events` collection this portal does.
 
+**Revision 11 (2026-11-28).** Two limits on bids. **The minimum bid is $2.00** (was $0.50,
+Stripe's floor) — for `bidAmount` and for `bidSuggested`; a stored suggestion under $2 is treated
+as no suggestion. **At most 5 bids per person per ticket** (`BID_LIMIT_PER_TICKET`), by checkout
+email, case-insensitive, and EVERY bid counts whatever its outcome (pending, approved, rejected,
+expired, cancelled). See §15, §15.2, §15.3 and §15.6.
+
 **Revision 10 (2026-11-28).** The suggested bid is now **OPTIONAL**, and new field
 **`bidShowSuggested`** (Boolean, no default — absent = show) lets the host hide it from guests. A
 hidden suggestion is never shown to a guest, nor used as the bid's starting amount or the slider's
@@ -1232,7 +1238,7 @@ truth: `src/lib/ticket-bid.ts`.
 | Field | Type | Rule |
 |---|---|---|
 | `pricingMode` | `"bid"` \| absent | `"bid"` = this ticket also takes bids. Absent = no bids (every ticket before this). |
-| `bidSuggested` | Number | **Optional** (Rev 10). The host's suggested bid: `>= 0.50`, `<= 999999.99`, at most 2 decimals. On a write: a number sets it, `null` clears it, absent leaves it unchanged. |
+| `bidSuggested` | Number | **Optional** (Rev 10). The host's suggested bid: `>= 2.00` (Rev 11), `<= 999999.99`, at most 2 decimals. On a write: a number sets it, `null` clears it, absent leaves it unchanged. |
 | `bidShowSuggested` | Boolean | **Optional, no default** (Rev 10). `false` = guests never see the suggestion (the host and the admin bid emails still do). Absent = show. Preserve-on-omit. |
 | `price` | Number | The ticket's **normal** price. Revision 7 tickets carry their old suggested price here. |
 | `bidMin` / `bidMax` | Number | **Retired (Revision 7 only).** May exist on stored rows; ignore them. |
@@ -1248,7 +1254,7 @@ A ticket that takes bids sells **no membership** (`memberships: []`, no `members
 
 **A bid is decided by the ORDER ROW, never by the ticket.** A row with `pricingMode: "bid"` +
 `bidAmount` is a bid: alone on the order, `quantity: 1`, no referral code, never free, no waiting
-list; `bidAmount` must be `>= 0.50` and `<= 999999.99` with at most 2 decimals (no other range);
+list; `bidAmount` must be `>= 2.00` (Rev 11) and `<= 999999.99` with at most 2 decimals (no other range);
 the server validates it (never trusts it), charges it as
 `price_data { unit_amount: bid, product: <product of the stored price> }`, forces the approval
 hold, and the booking stores **`bidAmount`** (see `BOOKING_FLOW.md`). A row without it on the
@@ -1303,12 +1309,12 @@ Three kinds of ticket:
 
 1. Header **"Name your price"** with a chip **"Suggested $X"** — only when `bidSuggestedVisible`.
 2. **Your bid**: a `−` button, an amount box, a `+` button.
-   - `−` / `+` move the bid by **$5** (`BID_BUTTON_STEP`); `−` stops at $0.50, `+` at the max.
+   - `−` / `+` move the bid by **$5** (`BID_BUTTON_STEP`); `−` stops at $2.00, `+` at the max.
    - The amount box accepts any amount with up to 2 decimals. It can be cleared and retyped. Every
-     keystroke that forms a VALID amount ($0.50 – $999,999.99) becomes the bid at once — the price
+     keystroke that forms a VALID amount ($2.00 – $999,999.99) becomes the bid at once — the price
      on the card and the order total beside "Place bid" follow as the guest types.
-   - **Under $0.50 is an error, never raised quietly:** the box gets a red outline and, under it,
-     *"Bids start at $0.50 — please enter $0.50 or more."* (`BID_TOO_LOW_MESSAGE`; the server
+   - **Under $2.00 is an error, never raised quietly:** the box gets a red outline and, under it,
+     *"Bids start at $2.00 — please enter $2.00 or more."* (`BID_TOO_LOW_MESSAGE`; the server
      returns the same text). The typed value is kept so the guest can fix it, the last valid bid
      stays in place, and "Place bid" stops with that message. Never mention Stripe to the guest.
 3. A **slider**: from **$1** (`ceil(min)`) to **10× `bidSliderReference`** (the higher of the
@@ -1319,7 +1325,8 @@ Three kinds of ticket:
 4. In orange, always: **"Bids need host approval — bids that are too low may not be approved."**
    (`BID_APPROVAL_NOTICE`)
 5. *"One seat per bid. Your card is held for your bid and charged only if the host accepts it.
-   Want more seats or a different amount? Place another bid."*
+   Want more seats or a different amount? Place another bid."* and under it *"Up to 5 bids per
+   person on this ticket."*
 6. On a priced ticket only: a link **"Pay the normal price instead ($50.00)"**.
 
 **Where the bid starts — `bidStartAmount`:** the visible suggestion, else the normal price, else
@@ -1347,6 +1354,13 @@ this order:
    holds ONLY that row with `quantity: 1`; no referral code; `validateBidAmount(storedTicket,
    bidAmount)` must pass (else 400 with its message). Bids never go to the free path or the waiting
    list.
+   **Then the per-person limit:** count `Bookings` with that `eventId`, `tickets.ticketId`,
+   `customerEmail` (case-insensitive) and `bidAmount` set, `isDeleted != true`, **any status**. If
+   the count is already `>= 5` → 400 **"You've placed 5 bids on this ticket — that's the most one
+   person can place."** (`BID_LIMIT_MESSAGE`). The web returns every bid refusal with
+   `data.bidRefused: true` so the app can show the message as-is under "Couldn't place your bid".
+   Known gap, accepted: bookings are created at fulfilment, so checkouts opened minutes apart can
+   both pass.
 4. Stripe Checkout Session, `mode: "payment"`:
    - `line_items: [{ price_data: { currency: "usd", unit_amount: <bid in cents>, product: <the
      PRODUCT of the stored price — stripe.prices.retrieve(stripeProductId).product> }, quantity: 1 }]`
@@ -1386,11 +1400,16 @@ this order:
 The web's `src/lib/ticket-bid.ts` (pure, no dependencies). Behaviour must match exactly.
 
 ```ts
-export const BID_MIN_FLOOR = 0.5 // Stripe's smallest charge — and a $0 bid would have nothing to hold
+// Jetzy's minimum bid (2026-11-28). Stripe's own floor is $0.50, but an approved $0.50 bid nets
+// about $0.19 after Stripe's 30¢ fee. A suggested bid must clear it too.
+export const BID_MIN_FLOOR = 2
 export const BID_MAX = 999999.99 // Stripe's largest single USD charge
 export const BID_STEP = 1 // the slider moves in whole dollars; a typed amount may carry cents
 export const BID_BUTTON_STEP = 5 // each tap of − / + (QA, 2026-11-27: $1 taps were too slow)
 export const BID_SLIDER_MULTIPLE = 10 // the slider runs to 10× the ticket's price — a convenience, not a cap
+// One person (by checkout email) may place at most this many bids on ONE ticket — every bid
+// counts, whatever became of it (pending, approved, rejected, expired, cancelled). 2026-11-28.
+export const BID_LIMIT_PER_TICKET = 5
 
 /** Shown with every bid — the card, and the checkout modal. */
 export const BID_APPROVAL_NOTICE = "Bids need host approval — bids that are too low may not be approved."
@@ -1466,6 +1485,9 @@ export const formatBidMoney = (n: number) => n.toLocaleString("en-US", { style: 
 /** What a guest is told when their bid is under the minimum — friendly, and the same on the page
  *  and from the server. (The minimum is Stripe's smallest charge; the guest needn't hear that.) */
 export const BID_TOO_LOW_MESSAGE = `Bids start at ${formatBidMoney(BID_MIN_FLOOR)} — please enter ${formatBidMoney(BID_MIN_FLOOR)} or more.`
+
+/** What a guest is told once they have placed `BID_LIMIT_PER_TICKET` bids on a ticket. */
+export const BID_LIMIT_MESSAGE = `You've placed ${BID_LIMIT_PER_TICKET} bids on this ticket — that's the most one person can place.`
 
 /** Host side: is this a valid suggested bid? Returns the problem, or null. The suggestion is
  *  OPTIONAL — blank / null is fine; only a value that is set is checked. */
