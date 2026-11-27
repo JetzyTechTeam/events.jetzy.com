@@ -1304,9 +1304,13 @@ Three kinds of ticket:
 1. Header **"Name your price"** with a chip **"Suggested $X"** — only when `bidSuggestedVisible`.
 2. **Your bid**: a `−` button, an amount box, a `+` button.
    - `−` / `+` move the bid by **$5** (`BID_BUTTON_STEP`); `−` stops at $0.50, `+` at the max.
-   - The amount box accepts any amount with up to 2 decimals. It can be cleared and retyped; the
-     typed value is applied on blur / Enter, clamped with `clampBid` (below $0.50 → $0.50). While
-     the typed value is under $0.50 show *"The lowest bid is $0.50."*
+   - The amount box accepts any amount with up to 2 decimals. It can be cleared and retyped. Every
+     keystroke that forms a VALID amount ($0.50 – $999,999.99) becomes the bid at once — the price
+     on the card and the order total beside "Place bid" follow as the guest types.
+   - **Under $0.50 is an error, never raised quietly:** the box gets a red outline and, under it,
+     *"Bids start at $0.50 — please enter $0.50 or more."* (`BID_TOO_LOW_MESSAGE`; the server
+     returns the same text). The typed value is kept so the guest can fix it, the last valid bid
+     stays in place, and "Place bid" stops with that message. Never mention Stripe to the guest.
 3. A **slider**: from **$1** (`ceil(min)`) to **10× `bidSliderReference`** (the higher of the
    normal price and the VISIBLE suggestion; **$100** when there is neither), rounded up to a whole
    dollar (`BID_SLIDER_MULTIPLE`), step **$1**. Labels under it: `$1.00 · Suggested $X · $<end>+`
@@ -1459,6 +1463,10 @@ export function bidRange(t: BidTicketLike): { min: number; max: number; suggeste
 
 export const formatBidMoney = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "usd" })
 
+/** What a guest is told when their bid is under the minimum — friendly, and the same on the page
+ *  and from the server. (The minimum is Stripe's smallest charge; the guest needn't hear that.) */
+export const BID_TOO_LOW_MESSAGE = `Bids start at ${formatBidMoney(BID_MIN_FLOOR)} — please enter ${formatBidMoney(BID_MIN_FLOOR)} or more.`
+
 /** Host side: is this a valid suggested bid? Returns the problem, or null. The suggestion is
  *  OPTIONAL — blank / null is fine; only a value that is set is checked. */
 export function bidSuggestedProblem(value: unknown): string | null {
@@ -1478,7 +1486,7 @@ export function validateBidAmount(t: BidTicketLike, amount: unknown): { ok: true
 	const a = num(amount)
 	if (!Number.isFinite(a)) return { ok: false, error: "Enter your bid." }
 	if (round2(a) !== a) return { ok: false, error: "A bid can have at most 2 decimals." }
-	if (a < range.min) return { ok: false, error: `The lowest bid is ${formatBidMoney(range.min)}.` }
+	if (a < range.min) return { ok: false, error: BID_TOO_LOW_MESSAGE }
 	if (a > range.max) return { ok: false, error: `The highest bid is ${formatBidMoney(range.max)}.` }
 	return { ok: true, amount: a, cents: Math.round(a * 100) }
 }

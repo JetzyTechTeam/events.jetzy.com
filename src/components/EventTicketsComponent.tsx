@@ -41,7 +41,7 @@ import { useAnalytics } from "@/hooks/useAnalytics";
 import { isPreviewQuery } from "@/lib/event-preview";
 import { LOW_STOCK_THRESHOLD, notEnoughLeftMessage, remainingMessage } from "@/lib/ticket-quantity";
 import type { EventAvailability } from "@/lib/ticket-availability";
-import { BID_APPROVAL_NOTICE, BID_BUTTON_STEP, BID_SLIDER_MULTIPLE, BID_STEP, bidRange, clampBid, formatBidMoney, isBidOnlyTicket, bidStartAmount, bidSliderReference, bidSuggestedVisible } from "@/lib/ticket-bid";
+import { BID_APPROVAL_NOTICE, BID_BUTTON_STEP, BID_SLIDER_MULTIPLE, BID_STEP, bidRange, clampBid, formatBidMoney, isBidOnlyTicket, BID_TOO_LOW_MESSAGE, bidStartAmount, bidSliderReference, bidSuggestedVisible } from "@/lib/ticket-bid";
 
 type Props = {
   event: IEvent;
@@ -187,9 +187,35 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
     if (!ticket?.bid || !Number.isFinite(value)) return bidFor(id);
     return clampBid({ pricingMode: "bid", bidSuggested: ticket.bid.suggested }, value);
   };
+  /** Is what the guest typed a number under the minimum bid? Shown as an error, never raised quietly. */
+  const draftTooLow = (id: string) => {
+    const ticket = ticketsItems.find((t) => t.id === id);
+    const draft = bidDrafts[id];
+    if (!ticket?.bid || draft === undefined || draft.trim() === "") return false;
+    const value = parseFloat(draft);
+    return Number.isFinite(value) && value < ticket.bid.min;
+  };
+  /**
+   * Typing in the amount box. What they type stays as typed; a VALID amount also becomes the bid
+   * at once, so the price on the card and the total beside "Place bid" follow every keystroke
+   * (QA, 2026-11-28 — they used to change only after leaving the box). An amount under the
+   * minimum leaves the last valid bid in place and shows the error under the box.
+   */
+  const typeBid = (id: string, text: string) => {
+    setBidDrafts((prev) => ({ ...prev, [id]: text }));
+    const ticket = ticketsItems.find((t) => t.id === id);
+    const value = parseFloat(text);
+    if (!ticket?.bid || !Number.isFinite(value) || value < ticket.bid.min || value > ticket.bid.max) return;
+    const amount = Math.round((value + Number.EPSILON) * 100) / 100;
+    setBidAmounts((prev) => ({ ...prev, [id]: amount }));
+    if (bidMode[id]) setTickets((prev) => prev.map((t) => (t.id === id && t.isSelected ? { ...t, price: amount } : t)));
+  };
   const commitBidDraft = (id: string) => {
     const draft = bidDrafts[id];
     if (draft === undefined) return;
+    // Under the minimum: keep what they typed and show the error, so they can correct it —
+    // it used to be raised to $0.50 without a word.
+    if (draftTooLow(id)) return;
     const value = parseFloat(draft);
     // Left empty or not a number: keep the bid they had. Otherwise clamp into the range.
     if (Number.isFinite(value)) setBid(id, value);
@@ -431,6 +457,13 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
     }
 
     // A bid whose box is still empty (a bid-only ticket with no visible suggestion).
+    // A bid under the minimum — stop and say so (the box shows the same message).
+    const lowBid = tickets.find((t) => t.isSelected && t.bid && isBidding(t.id) && draftTooLow(t.id));
+    if (lowBid) {
+      setLoader(false);
+      Error("Bid too low", BID_TOO_LOW_MESSAGE);
+      return;
+    }
     const emptyBid = tickets.find((t) => t.isSelected && t.bid && isBidding(t.id) && effectiveBid(t.id) === null);
     if (emptyBid) {
       setLoader(false);
@@ -850,7 +883,7 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
                             >
                               -
                             </button>
-                            <div className="flex flex-1 sm:flex-none min-w-0 items-center bg-black rounded-full px-3 h-9">
+                            <div className={`flex flex-1 sm:flex-none min-w-0 items-center bg-black rounded-full px-3 h-9 ${draftTooLow(ticket.id) ? "ring-1 ring-red-400" : ""}`}>
                               <span className="text-gray-400 mr-1">$</span>
                               <input
                                 type="number"
@@ -859,7 +892,7 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
                                 min={ticket.bid.min}
                                 value={bidDrafts[ticket.id] ?? (bidFor(ticket.id) === null ? "" : String(bidFor(ticket.id)))}
                                 placeholder="Enter your bid"
-                                onChange={(e) => setBidDrafts((prev) => ({ ...prev, [ticket.id]: e.target.value }))}
+                                onChange={(e) => typeBid(ticket.id, e.target.value)}
                                 onBlur={() => commitBidDraft(ticket.id)}
                                 onKeyDown={(e) => {
                                   if (e.key === "Enter") (e.target as HTMLInputElement).blur();
@@ -878,14 +911,9 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
                             </button>
                           </div>
                         </div>
-                        {(() => {
-                          const draft = bidDrafts[ticket.id];
-                          if (draft === undefined || draft.trim() === "") return null;
-                          const v = parseFloat(draft);
-                          if (!Number.isFinite(v)) return null;
-                          if (v < ticket.bid.min) return <p className="text-xs text-[#F5C518] mb-1">The lowest bid is {formatBidMoney(ticket.bid.min)}.</p>;
-                          return null;
-                        })()}
+                        {draftTooLow(ticket.id) && (
+                          <p role="alert" className="text-xs text-red-400 mb-1">{BID_TOO_LOW_MESSAGE}</p>
+                        )}
                         {/* Drag to raise or lower the bid. Its end is a convenience, not a cap —
                             see sliderMaxFor; the box above takes any amount. */}
                         <input
