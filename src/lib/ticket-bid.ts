@@ -28,7 +28,7 @@ export const BID_BUTTON_STEP = 5 // each tap of − / + (QA, 2026-11-27: $1 taps
 export const BID_SLIDER_MULTIPLE = 10 // the slider runs to 10× the ticket's price — a convenience, not a cap
 
 /** Shown with every bid — the card, and the checkout modal. */
-export const BID_APPROVAL_NOTICE = "Bids need host approval — a bid that's too low won't be accepted."
+export const BID_APPROVAL_NOTICE = "Bids need host approval — bids that are too low may not be approved."
 
 export type BidTicketLike = {
 	pricingMode?: string | null
